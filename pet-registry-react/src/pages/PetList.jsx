@@ -68,16 +68,7 @@ function PetList() {
 
     useEffect(() => { getPets() }, [])
 
-    const calculateAgeFromDob = (dob) => {
-        if (!dob) return null
-        const birth = new Date(dob)
-        if (isNaN(birth)) return null
-        const now = new Date()
-        let years = now.getFullYear() - birth.getFullYear()
-        const m = now.getMonth() - birth.getMonth()
-        if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) years--
-        return years
-    }
+
 
     return (
         <div>
@@ -86,9 +77,15 @@ function PetList() {
                 <div className="flex items-center gap-3">
                     <Link to="/add"><Button>Add Pet</Button></Link>
                     <Dialog open={isBulkDialogOpen} onOpenChange={setIsBulkDialogOpen}>
-                        <DialogTrigger asChild>
-                            <Button variant="destructive" disabled={selectedIds.size === 0 || bulkLoading}>Delete Selected</Button>
-                        </DialogTrigger>
+                        <Button
+                            variant="destructive"
+                            disabled={selectedIds.size === 0 || bulkLoading}
+                            aria-haspopup="dialog"
+                            aria-expanded={isBulkDialogOpen}
+                            onClick={() => setIsBulkDialogOpen(true)}
+                        >
+                            Delete Selected
+                        </Button>
                         <DialogContent>
                             <DialogHeader>
                                 <DialogTitle>Delete selected pets</DialogTitle>
@@ -104,22 +101,28 @@ function PetList() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {pets?.map((pet) => (
+                {pets?.map((pet) => {
+                    const ageText = pet?.dob
+                        ? formatAge(calculateAgeFromDob(pet.dob))
+                        : (typeof pet?.age === 'number' ? `${pet.age} year${pet.age === 1 ? '' : 's'}` : '—')
+
+                    return (
                     <Card key={pet?.id} className="flex flex-col justify-between">
                         <div className="flex items-start gap-3">
                             <input type="checkbox" aria-label={`Select ${pet?.name}`} checked={selectedIds.has(pet?.id)} onChange={() => toggleSelect(pet?.id)} />
                             <div className="flex-1">
                                 <h3 className="text-lg font-medium">{pet?.name}</h3>
-                                <p className="text-sm text-gray-500">{pet?.type} — {pet?.breed}</p>
+                                <p className="text-sm text-muted">{pet?.type} — {pet?.breed}</p>
                             </div>
                         </div>
 
                         <div className="mt-4 flex items-center justify-between">
                             <Link to={`/pet/${pet?.id}`} className="mr-2"><Button variant="outline" size="sm">Details</Button></Link>
-                            <span className="text-sm text-gray-400">Age: {pet?.dob ? formatAge(calculateAgeFromDob(pet.dob)) : (pet?.age ? `${pet.age} year${pet.age === 1 ? '' : 's'}` : '—')}</span>
+                            <span className="text-sm text-gray-400">Age: {ageText}</span>
                         </div>
                     </Card>
-                ))}
+                    )
+                })}
             </div>
         </div>
     )
