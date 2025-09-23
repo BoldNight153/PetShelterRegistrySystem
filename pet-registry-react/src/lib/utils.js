@@ -22,8 +22,7 @@ export function calculateAgeFromDob(dob) {
 
 export function formatAge({ years, months }) {
   if (years == null || months == null) return '—'
-  if (years <= 0 && months <= 0) return '0 months'
-  if (years <= 0) return `${months} month${months === 1 ? '' : 's'}`
-  if (months <= 0) return `${years} year${years === 1 ? '' : 's'}`
-  return `${years} year${years === 1 ? '' : 's'} ${months} mo`
+  const y = Math.max(0, Number(years))
+  const m = Math.max(0, Number(months))
+  return `${y} year${y === 1 ? '' : 's'} ${m} month${m === 1 ? '' : 's'}`
 }

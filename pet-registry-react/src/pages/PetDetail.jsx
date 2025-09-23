@@ -87,7 +87,7 @@ function PetDetail({ setPetToEdit }) {
                             <h2 className="text-2xl font-semibold">{pet?.name ?? '—'}</h2>
                             <p className="text-sm text-muted">{pet?.type} — {pet?.breed}</p>
                             <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                                <div><strong>Age:</strong> {pet?.dob ? formatAge(calculateAgeFromDob(pet.dob)) : (pet?.age ? `${pet.age} year${pet.age === 1 ? '' : 's'}` : '—')}</div>
+                                <div><strong>Age:</strong> {pet?.dob ? formatAge(calculateAgeFromDob(pet.dob)) : (typeof pet?.age === 'number' ? `${pet.age} year${pet.age === 1 ? '' : 's'} 0 months` : '—')}</div>
                                 <div><strong>Gender:</strong> {pet?.gender ?? '—'}</div>
                             </div>
                         </div>
@@ -97,9 +97,15 @@ function PetDetail({ setPetToEdit }) {
                                                 <Link to={`/pet/${pet?.id}/edit`}><Button size="sm">Edit</Button></Link>
 
                                                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                                                    <DialogTrigger asChild>
-                                                        <Button variant="destructive" size="sm">Delete</Button>
-                                                    </DialogTrigger>
+                                                    <Button
+                                                        variant="destructive"
+                                                        size="sm"
+                                                        aria-haspopup="dialog"
+                                                        aria-expanded={isDialogOpen}
+                                                        onClick={() => setIsDialogOpen(true)}
+                                                    >
+                                                        Delete
+                                                    </Button>
                                                     <DialogContent>
                                                         <DialogHeader>
                                                             <DialogTitle>Confirm delete</DialogTitle>
