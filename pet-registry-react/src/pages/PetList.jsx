@@ -110,7 +110,7 @@ function PetList() {
                             <input type="checkbox" aria-label={`Select ${pet?.name}`} checked={selectedIds.has(pet?.id)} onChange={() => toggleSelect(pet?.id)} />
                             <div className="flex-1">
                                 <h3 className="text-lg font-medium">{pet?.name}</h3>
-                                <p className="text-sm text-gray-500">{pet?.type} — {pet?.breed}</p>
+                                <p className="text-sm text-muted">{pet?.type} — {pet?.breed}</p>
                             </div>
                         </div>
 
