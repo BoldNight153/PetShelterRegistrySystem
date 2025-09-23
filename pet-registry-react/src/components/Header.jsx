@@ -15,7 +15,7 @@ export default function Header() {
         </Link>
 
         <nav>
-          <Link to="/add" className="inline-block"><button className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground">Add Pet</button></Link>
+          <Link to="/add" className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground" role="button" aria-label="Add Pet">Add Pet</Link>
         </nav>
       </div>
     </header>

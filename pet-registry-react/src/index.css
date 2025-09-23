@@ -33,7 +33,9 @@
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
+  /* accessible muted foreground fallback (hex) */
   --muted-foreground: oklch(0.552 0.016 285.938);
+  --muted-foreground-hex: #9ca3af; /* slightly darker muted text for contrast */
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
   --destructive: oklch(0.577 0.245 27.325);
@@ -165,6 +167,7 @@ button:focus-visible {
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.274 0.006 286.033);
   --muted-foreground: oklch(0.705 0.015 286.067);
+  --muted-foreground-hex: #9ca3af;
   --accent: oklch(0.274 0.006 286.033);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
@@ -257,4 +260,9 @@ button:focus-visible {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Utility for muted text that ensures accessible contrast using explicit hex fallback */
+.text-muted {
+  color: var(--muted-foreground-hex, rgb(156 163 175));
 }
