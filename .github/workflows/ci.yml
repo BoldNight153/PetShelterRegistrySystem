@@ -20,7 +20,11 @@ jobs:
           node-version: '18'
 
       - name: Install deps
-        run: npm ci
+        run: npm install
+        working-directory: pet-registry-react
+
+      - name: Run tests
+        run: npm run test:ci
         working-directory: pet-registry-react
 
       - name: Run lint
