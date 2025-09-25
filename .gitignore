@@ -5,9 +5,10 @@ yarn-debug.log*
 pnpm-debug.log*
 
 # Lockfiles
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
+# Keep lockfiles committed for reproducible installs
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
 
 # Build
 dist/
