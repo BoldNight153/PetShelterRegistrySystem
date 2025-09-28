@@ -7,6 +7,12 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import { PrismaClient } from '@prisma/client';
 import petsRouter from './routes/pets';
+import sheltersRouter from './routes/shelters';
+import locationsRouter from './routes/locations';
+import ownersRouter from './routes/owners';
+import medicalRouter from './routes/medicalRecords';
+import eventsRouter from './routes/events';
+import petOwnersRouter from './routes/petOwners';
 
 // Avoid setting up the pretty transport in test environments where pino-pretty
 // may not be installed or resolvable. Tests set NODE_ENV=test to skip the
@@ -29,6 +35,12 @@ app.get('/health', async (req, res) => {
 });
 
 app.use('/pets', petsRouter);
+app.use('/shelters', sheltersRouter);
+app.use('/locations', locationsRouter);
+app.use('/owners', ownersRouter);
+app.use('/medical', medicalRouter);
+app.use('/events', eventsRouter);
+app.use('/pet-owners', petOwnersRouter);
 
 const prisma = new PrismaClient();
 const port = process.env.PORT ? Number(process.env.PORT) : 4000;
