@@ -1,0 +1,31 @@
+{
+  "name": "petshelter-clean",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon server.js --watch src",
+    "start": "node server.js",
+    "test": "jest --runInBand",
+    "prisma:generate": "prisma generate",
+    "migrate": "prisma migrate dev --name init --preview-feature",
+    "seed": "node prisma/seed.js",
+    "smoke": "./scripts/smoke.sh http://localhost:3000"
+  },
+  "dependencies": {
+    "@prisma/client": "^4.16.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^4.18.2",
+    "zod": "^3.21.4"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "nodemon": "^3.1.10",
+    "prisma": "^4.16.0",
+    "supertest": "^6.3.3",
+    "babel-jest": "^29.5.0",
+    "@babel/preset-env": "^7.21.4",
+    "@babel/core": "^7.21.4"
+  }
+}
