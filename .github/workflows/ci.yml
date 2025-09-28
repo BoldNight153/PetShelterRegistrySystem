@@ -24,85 +24,68 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    name: CI (full Postgres)
 
-      - name: Use Node.js 18
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+    on:
+      push:
+        branches: [ main, chore/ci-tests ]
 
-      - name: Wait for Postgres
-        run: |
-          for i in {1..10}; do
-            pg_isready -h localhost -p 5432 -U postgres -d pets_test && break || sleep 1;
-          done
-        env:
-          PGPASSWORD: postgres
+    jobs:
+      test-postgres:
+        runs-on: ubuntu-latest
+        services:
+          postgres:
+            image: postgres:14
+            ports:
+              - 5432:5432
+            env:
+              POSTGRES_USER: postgres
+              POSTGRES_PASSWORD: postgres
+              POSTGRES_DB: pets_test
+            options: >-
+              --health-cmd="pg_isready -U postgres -d pets_test"
+              --health-interval=5s
+              --health-timeout=5s
+              --health-retries=5
 
-      - name: Install dependencies
-        run: npm ci
+        steps:
+          - name: Checkout
+            uses: actions/checkout@v4
 
-      - name: Generate Prisma client
-        run: npx prisma generate
+          - name: Use Node.js 18
+            uses: actions/setup-node@v4
+            with:
+              node-version: '18'
 
-      - name: Set DATABASE_URL for Postgres service
-        run: echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pets_test" >> $GITHUB_ENV
+          - name: Wait for Postgres
+            run: |
+              for i in {1..10}; do
+                pg_isready -h localhost -p 5432 -U postgres -d pets_test && break || sleep 1;
+              done
+            env:
+              PGPASSWORD: postgres
 
-      - name: Run migrations
-        run: npx prisma migrate deploy
+          - name: Install dependencies
+            run: npm ci
 
-      - name: Seed database
-        run: npm run seed
+          - name: Generate Prisma client
+            run: npx prisma generate
 
-      - name: Start server in background
-        run: nohup node server.js &
+          - name: Set DATABASE_URL for Postgres service
+            run: echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pets_test" >> $GITHUB_ENV
 
-      - name: Run tests
-        run: npm test --silent
+          - name: Run migrations
+            run: npx prisma migrate deploy
 
-      - name: Run smoke check
-        run: ./scripts/smoke.sh http://localhost:3000
-name: CI
+          - name: Seed database
+            run: npm run seed
 
-on:
-  pull_request:
-    branches: [ main ]
-  push:
-    branches: [ main ]
+          - name: Start server in background
+            run: nohup node server.js &
 
-jobs:
-  ci:
-    name: CI
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+          - name: Run tests
+            run: npm test --silent
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+          - name: Run smoke check
+            run: ./scripts/smoke.sh http://localhost:3000
 
-      - name: Install deps
-        run: npm ci
-        working-directory: pet-registry-react
-
-      - name: Run tests
-        run: npm run test:ci
-        working-directory: pet-registry-react
-
-      - name: Run lint
-        run: npm run lint
-        working-directory: pet-registry-react
-
-      - name: Build
-        run: npm run build
-        working-directory: pet-registry-react
-
-      - name: Upload build
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-dist
-          path: pet-registry-react/dist
