@@ -32,3 +32,81 @@ Notes:
 ---
 
 If you need help performing the migration on production data or automating it, I can assist with a migration plan and scripts tailored to your environment.
+
+## Local Postgres setup (development)
+
+If you'd like to run the backend locally without Docker, here are the exact commands I used on macOS (Homebrew) to install Postgres, create a local user and database, run Prisma migrations, seed the DB, and start the server.
+
+1. Install Postgres (Homebrew):
+
+```bash
+brew update
+brew install postgresql
+brew services start postgresql
+```
+
+2. Create the DB user and database (idempotent):
+
+```bash
+# create superuser & set password (idempotent)
+createuser -s username || true
+psql -d postgres -c "ALTER USE username WITH PASSWORD 'password';" || true
+
+# create database owned by username
+createdb -O username pets || true
+psql -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE pets TO username;" || true
+```
+
+3. Create/update `.env` in the project root (do NOT commit `.env`):
+
+```bash
+cat > .env <<'EOF'
+DATABASE_URL="postgresql://username:password@localhost:5432/pets"
+PORT=3000
+EOF
+```
+
+4. Install dependencies, generate Prisma client, run migrations and seed:
+
+```bash
+npm ci
+npx prisma generate
+npx prisma migrate dev --name init
+npm run seed
+```
+
+5. Start the app locally (dev):
+
+```bash
+# start with live reload
+npm run dev
+
+# or start directly
+node app.js
+```
+
+6. Run the smoke checks:
+
+```bash
+./scripts/smoke.sh http://localhost:3000
+```
+
+Notes:
+- The `.env` contains the local DB password — keep it out of git. Use `.env.example` for public defaults.
+- These commands are intended for macOS with Homebrew. If you use Linux/Windows, the Postgres installation commands differ slightly.
+
+Recommended .gitignore and required env variables
+-----------------------------------------------
+
+Add `.env` to your `.gitignore` to avoid committing secrets. Example entry in `.gitignore`:
+
+```text
+.env
+```
+
+Required environment variables (create a local `.env` with these keys):
+
+- `DATABASE_URL` — e.g. `postgresql://<DB_USER>:<DB_PASS>@localhost:5432/<DB_NAME>`
+- `PORT` — port where the server should listen (default 3000)
+
+You can copy the example above and replace credentials for your local dev environment.

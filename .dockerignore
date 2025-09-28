@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+.env
+.git
+dist
+public
+README.md
+# keep prisma/migrations so migrations are available inside the image
+# prisma/migrations
