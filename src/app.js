@@ -2,14 +2,12 @@ import express from 'express'
 import cors from 'cors'
 import swaggerUI from 'swagger-ui-express'
 import swaggerJSdoc from 'swagger-jsdoc'
-import dotenv from 'dotenv'
 
 import petRoutes from './pets/routes/pets.routes.js'
-import prisma from './src/db/prisma.js'
-
-dotenv.config()
+import prisma from './db/prisma.js'
 
 const app = express()
+
 const port = process.env.PORT || 3000
 
 // swagger definition
@@ -56,10 +54,5 @@ app.get('/health', async (req, res) => {
         res.status(500).json({ status: 'error', db: 'down' })
     }
 })
-
-/* Server setup */
-if (process.env.NODE_ENV !== 'test') {
-    app.listen(port, () => console.log(`⚡️[server]: Server is running at https://localhost:${port}`))
-}
 
 export default app
