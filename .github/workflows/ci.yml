@@ -1,3 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, chore/ci-tests ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+      - name: Run migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: "file:./dev.db"
+        run: npx prisma migrate dev --name ci --skip-seed
+      - name: Run seed
+        working-directory: backend
+        run: npx ts-node --transpile-only prisma/seed.ts
+      - name: Run tests
+        working-directory: backend
+        run: NODE_ENV=test npm test -- --runInBand
 name: CI (full Postgres)
 
 on:

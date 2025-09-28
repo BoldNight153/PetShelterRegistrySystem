@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // For local development we default to sqlite. To use Postgres in production,
+  // replace provider with "postgresql" and set DATABASE_URL to a postgres DSN.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Sex {
+  MALE
+  FEMALE
+  UNKNOWN
+}
+
+enum PetStatus {
+  AVAILABLE
+  HOLD
+  FOSTERED
+  ADOPTED
+  DECEASED
+  TRANSFERRED
+}
+
+enum OwnerRole {
+  OWNER
+  FOSTER
+  EMERGENCY_CONTACT
+}
+
+model Shelter {
+  id         String    @id @default(uuid())
+  name       String
+  address    Json?
+  phone      String?
+  email      String?
+  capacity   Int?
+  notes      String?
+  pets       Pet[]
+  locations  Location[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model Location {
+  id         String   @id @default(uuid())
+  shelter    Shelter  @relation(fields: [shelterId], references: [id], onDelete: Cascade)
+  shelterId  String
+  code       String   // e.g. "A-12" or "Room 3 / Cage 4"
+  description String?
+  capacity   Int?
+  notes      String?
+  pets       Pet[]
+  createdAt  DateTime @default(now())
+}
+
+model Owner {
+  id         String     @id @default(uuid())
+  firstName  String
+  lastName   String
+  email      String?    @unique
+  phone      String?
+  type       String?    // individual | organization
+  address    Json?
+  notes      String?
+  pets       PetOwner[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([lastName, firstName])
+}
+
+model PetOwner {
+  id        String     @id @default(uuid())
+  pet       Pet        @relation(fields: [petId], references: [id], onDelete: Cascade)
+  petId     String
+  owner     Owner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId   String
+  role      OwnerRole  @default(OWNER)
+  isPrimary Boolean    @default(false)
+  startDate DateTime   @default(now())
+  endDate   DateTime?
+  notes     String?
+
+  @@unique([petId, ownerId, role, startDate])
+}
+
+model MedicalRecord {
+  id          String    @id @default(uuid())
+  pet         Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
+  petId       String
+  visitDate   DateTime  @default(now())
+  vetName     String?
+  recordType  String?
+  notes       String?
+  files       Json?
+  createdAt   DateTime  @default(now())
+}
+
+model Event {
+  id            String    @id @default(uuid())
+  pet           Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
+  petId         String
+  type          String
+  occurredAt    DateTime  @default(now())
+  fromShelterId String?
+  toShelterId   String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+}
+
+model Pet {
+  id           String       @id @default(uuid())
+  name         String
+  species      String
+  breed        String?
+  sex          Sex          @default(UNKNOWN)
+  dob          DateTime?
+  microchip    String?      @unique
+  color        String?
+  weightKg     Float?
+  sterilized   Boolean      @default(false)
+  status       PetStatus    @default(AVAILABLE)
+  isAlive      Boolean      @default(true)
+  deceasedAt   DateTime?
+  notes        String?
+  intakeAt     DateTime?
+  shelterId    String?
+  shelter      Shelter?     @relation(fields: [shelterId], references: [id], onDelete: Restrict)
+  locationId   String?      // pin/cage location
+  location     Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  owners       PetOwner[]
+  medical      MedicalRecord[]
+  events       Event[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([name])
+  @@index([species])
+}
