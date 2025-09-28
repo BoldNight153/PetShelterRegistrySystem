@@ -1,0 +1,10 @@
+# Changelog
+
+All notable changes to this repository will be documented in this file.
+
+## [0.1.0] - 2025-09-28
+- Merged PR #8: chore(ci): add full API routes, seed, CI and cleanup
+  - Added TypeScript backend with Prisma schema, migrations, seed script
+  - Implemented CRUD routes (shelters, locations, pets, owners, pet-owners, medical, events)
+  - Added Zod validation, pino logging, Jest + SuperTest tests, and a GitHub Actions CI workflow
+  - Cleaned repository history and removed tracked node_modules and dev.db from source control
