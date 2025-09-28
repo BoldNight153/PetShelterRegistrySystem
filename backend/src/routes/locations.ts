@@ -15,7 +15,14 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const parsed = LocationSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
-  const created = await prisma.location.create({ data: parsed.data });
+  // Build a clean create object without undefined fields so Prisma's XOR types are satisfied
+  const { shelterId, code, description, capacity, notes } = parsed.data;
+  const createData: any = { code };
+  if (shelterId !== undefined) createData.shelterId = shelterId;
+  if (description !== undefined) createData.description = description;
+  if (capacity !== undefined) createData.capacity = capacity;
+  if (notes !== undefined) createData.notes = notes;
+  const created = await prisma.location.create({ data: createData });
   res.status(201).json(created);
 });
 
@@ -30,7 +37,14 @@ router.put('/:id', async (req, res) => {
   const id = req.params.id;
   const parsed = LocationSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
-  const updated = await prisma.location.update({ where: { id }, data: parsed.data });
+  const { shelterId, code, description, capacity, notes } = parsed.data as any;
+  const updateData: any = {};
+  if (shelterId !== undefined) updateData.shelterId = shelterId;
+  if (code !== undefined) updateData.code = code;
+  if (description !== undefined) updateData.description = description;
+  if (capacity !== undefined) updateData.capacity = capacity;
+  if (notes !== undefined) updateData.notes = notes;
+  const updated = await prisma.location.update({ where: { id }, data: updateData });
   res.json(updated);
 });
 
