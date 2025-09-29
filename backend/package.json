@@ -19,8 +19,9 @@
     "express-rate-limit": "^8.1.0",
     "helmet": "^8.1.0",
     "pino": "^9.11.0",
-  "pino-http": "^8.1.0",
-    "zod": "^4.0.0"
+    "pino-http": "^8.1.0",
+    "zod": "^4.0.0",
+    "js-yaml": "^4.1.0"
   },
   "devDependencies": {
   "@types/express": "^5.0.3",
@@ -37,7 +38,8 @@
     "rimraf": "^6.0.1",
     "glob": "^11.0.3",
     "superagent": "^10.2.3",
-    "lru-cache": "^11.2.1"
+    "lru-cache": "^11.2.1",
+    "@redocly/cli": "^2.0.0"
   },
   "optionalDependencies": {
     "lru-cache": "^9.1.2"
