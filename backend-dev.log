@@ -1,0 +1,19 @@
+
+> petshelter-backend@0.0.1 dev
+> ts-node-dev --respawn --transpile-only src/index.ts
+
+[INFO] 15:02:49 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.2)
+Error: unable to determine transport target for "pino-pretty"
+    at fixTarget (/Users/pheoniximac/FreeCodeCamp/build-consume-and-codument-a-rest-api/PetShelterRegistrySystem/backend/node_modules/pino/lib/transport.js:160:13)
+    at transport (/Users/pheoniximac/FreeCodeCamp/build-consume-and-codument-a-rest-api/PetShelterRegistrySystem/backend/node_modules/pino/lib/transport.js:130:22)
+    at normalizeArgs (/Users/pheoniximac/FreeCodeCamp/build-consume-and-codument-a-rest-api/PetShelterRegistrySystem/backend/node_modules/pino/lib/tools.js:358:16)
+    at pino (/Users/pheoniximac/FreeCodeCamp/build-consume-and-codument-a-rest-api/PetShelterRegistrySystem/backend/node_modules/pino/pino.js:91:28)
+    at Object.<anonymous> (/Users/pheoniximac/FreeCodeCamp/build-consume-and-codument-a-rest-api/PetShelterRegistrySystem/backend/src/index.ts:22:9)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1706:14)
+    at Module._compile (/Users/pheoniximac/FreeCodeCamp/build-consume-and-codument-a-rest-api/PetShelterRegistrySystem/backend/node_modules/source-map-support/source-map-support.js:521:25)
+    at Module.m._compile (/private/var/folders/wz/qxxjt6tx1j1g1pwn4fwqdys00000gn/T/ts-node-dev-hook-7390238941190717.js:69:33)
+    at node:internal/modules/cjs/loader:1839:10
+    at require.extensions..jsx.require.extensions..js (/private/var/folders/wz/qxxjt6tx1j1g1pwn4fwqdys00000gn/T/ts-node-dev-hook-7390238941190717.js:114:20)
+[ERROR] 15:02:50 Error: unable to determine transport target for "pino-pretty"
+[INFO] 15:04:01 Restarting: /Users/pheoniximac/FreeCodeCamp/build-consume-and-codument-a-rest-api/PetShelterRegistrySystem/backend/src/index.ts has been modified
+{"level":30,"time":1759089842583,"pid":3845,"hostname":"Pheonix-iMac.local","port":4000,"msg":"Server listening"}
