@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import tailwindcss from 'tailwindcss/vite'
 
 // Load ESM-only plugins using dynamic import inside an async config factory.
 import path from 'path';
@@ -8,6 +9,7 @@ export default defineConfig(async () => {
 
   return {
     plugins: [reactPlugin()],
+    tailwindcss,
     resolve: {
       alias: {
         '@/': path.resolve(new URL('.', import.meta.url).pathname, 'src') + '/',
