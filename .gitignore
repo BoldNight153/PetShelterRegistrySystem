@@ -1,1 +1,36 @@
+### Local DBs
 backend/prisma/dev.db
+
+### Node modules
+/node_modules/
+/frontend/node_modules/
+/test-frontend/node_modules/
+
+### Logs
+*.log
+
+### macOS
+.DS_Store
+
+### Env
+.env
+.env.local
+.env.*.local
+
+### Build / cache
+/dist
+/build
+/.parcel-cache
+
+### Editor
+.vscode/
+.idea/
+
+### Lockfiles (if you intend to keep them, remove these lines)
+# package-lock.json
+# pnpm-lock.yaml
+# yarn.lock
+
+### Misc
+*.sqlite
+*.db

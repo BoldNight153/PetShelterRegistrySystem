@@ -205,12 +205,58 @@ a:focus-visible {
   inset-block: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 1px !important;
-  background-color: var(--sidebar-border) !important;
+  width: 2px !important; /* shadcn uses a 2px visual rail */
+  background-color: transparent !important; /* default: invisible */
+  transition: background-color 160ms linear, transform 160ms linear, opacity 160ms linear;
+  opacity: 1;
+  pointer-events: none; /* ensure hit area is the button, not the rail */
 }
 
-/* Ensure hover doesn't add extra backgrounds or shadows */
-[data-slot="sidebar-rail"]:hover {
-  background: transparent !important;
-  box-shadow: none !important;
+/* hover: exactly use the theme token the example relies on */
+[data-slot="sidebar-rail"]:hover::after {
+  background-color: var(--color-sidebar-border) !important;
+}
+
+/* active/focus: slightly stronger feedback like the reference */
+[data-slot="sidebar-rail"]:active::after,
+[data-slot="sidebar-rail"]:focus::after,
+[data-slot="sidebar-rail"]:focus-visible::after {
+  background-color: color-mix(in oklab, var(--color-sidebar-border) 85%, black 15%) !important;
+  transform: translateX(-50%) scaleX(1.0);
+}
+
+/* End of sidebar-rail tweaks */
+
+/* Keep only minimal protections against stray pseudo-elements while letting
+   the shadcn sidebar styles (borders, shadows, separators) render normally. */
+[data-slot="sidebar-gap"]::after {
+  /* If a gap pseudo-element exists and is visibly leaking, hide it. */
+  display: none !important;
+  content: none !important;
+}
+
+/* Small visual tuning to match shadcn sidebar-07 more closely */
+
+/* Icon sizing used in the example (size-4 => 1rem) */
+[data-slot="sidebar"] svg.size-4,
+[data-slot="sidebar"] svg[size="4"] {
+  width: 1rem !important;
+  height: 1rem !important;
+}
+
+/* Group labels are slightly muted in the example */
+[data-slot="sidebar-group-label"] {
+  color: color-mix(in oklab, var(--color-sidebar-foreground) 70%, transparent 30%);
+}
+
+/* Subtle focus ring for sidebar menu buttons (keeps it soft like the ref) */
+[data-slot="sidebar-menu-button"]:focus-visible {
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-sidebar-ring) 8%, transparent 92%);
+  outline: none;
+}
+
+/* Ensure separators use the sidebar border token */
+[data-slot="sidebar-separator"],
+.bg-sidebar-border {
+  background-color: var(--color-sidebar-border) !important;
 }

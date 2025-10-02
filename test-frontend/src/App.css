@@ -1,8 +1,11 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  /* Allow the app to fill the viewport width instead of capping at 1280px */
+  width: 100%;
+  max-width: none;
+  margin: 0; /* don't center with auto - fill the viewport */
+  padding: 2rem; /* keep comfortable padding */
+  box-sizing: border-box;
+  text-align: left; /* content pages are typically left-aligned */
 }
 
 .logo {
