@@ -224,28 +224,3 @@ a:focus-visible {
   content: none !important;
 }
 
-/* Small visual tuning to match shadcn sidebar-07 more closely */
-
-/* Icon sizing used in the example (size-4 => 1rem) */
-[data-slot="sidebar"] svg.size-4,
-[data-slot="sidebar"] svg[size="4"] {
-  width: 1rem !important;
-  height: 1rem !important;
-}
-
-/* Group labels are slightly muted in the example */
-[data-slot="sidebar-group-label"] {
-  color: color-mix(in oklab, var(--color-sidebar-foreground) 70%, transparent 30%);
-}
-
-/* Subtle focus ring for sidebar menu buttons (keeps it soft like the ref) */
-[data-slot="sidebar-menu-button"]:focus-visible {
-  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-sidebar-ring) 8%, transparent 92%);
-  outline: none;
-}
-
-/* Ensure separators use the sidebar border token */
-[data-slot="sidebar-separator"],
-.bg-sidebar-border {
-  background-color: var(--color-sidebar-border) !important;
-}
