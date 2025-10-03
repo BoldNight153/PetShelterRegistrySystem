@@ -290,11 +290,18 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
-  // match shadcn/ui sidebar-07 rail: hidden on small, visible sm:flex, visual line via ::after
-  "hover:after:bg-sidebar-border absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex",
+        // Rail: hidden on small, visible on sm+, subtle default line with gentle hover
+        "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear sm:flex",
+        "group-data-[side=left]:-right-4 group-data-[side=right]:left-0",
+        // Pseudo line
+        "after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2",
+  // Default muted line and slightly brighter hover/focus
+  "after:bg-sidebar-border/35 hover:after:bg-sidebar-border/75 focus-visible:after:bg-sidebar-border/75",
+        // Keyboard focus ring on the rail hit area
+        "outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring/50",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
         "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
-        "hover:group-data-[collapsible=offcanvas]:bg-sidebar group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full",
+        "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full",
         "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
         "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
         className

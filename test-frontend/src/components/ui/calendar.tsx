@@ -36,8 +36,9 @@ function Calendar({
       )}
       captionLayout={captionLayout}
       formatters={{
-              "bg-background group/calendar p-3 [--cell-size:--spacing(8)] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent",
-          date.toLocaleString("default", { month: "short" }),
+        // Customize the month caption (e.g., "Jan", "Feb")
+        formatCaption: (month) =>
+          month.toLocaleString("default", { month: "short" }),
         ...formatters,
       }}
       classNames={{
