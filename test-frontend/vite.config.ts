@@ -11,4 +11,15 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    include: ["redoc"],
+  },
+  server: {
+    proxy: {
+      "/api-docs": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+    },
+  },
 })
