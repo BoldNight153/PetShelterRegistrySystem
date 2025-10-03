@@ -200,29 +200,18 @@ a:focus-visible {
 }
 
 [data-slot="sidebar-rail"]::after {
+  /* Provide the pseudo-element so Tailwind's after: utilities can style it.
+     Keep sizing and positioning, but don't set background here so the
+     Tailwind utility (hover:after:bg-sidebar-border) controls the color. */
   content: "";
   position: absolute;
   inset-block: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 2px !important; /* shadcn uses a 2px visual rail */
-  background-color: transparent !important; /* default: invisible */
+  width: 2px; /* visual rail width */
   transition: background-color 160ms linear, transform 160ms linear, opacity 160ms linear;
   opacity: 1;
   pointer-events: none; /* ensure hit area is the button, not the rail */
-}
-
-/* hover: exactly use the theme token the example relies on */
-[data-slot="sidebar-rail"]:hover::after {
-  background-color: var(--color-sidebar-border) !important;
-}
-
-/* active/focus: slightly stronger feedback like the reference */
-[data-slot="sidebar-rail"]:active::after,
-[data-slot="sidebar-rail"]:focus::after,
-[data-slot="sidebar-rail"]:focus-visible::after {
-  background-color: color-mix(in oklab, var(--color-sidebar-border) 85%, black 15%) !important;
-  transform: translateX(-50%) scaleX(1.0);
 }
 
 /* End of sidebar-rail tweaks */
