@@ -1,3 +1,4 @@
+import * as React from "react"
 import {
   BadgeCheck,
   Bell,
@@ -27,6 +28,30 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+
+// Local ThemeToggle: if you have a dedicated ThemeToggle component elsewhere,
+// we should import it instead. For now we provide a small inline toggle to
+// prevent runtime errors and allow switching document theme class.
+function ThemeToggle() {
+  const [isDark, setIsDark] = React.useState(
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+  )
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return
+    document.documentElement.classList.toggle("dark", isDark)
+  }, [isDark])
+
+  return (
+    <button
+      onClick={() => setIsDark((v) => !v)}
+      className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm"
+      aria-pressed={isDark}
+    >
+      {isDark ? "Dark" : "Light"}
+    </button>
+  )
+}
 
 export function NavUser({
   user,
@@ -103,6 +128,11 @@ export function NavUser({
             <DropdownMenuItem>
               <LogOut />
               Log out
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem>
+              <ThemeToggle />
+              Theme
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
