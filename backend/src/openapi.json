@@ -1,0 +1,228 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Pet Shelter Registry API",
+    "version": "0.0.0",
+    "description": "A complete API for registering shelters, locations, pets, owners and medical events.",
+    "termsOfService": "https://github.com/BoldNight153/PetShelterRegistrySystem/blob/main/TERMS.md",
+    "contact": { "name": "BoldNight153", "url": "https://github.com/BoldNight153" },
+    "license": { "name": "MIT", "url": "https://opensource.org/licenses/MIT" }
+  },
+  "servers": [
+    { "url": "http://localhost:{port}", "description": "Local development server", "variables": { "port": { "default": "4000" } } }
+  ],
+  "components": {
+    "schemas": {
+      "Sex": { "type": "string", "enum": ["MALE", "FEMALE", "UNKNOWN"] },
+      "PetStatus": { "type": "string", "enum": ["AVAILABLE", "ADOPTED", "TRANSFERRED", "DECEASED"] },
+      "OwnerRole": { "type": "string", "enum": ["OWNER", "CONTACT", "STAFF"] },
+
+      "Shelter": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "address": { "type": "object", "nullable": true },
+          "phone": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "capacity": { "type": "integer", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "name", "createdAt", "updatedAt"]
+      },
+
+      "Location": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "shelterId": { "type": "string" },
+          "code": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "capacity": { "type": "integer", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "shelterId", "code", "createdAt"]
+      },
+
+      "Pet": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "species": { "type": "string" },
+          "breed": { "type": "string", "nullable": true },
+          "sex": { "$ref": "#/components/schemas/Sex" },
+          "dob": { "type": "string", "format": "date", "nullable": true },
+          "microchip": { "type": "string", "nullable": true },
+          "color": { "type": "string", "nullable": true },
+          "weightKg": { "type": "number", "nullable": true },
+          "sterilized": { "type": "boolean" },
+          "status": { "$ref": "#/components/schemas/PetStatus" },
+          "isAlive": { "type": "boolean" },
+          "deceasedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "intakeAt": { "type": "string", "format": "date-time", "nullable": true },
+          "shelterId": { "type": "string", "nullable": true },
+          "locationId": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "name", "species", "sterilized", "status", "isAlive", "createdAt", "updatedAt"]
+      },
+
+      "Owner": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "firstName": { "type": "string" },
+          "lastName": { "type": "string" },
+          "email": { "type": "string", "nullable": true },
+          "phone": { "type": "string", "nullable": true },
+          "type": { "$ref": "#/components/schemas/OwnerRole", "nullable": true },
+          "address": { "type": "object", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "firstName", "lastName", "createdAt", "updatedAt"]
+      },
+
+      "MedicalRecord": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "petId": { "type": "string" },
+          "eventType": { "type": "string" },
+          "notes": { "type": "string", "nullable": true },
+          "occurredAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "petId", "eventType", "occurredAt", "createdAt"]
+      },
+
+      "Event": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "occurredAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "type", "occurredAt", "createdAt"]
+      },
+
+      "PetOwner": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "petId": { "type": "string" },
+          "ownerId": { "type": "string" },
+          "role": { "$ref": "#/components/schemas/OwnerRole" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "petId", "ownerId", "role", "createdAt"]
+      }
+    },
+    "responses": {
+      "NotFound": { "description": "Resource not found", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" } } } } } },
+      "BadRequest": { "description": "Bad request", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "object" } } } } } }
+    }
+  },
+  "paths": {
+    "/pets": {
+      "get": {
+        "summary": "List pets",
+        "description": "Returns a list of pets (paginated top 100).",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Pet" } } } } }
+      },
+      "post": {
+        "summary": "Create a pet",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "species": { "type": "string" }, "breed": { "type": "string" }, "sex": { "$ref": "#/components/schemas/Sex" }, "dob": { "type": "string", "format": "date" }, "microchip": { "type": "string" }, "shelterId": { "type": "string" }, "locationId": { "type": "string" } }, "required": ["name","species"] } } } },
+        "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+
+    "/pets/{id}": {
+      "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Pet id" } ],
+      "get": { "summary": "Get pet by id", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } }, "404": { "$ref": "#/components/responses/NotFound" } } },
+      "put": { "summary": "Update pet", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } }, "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" } } },
+      "delete": { "summary": "Delete pet", "responses": { "204": { "description": "No Content" }, "404": { "$ref": "#/components/responses/NotFound" } } }
+    },
+
+    "/shelters": {
+      "get": { "summary": "List shelters", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Shelter" } } } } } },
+      "post": { "summary": "Create shelter", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Shelter" } } } }, "responses": { "201": { "description": "Created" }, "400": { "$ref": "#/components/responses/BadRequest" } } }
+    },
+
+    "/shelters/{id}": {
+      "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Shelter id" } ],
+      "get": { "summary": "Get shelter", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Shelter" } } } }, "404": { "$ref": "#/components/responses/NotFound" } } },
+      "put": { "summary": "Update shelter", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Shelter" } } } }, "responses": { "200": { "description": "OK" }, "400": { "$ref": "#/components/responses/BadRequest" } } },
+      "delete": { "summary": "Delete shelter", "responses": { "204": { "description": "No Content" }, "404": { "$ref": "#/components/responses/NotFound" } } }
+    },
+
+    "/locations": {
+      "get": { "summary": "List locations", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Location" } } } } } },
+      "post": { "summary": "Create location", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Location" } } } }, "responses": { "201": { "description": "Created" }, "400": { "$ref": "#/components/responses/BadRequest" } } }
+    },
+
+    "/locations/{id}": {
+      "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Location id" } ],
+      "get": { "summary": "Get location", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Location" } } } }, "404": { "$ref": "#/components/responses/NotFound" } } },
+      "put": { "summary": "Update location", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Location" } } } }, "responses": { "200": { "description": "OK" }, "400": { "$ref": "#/components/responses/BadRequest" } } },
+      "delete": { "summary": "Delete location", "responses": { "204": { "description": "No Content" }, "404": { "$ref": "#/components/responses/NotFound" } } }
+    },
+
+    "/owners": {
+      "get": { "summary": "List owners", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Owner" } } } } } },
+      "post": { "summary": "Create owner", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Owner" } } } }, "responses": { "201": { "description": "Created" }, "400": { "$ref": "#/components/responses/BadRequest" } } }
+    },
+
+    "/owners/{id}": {
+      "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Owner id" } ],
+      "get": { "summary": "Get owner", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Owner" } } } }, "404": { "$ref": "#/components/responses/NotFound" } } },
+      "put": { "summary": "Update owner", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Owner" } } } }, "responses": { "200": { "description": "OK" }, "400": { "$ref": "#/components/responses/BadRequest" } } },
+      "delete": { "summary": "Delete owner", "responses": { "204": { "description": "No Content" }, "404": { "$ref": "#/components/responses/NotFound" } } }
+    },
+
+    "/medical": {
+      "get": { "summary": "List medical records", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MedicalRecord" } } } } } },
+      "post": { "summary": "Create medical record", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MedicalRecord" } } } }, "responses": { "201": { "description": "Created" }, "400": { "$ref": "#/components/responses/BadRequest" } } }
+    },
+
+    "/medical/{id}": {
+      "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Medical record id" } ],
+      "get": { "summary": "Get medical record", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MedicalRecord" } } } }, "404": { "$ref": "#/components/responses/NotFound" } } },
+      "put": { "summary": "Update medical record", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MedicalRecord" } } } }, "responses": { "200": { "description": "OK" }, "400": { "$ref": "#/components/responses/BadRequest" } } },
+      "delete": { "summary": "Delete medical record", "responses": { "204": { "description": "No Content" }, "404": { "$ref": "#/components/responses/NotFound" } } }
+    },
+
+    "/events": {
+      "get": { "summary": "List events", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } } } } } },
+      "post": { "summary": "Create event", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Event" } } } }, "responses": { "201": { "description": "Created" }, "400": { "$ref": "#/components/responses/BadRequest" } } }
+    },
+
+    "/events/{id}": {
+      "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Event id" } ],
+      "get": { "summary": "Get event", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Event" } } } }, "404": { "$ref": "#/components/responses/NotFound" } } },
+      "put": { "summary": "Update event", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Event" } } } }, "responses": { "200": { "description": "OK" }, "400": { "$ref": "#/components/responses/BadRequest" } } },
+      "delete": { "summary": "Delete event", "responses": { "204": { "description": "No Content" }, "404": { "$ref": "#/components/responses/NotFound" } } }
+    },
+
+    "/pet-owners": {
+      "get": { "summary": "List pet-owner links", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PetOwner" } } } } } },
+      "post": { "summary": "Create pet-owner link", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PetOwner" } } } }, "responses": { "201": { "description": "Created" }, "400": { "$ref": "#/components/responses/BadRequest" } } }
+    },
+
+    "/pet-owners/{id}": {
+      "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "PetOwner id" } ],
+      "get": { "summary": "Get pet-owner link", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PetOwner" } } } }, "404": { "$ref": "#/components/responses/NotFound" } } },
+      "delete": { "summary": "Delete pet-owner link", "responses": { "204": { "description": "No Content" }, "404": { "$ref": "#/components/responses/NotFound" } } }
+    }
+
+  }
+}

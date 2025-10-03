@@ -19,6 +19,8 @@ const PetCreate = z.object({
   location: LocationInput.optional()
 });
 
+const PetUpdate = PetCreate.partial();
+
 router.get('/', async (req, res) => {
   const pets = await prisma.pet.findMany({ take: 100 });
   res.json(pets);
@@ -48,6 +50,54 @@ router.post('/', async (req, res) => {
   const pet = await prisma.pet.create({ data: petData });
 
   res.status(201).json(pet);
+});
+
+router.get('/:id', async (req, res) => {
+  const id = req.params.id;
+  const pet = await prisma.pet.findUnique({ where: { id } });
+  if (!pet) return res.status(404).json({ error: 'not found' });
+  res.json(pet);
+});
+
+router.put('/:id', async (req, res) => {
+  const id = req.params.id;
+  const parsed = PetUpdate.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+
+  const data = parsed.data;
+  const updateData: any = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.species !== undefined) updateData.species = data.species;
+  if (data.breed !== undefined) updateData.breed = data.breed;
+  if (data.sex !== undefined) updateData.sex = data.sex;
+  if (data.dob !== undefined) updateData.dob = data.dob ? new Date(data.dob) : null;
+  if (data.microchip !== undefined) updateData.microchip = data.microchip;
+  if (data.shelterId !== undefined) updateData.shelterId = data.shelterId;
+  if (data.locationId !== undefined) updateData.locationId = data.locationId;
+  if (data.location !== undefined) {
+    // create a nested location if provided
+    updateData.location = { create: { code: data.location.code, description: data.location.description, shelterId: data.location.shelterId } };
+  }
+
+  try {
+    const updated = await prisma.pet.update({ where: { id }, data: updateData });
+    res.json(updated);
+  } catch (err: any) {
+    // Prisma throws when record not found
+    if (err.code === 'P2025') return res.status(404).json({ error: 'not found' });
+    throw err;
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  const id = req.params.id;
+  try {
+    await prisma.pet.delete({ where: { id } });
+    res.status(204).end();
+  } catch (err: any) {
+    if (err.code === 'P2025') return res.status(404).json({ error: 'not found' });
+    throw err;
+  }
 });
 
 export default router;

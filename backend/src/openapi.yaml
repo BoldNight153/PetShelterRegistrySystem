@@ -1,0 +1,828 @@
+openapi: 3.1.0
+info:
+  title: Pet Shelter Registry API
+  version: 0.0.0
+  description: >-
+    A complete API for registering shelters, locations, pets, owners and
+    medical events. This OpenAPI document is exhaustive and contains
+    request/response schemas, examples, and detailed field descriptions.
+  termsOfService: "https://github.com/BoldNight153/PetShelterRegistrySystem/blob/main/TERMS.md"
+  contact:
+    name: BoldNight153
+    url: "https://github.com/BoldNight153"
+  license:
+    name: MIT
+    url: "https://opensource.org/licenses/MIT"
+servers:
+  - url: "http://localhost:{port}"
+    description: Local development server
+    variables:
+      port:
+        default: "4000"
+security: []
+components:
+  schemas:
+    Sex:
+      type: string
+      enum: [MALE, FEMALE, UNKNOWN]
+    PetStatus:
+      type: string
+      enum: [AVAILABLE, ADOPTED, TRANSFERRED, DECEASED]
+    OwnerRole:
+      type: string
+      enum: [OWNER, CONTACT, STAFF]
+
+    Shelter:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        address:
+          type:
+            - object
+            - "null"
+        phone:
+          type:
+            - string
+            - "null"
+        email:
+          type:
+            - string
+            - "null"
+        capacity:
+          type:
+            - integer
+            - "null"
+        notes:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, createdAt, updatedAt]
+      example:
+        id: "3decf807-6b07-4267-8054-2d456e77aaa1"
+        name: "Central Shelter"
+        address:
+          city: "Metropolis"
+        phone: "555-1234"
+        createdAt: "2025-09-28T13:20:58.893Z"
+        updatedAt: "2025-09-28T13:20:58.893Z"
+
+    Location:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        shelterId:
+          type: string
+        code:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        capacity:
+          type:
+            - integer
+            - "null"
+        notes:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, shelterId, code, createdAt]
+      example:
+        id: "47a149b0-c0aa-4eb1-be99-32c9541d0679"
+        shelterId: "3decf807-6b07-4267-8054-2d456e77aaa1"
+        code: "A-1"
+        description: "Front row cages"
+        createdAt: "2025-09-28T13:20:58.899Z"
+
+    Pet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        species:
+          type: string
+        breed:
+          type:
+            - string
+            - "null"
+        sex:
+          $ref: "#/components/schemas/Sex"
+        dob:
+          type:
+            - string
+            - "null"
+          format: date
+        microchip:
+          type:
+            - string
+            - "null"
+        color:
+          type:
+            - string
+            - "null"
+        weightKg:
+          type:
+            - number
+            - "null"
+        sterilized:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/PetStatus"
+        isAlive:
+          type: boolean
+        deceasedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        notes:
+          type:
+            - string
+            - "null"
+        intakeAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        shelterId:
+          type:
+            - string
+            - "null"
+        locationId:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, species, sterilized, status, isAlive, createdAt, updatedAt]
+      example:
+        id: "031b7d02-14dc-4542-a9eb-9f23be036e14"
+        name: "Milo"
+        species: "Dog"
+        breed: "Beagle"
+        sex: "MALE"
+        sterilized: false
+        status: "AVAILABLE"
+        isAlive: true
+        intakeAt: "2025-09-28T13:20:58.907Z"
+        shelterId: "3decf807-6b07-4267-8054-2d456e77aaa1"
+        locationId: "47a149b0-c0aa-4eb1-be99-32c9541d0679"
+        createdAt: "2025-09-28T13:20:58.909Z"
+        updatedAt: "2025-09-28T13:20:58.909Z"
+
+    Owner:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type:
+            - string
+            - "null"
+        phone:
+          type:
+            - string
+            - "null"
+        type:
+          oneOf:
+            - $ref: "#/components/schemas/OwnerRole"
+            - type: "null"
+        address:
+          type:
+            - object
+            - "null"
+        notes:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, firstName, lastName, createdAt, updatedAt]
+      example:
+        id: "36fa99ff-0a81-4451-af12-2d2d5c881a01"
+        firstName: "Alice"
+        lastName: "Smith"
+        email: "alice@example.com"
+        createdAt: "2025-09-28T13:20:58.903Z"
+        updatedAt: "2025-09-28T13:20:58.903Z"
+
+    MedicalRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        petId:
+          type: string
+        eventType:
+          type: string
+        notes:
+          type:
+            - string
+            - "null"
+        occurredAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, petId, eventType, occurredAt, createdAt]
+      example:
+        id: "mrec-1"
+        petId: "031b7d02-14dc-4542-a9eb-9f23be036e14"
+        eventType: "VACCINATION"
+        notes: "Rabies"
+        occurredAt: "2025-09-15T09:00:00Z"
+        createdAt: "2025-09-15T09:00:00Z"
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        occurredAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, type, occurredAt, createdAt]
+      example:
+        id: "evt-1"
+        type: "CHECKIN"
+        description: "Pet intake"
+        occurredAt: "2025-09-28T13:20:58Z"
+        createdAt: "2025-09-28T13:20:58Z"
+
+    PetOwner:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        petId:
+          type: string
+        ownerId:
+          type: string
+        role:
+          $ref: "#/components/schemas/OwnerRole"
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, petId, ownerId, role, createdAt]
+      example:
+        id: "po-1"
+        petId: "031b7d02-14dc-4542-a9eb-9f23be036e14"
+        ownerId: "36fa99ff-0a81-4451-af12-2d2d5c881a01"
+        role: "OWNER"
+        createdAt: "2025-09-28T13:20:58Z"
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+          example:
+            error: "not found"
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+          example:
+            error:
+              message: "validation failed"
+
+paths:
+  /pets:
+    get:
+      summary: List pets
+      description: Returns a list of pets (paginated top 100).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+              example: []
+    post:
+      summary: Create a pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                species:
+                  type: string
+                breed:
+                  type: string
+                sex:
+                  $ref: "#/components/schemas/Sex"
+                dob:
+                  type: string
+                  format: date
+                microchip:
+                  type: string
+                shelterId:
+                  type: string
+                locationId:
+                  type: string
+              required: [name, species]
+            example:
+              name: "Milo"
+              species: "Dog"
+              breed: "Beagle"
+              sex: "MALE"
+              shelterId: "3decf807-6b07-4267-8054-2d456e77aaa1"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /pets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Pet id
+    get:
+      summary: Get pet by id
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      summary: Update pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Pet"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Delete pet
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /shelters:
+    get:
+      summary: List shelters
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Shelter"
+    post:
+      summary: Create shelter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Shelter"
+      responses:
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /shelters/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Shelter id
+    get:
+      summary: Get shelter
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shelter"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      summary: Update shelter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Shelter"
+      responses:
+        "200":
+          description: OK
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      summary: Delete shelter
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /locations:
+    get:
+      summary: List locations
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Location"
+    post:
+      summary: Create location
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Location"
+      responses:
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /locations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Location id
+    get:
+      summary: Get location
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Location"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      summary: Update location
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Location"
+      responses:
+        "200":
+          description: OK
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      summary: Delete location
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /owners:
+    get:
+      summary: List owners
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Owner"
+    post:
+      summary: Create owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Owner"
+      responses:
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /owners/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Owner id
+    get:
+      summary: Get owner
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Owner"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      summary: Update owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Owner"
+      responses:
+        "200":
+          description: OK
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      summary: Delete owner
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /medical:
+    get:
+      summary: List medical records
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MedicalRecord"
+    post:
+      summary: Create medical record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MedicalRecord"
+      responses:
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /medical/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Medical record id
+    get:
+      summary: Get medical record
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MedicalRecord"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      summary: Update medical record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MedicalRecord"
+      responses:
+        "200":
+          description: OK
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      summary: Delete medical record
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /events:
+    get:
+      summary: List events
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Event"
+    post:
+      summary: Create event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Event"
+      responses:
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /events/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Event id
+    get:
+      summary: Get event
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      summary: Update event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Event"
+      responses:
+        "200":
+          description: OK
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      summary: Delete event
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pet-owners:
+    get:
+      summary: List pet-owner links
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PetOwner"
+    post:
+      summary: Create pet-owner link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PetOwner"
+      responses:
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /pet-owners/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: PetOwner id
+    get:
+      summary: Get pet-owner link
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PetOwner"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Delete pet-owner link
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"

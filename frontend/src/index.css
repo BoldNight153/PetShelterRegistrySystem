@@ -2,4 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
-body { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
+/* Theme tokens used by the shadcn sidebar block */
+:root {
+	--background: #f8fafc; /* gray-50 */
+	--foreground: #0f172a; /* slate-900 */
+
+	--sidebar: #ffffff;
+	--sidebar-foreground: #0f172a;
+	--sidebar-border: #e6eef6;
+	--sidebar-accent: #eef2ff; /* soft accent */
+	--sidebar-accent-foreground: #3730a3; /* indigo-700 */
+	--sidebar-ring: rgba(99,102,241,0.12);
+}
+
+html, body, #root {
+	height: 100%;
+}
+
+body {
+	font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+	background-color: var(--background);
+	color: var(--foreground);
+}
+
+/* Small helpers the shadcn components expect */
+.h-svh { height: 100svh; }
+.min-h-svh { min-height: 100svh; }
+.size-4 { width: 1rem; height: 1rem; }
+.size-5 { width: 1.25rem; height: 1.25rem; }
+.size-7 { width: 1.75rem; height: 1.75rem; }
+.size-8 { width: 2rem; height: 2rem; }
+
+/* Simple mapping of semantic names to CSS variables so Tailwind classes
+	 like bg-sidebar or text-sidebar-foreground work via tailwind.config */
+.bg-sidebar { background-color: var(--sidebar); }
+.text-sidebar-foreground { color: var(--sidebar-foreground); }
+.border-sidebar-border { border-color: var(--sidebar-border); }
+.bg-sidebar-accent { background-color: var(--sidebar-accent); }
+.text-sidebar-accent-foreground { color: var(--sidebar-accent-foreground); }
+
+/* Basic focus ring token used by components */
+.ring-sidebar-ring { box-shadow: 0 0 0 3px var(--sidebar-ring); }
+
+/* keep a simple utility for visually-hidden content */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
