@@ -96,6 +96,10 @@ const data = {
       icon: BookOpen,
       items: [
         {
+          title: "REST API Docs",
+          url: "/docs",
+        },
+        {
           title: "Introduction",
           url: "#",
         },
