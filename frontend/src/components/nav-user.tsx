@@ -1,5 +1,4 @@
-"use client"
-
+// React import unnecessary with the new JSX transform
 import {
   BadgeCheck,
   Bell,
@@ -29,8 +28,9 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 
-export function NavUser({
+export default function NavUser({
   user,
 }: {
   user: {
@@ -61,8 +61,8 @@ export function NavUser({
               <ChevronsUpDown className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+            <DropdownMenuContent
+            className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 rounded-lg"
             side={isMobile ? "bottom" : "right"}
             align="end"
             sideOffset={4}
@@ -105,6 +105,11 @@ export function NavUser({
             <DropdownMenuItem>
               <LogOut />
               Log out
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem>
+              <ThemeToggle />
+              Theme
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

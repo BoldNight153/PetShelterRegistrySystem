@@ -1,30 +1,25 @@
-import { defineConfig } from 'vite';
-import tailwindcss from 'tailwindcss/vite'
+import path from "path"
+import tailwindcss from "@tailwindcss/vite"
+import react from "@vitejs/plugin-react"
+import { defineConfig } from "vite"
 
-// Load ESM-only plugins using dynamic import inside an async config factory.
-import path from 'path';
-
-export default defineConfig(async () => {
-  const reactPlugin = (await import('@vitejs/plugin-react')).default;
-
-  return {
-    plugins: [reactPlugin()],
-    tailwindcss,
-    resolve: {
-      alias: {
-        '@/': path.resolve(new URL('.', import.meta.url).pathname, 'src') + '/',
-      }
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
     },
-    server: {
-      proxy: {
-        // Proxy /api/* to the backend and remove the /api prefix so
-        // requests like /api/pets -> http://localhost:4000/pets
-        '/api': {
-          target: 'http://localhost:4000',
-          changeOrigin: true,
-          rewrite: (path: string) => path.replace(/^\/api/, '')
-        }
-      }
-    }
-  };
-});
+  },
+  optimizeDeps: {
+    include: ["redoc"],
+  },
+  server: {
+    proxy: {
+      "/api-docs": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+    },
+  },
+})
