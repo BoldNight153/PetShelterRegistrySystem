@@ -22,6 +22,8 @@ dist
 build
 frontend/dist
 frontend/.vite
+**/.vite/
+test-frontend/
 /.parcel-cache
 
 ### Editor
