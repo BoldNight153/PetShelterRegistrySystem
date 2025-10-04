@@ -6,10 +6,7 @@ import RootLayout from './layout/root-layout'
 import DashboardPage from './dashboard/page'
 import RedocPage from './docs/redoc-page'
 
-// Enable dark theme by default so the shadcn block displays in its dark mode
-if (typeof document !== 'undefined') {
-  document.documentElement.classList.add('dark')
-}
+// Do not force a default theme here; theme is initialized in index.html before React mounts.
 
 const router = createBrowserRouter([
   {

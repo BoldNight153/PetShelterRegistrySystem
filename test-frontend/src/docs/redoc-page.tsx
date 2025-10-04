@@ -7,27 +7,62 @@ const RedocStandaloneLazy = React.lazy(() =>
 export default function RedocPage() {
   // Detect light/dark mode and update on changes
   type ThemeMode = 'light' | 'dark'
-  const getMode = (): ThemeMode =>
-    typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
-      ? 'dark'
-      : (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light')
+  const getMode = (): ThemeMode => {
+    if (typeof document === 'undefined') return 'light'
+    const html = document.documentElement
+    const dataTheme = (html.getAttribute('data-theme') || '').toLowerCase()
+    if (dataTheme === 'dark') return 'dark'
+    if (dataTheme === 'light') return 'light'
+    try {
+      const stored = (localStorage.getItem('theme') || '').toLowerCase()
+      if (stored === 'dark') return 'dark'
+      if (stored === 'light') return 'light'
+    } catch {}
+    if (html.classList.contains('dark')) return 'dark'
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'
+    return 'light'
+  }
 
   const [mode, setMode] = useState<ThemeMode>(getMode())
 
   useEffect(() => {
     const html = document.documentElement
-    const mo = new MutationObserver(() => setMode(getMode()))
-    mo.observe(html, { attributes: true, attributeFilter: ['class'] })
-    const mql = window.matchMedia('(prefers-color-scheme: dark)')
     const onChange = () => setMode(getMode())
+    const mo = new MutationObserver(onChange)
+  mo.observe(html, { attributes: true, attributeFilter: ['class', 'data-theme'] })
+    const mql = window.matchMedia('(prefers-color-scheme: dark)')
     if (mql.addEventListener) mql.addEventListener('change', onChange)
     else mql.addListener(onChange)
+    // Listen for explicit app theme signals
+    const onThemeEvent = (e: Event) => {
+      const anyE = e as any
+      const next = anyE?.detail?.mode
+      if (next === 'dark' || next === 'light') setMode(next)
+      else onChange()
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key) return
+      const k = e.key.toLowerCase()
+      if (k.includes('theme')) {
+        const v = (e.newValue || '').toLowerCase()
+        if (v === 'dark' || v === 'light') setMode(v as 'dark' | 'light')
+        else onChange()
+      }
+    }
+    window.addEventListener('themechange', onThemeEvent)
+    window.addEventListener('storage', onStorage)
+    // Mark body while ReDoc is mounted so we can style portal-based dropdowns
+    const prev = document.body.getAttribute('data-redoc')
+    document.body.setAttribute('data-redoc', '1')
     return () => {
       mo.disconnect()
       if (mql.removeEventListener) mql.removeEventListener('change', onChange)
       else mql.removeListener(onChange)
+      window.removeEventListener('themechange', onThemeEvent)
+      window.removeEventListener('storage', onStorage)
+      // Restore previous value
+      if (prev === null) document.body.removeAttribute('data-redoc')
+      else document.body.setAttribute('data-redoc', prev)
     }
   }, [])
 
@@ -35,14 +70,14 @@ export default function RedocPage() {
   const buildRedocTheme = (m: ThemeMode) => {
     const light = {
       colors: {
-        primary: { main: '#4F46E5' }, // indigo-600
-        text: { primary: '#0B1220', secondary: '#374151' },
+        primary: { main: '#4F46E5' }, // keep indigo accent per app
+        text: { primary: '#09090B', secondary: '#3F3F46' }, // zinc-950 / zinc-700
         http: {
           get: '#10B981', post: '#3B82F6', put: '#F59E0B', delete: '#EF4444',
           options: '#06B6D4', patch: '#8B5CF6', basic: '#64748B', link: '#0EA5E9', head: '#A3A3A3',
         },
-        border: { dark: '#E5E7EB' }, // gray-200
-        background: { default: '#FFFFFF', alternative: '#F7FAFC' },
+        border: { dark: '#E4E4E7' }, // zinc-200
+        background: { default: '#FFFFFF', alternative: '#FAFAFA' }, // zinc-50
       },
       typography: {
         fontSize: '15px',
@@ -61,31 +96,31 @@ export default function RedocPage() {
         },
       },
       sidebar: {
-        backgroundColor: '#F8FAFC',
-        textColor: '#0F172A',
+        backgroundColor: '#FAFAFA', // zinc-50
+        textColor: '#09090B', // zinc-950
         width: '280px',
       },
       rightPanel: {
         backgroundColor: '#FFFFFF',
-        textColor: '#0B1220',
+        textColor: '#09090B',
         width: '40%',
       },
       codeBlock: {
-        backgroundColor: '#F3F4F6', // gray-100
-        textColor: '#111827',
+        backgroundColor: '#F4F4F5', // zinc-100
+        textColor: '#18181B', // zinc-900
         tokens: {},
       },
     }
     const dark = {
       colors: {
         primary: { main: '#93C5FD' }, // blue-300 for clarity on dark
-        text: { primary: '#E6E8EB', secondary: '#B3BDC9' },
+        text: { primary: '#E4E4E7', secondary: '#A1A1AA' }, // zinc-200 / zinc-400
         http: {
           get: '#34D399', post: '#60A5FA', put: '#FBBF24', delete: '#F87171',
           options: '#22D3EE', patch: '#A78BFA', basic: '#94A3B8', link: '#38BDF8', head: '#A3A3A3',
         },
-        border: { dark: '#273244' }, // slightly lighter than pure
-        background: { default: '#0B1220', alternative: '#0F172A' },
+        border: { dark: '#27272A' }, // zinc-800
+        background: { default: '#09090B', alternative: '#18181B' }, // zinc-950 / zinc-900
       },
       typography: {
         fontSize: '15px',
@@ -104,18 +139,18 @@ export default function RedocPage() {
         },
       },
       sidebar: {
-        backgroundColor: '#0F172A',
-        textColor: '#E6E8EB',
+        backgroundColor: '#18181B', // zinc-900
+        textColor: '#E4E4E7',
         width: '280px',
       },
       rightPanel: {
-        backgroundColor: '#0B1220',
-        textColor: '#E6E8EB',
+        backgroundColor: '#09090B', // zinc-950
+        textColor: '#E4E4E7',
         width: '40%',
       },
       codeBlock: {
-        backgroundColor: '#0A1020',
-        textColor: '#E6E8EB',
+        backgroundColor: '#18181B', // zinc-900
+        textColor: '#E4E4E7',
         tokens: {},
       },
     }
@@ -123,52 +158,32 @@ export default function RedocPage() {
   }
 
   const redocTheme = useMemo(() => buildRedocTheme(mode), [mode])
-  const [spec, setSpec] = useState<any | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    const url = '/api-docs/latest/openapi.json'
-    setLoading(true)
-    fetch(url)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`)
-        const json = await res.json()
-        if (!cancelled) setSpec(json)
-      })
-      .catch((err) => {
-        if (!cancelled) setError(String(err))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
   // IMPORTANT: All hooks must run before any early returns to keep hook order stable
   const dynamicCss = useMemo(() => {
     const isDark = mode === 'dark'
     const heading = isDark ? '#E6E8EB' : '#0B1220'
     const headingAccent = isDark ? '#93C5FD' : '#4F46E5'
-    const contentBg = isDark ? '#0B1220' : '#FFFFFF'
-    const contentText = isDark ? '#E6E8EB' : '#0B1220'
-    const mutedText = isDark ? '#B3BDC9' : '#374151'
+  const contentBg = isDark ? '#09090B' : '#FFFFFF' // zinc-950
+  const contentText = isDark ? '#E4E4E7' : '#09090B'
+  const mutedText = isDark ? '#A1A1AA' : '#3F3F46' // zinc-400 / zinc-700
     const link = isDark ? '#93C5FD' : '#4F46E5'
     const linkHover = isDark ? '#60A5FA' : '#4338CA'
     const rightBg = contentBg
     const rightText = contentText
-    const rightBorder = isDark ? '#334155' : '#E5E7EB'
-    const codeBg = isDark ? '#0A1020' : '#F3F4F6'
-    const codeText = isDark ? '#E6E8EB' : '#111827'
-    const rowAltBg = isDark ? '#0E1525' : '#FAFAFA'
-    const tableHeaderBg = isDark ? '#111827' : '#F3F4F6'
-    const tableHeaderText = isDark ? '#E6E8EB' : '#111827'
-    const tabBorder = rightBorder
-    const selectedTab = isDark ? '#93C5FD' : '#4F46E5'
-    const inlineCodeBg = isDark ? '#111827' : '#F3F4F6'
-    const inlineCodeText = isDark ? '#E5E7EB' : '#111827'
+  const rightBorder = isDark ? '#27272A' : '#E4E4E7' // zinc-800 / zinc-200
+  const codeBg = isDark ? '#18181B' : '#F4F4F5' // zinc-900 / zinc-100
+  const codeText = isDark ? '#E4E4E7' : '#18181B' // zinc-200 / zinc-900
+  const rowAltBg = isDark ? '#18181B' : '#FAFAFA' // zinc-900 / zinc-50
+  const tableHeaderBg = isDark ? '#18181B' : '#F4F4F5'
+  const tableHeaderText = isDark ? '#E4E4E7' : '#18181B'
+  const tabBorder = rightBorder
+  const selectedTab = isDark ? '#93C5FD' : '#4F46E5'
+  const inlineCodeBg = isDark ? '#27272A' : '#F4F4F5' // zinc-800 / zinc-100
+  const inlineCodeText = isDark ? '#E4E4E7' : '#18181B'
+  const controlBg = isDark ? '#18181B' : '#FFFFFF' // input/select control background
+  const menuBg = isDark ? '#18181B' : '#FFFFFF'
+  const menuHoverBg = isDark ? '#27272A' : '#F4F4F5'
+  const menuSelectedBg = isDark ? '#27272A' : '#EEF2FF'
     const blockquoteBorder = rightBorder
     const focusRing = isDark ? '#60A5FA' : '#2563EB'
     const requiredColor = isDark ? '#F87171' : '#EF4444'
@@ -252,8 +267,78 @@ export default function RedocPage() {
       .rd-theme hr { border-color: ${rightBorder} !important; }
 
       /* Forms (search/params) */
-      .rd-theme input, .rd-theme select, .rd-theme textarea { background: ${isDark ? '#0F172A' : '#FFFFFF'} !important; color: ${contentText} !important; border: 1px solid ${rightBorder} !important; }
+  .rd-theme input, .rd-theme select, .rd-theme textarea { background: ${controlBg} !important; color: ${contentText} !important; border: 1px solid ${rightBorder} !important; }
       .rd-theme input::placeholder, .rd-theme textarea::placeholder { color: ${mutedText} !important; opacity: 1 !important; }
+
+  /* Dropdowns/Comboboxes (React-Select and ARIA role fallbacks) */
+  .rd-theme .react-select__control,
+  .rd-theme .Select__control,
+  .rd-theme [class*='select__control'] { background: ${controlBg} !important; color: ${contentText} !important; border: 1px solid ${rightBorder} !important; }
+  .rd-theme .react-select__placeholder,
+  .rd-theme .react-select__single-value,
+  .rd-theme [class*='select__placeholder'],
+  .rd-theme [class*='select__single-value'] { color: ${mutedText} !important; }
+  .rd-theme .react-select__menu,
+  .rd-theme .Select__menu,
+  .rd-theme [class*='select__menu'],
+  .rd-theme [role='listbox'] { background: ${menuBg} !important; color: ${contentText} !important; border: 1px solid ${rightBorder} !important; }
+  .rd-theme .react-select__option,
+  .rd-theme .Select__option,
+  .rd-theme [class*='select__option'],
+  .rd-theme [role='option'] { background: ${menuBg} !important; color: ${contentText} !important; }
+  .rd-theme .react-select__option--is-focused,
+  .rd-theme .Select__option--is-focused,
+  .rd-theme [class*='select__option--is-focused'],
+  .rd-theme [role='option'][data-focus='true'] { background: ${menuHoverBg} !important; }
+  .rd-theme .react-select__option--is-selected,
+  .rd-theme .Select__option--is-selected,
+  .rd-theme [class*='select__option--is-selected'],
+  .rd-theme [role='option'][aria-selected='true'] { background: ${menuSelectedBg} !important; color: ${contentText} !important; }
+
+  /* Global dropdown styles for portal-rendered menus (scoped via body[data-redoc]) */
+  body[data-redoc] [role='listbox'],
+  body[data-redoc] .react-select__menu,
+  body[data-redoc] .react-select__menu-list,
+  body[data-redoc] [class*='select__menu'],
+  body[data-redoc] [class*='select__menu-list'] { background: ${menuBg} !important; color: ${contentText} !important; border: 1px solid ${rightBorder} !important; border-radius: 8px; z-index: 10000 !important; max-height: 60vh; overflow: auto; }
+  body[data-redoc] [role='option'],
+  body[data-redoc] .react-select__option,
+  body[data-redoc] [class*='select__option'] { background: ${menuBg} !important; color: ${contentText} !important; }
+  body[data-redoc] [role='option'] *,
+  body[data-redoc] .react-select__option *,
+  body[data-redoc] [class*='select__option'] * { color: ${contentText} !important; }
+  body[data-redoc] [role='option'][data-focus='true'],
+  body[data-redoc] .react-select__option--is-focused,
+  body[data-redoc] [class*='select__option--is-focused'] { background: ${menuHoverBg} !important; }
+  body[data-redoc] [role='option'][aria-selected='true'],
+  body[data-redoc] .react-select__option--is-selected,
+  body[data-redoc] [class*='select__option--is-selected'] { background: ${menuSelectedBg} !important; color: ${contentText} !important; }
+  body[data-redoc] [role='option'][aria-selected='true'] *,
+  body[data-redoc] .react-select__option--is-selected *,
+  body[data-redoc] [class*='select__option--is-selected'] * { color: ${contentText} !important; }
+
+  /* Removed broad generic menu/popover selectors to avoid affecting app sidebar */
+
+  /* Styled-components containers used by ReDoc for server picker (class names may vary) */
+  .rd-theme .sc-ecJghI,
+  .rd-theme .sc-iyBeIh { background: ${menuBg} !important; color: ${contentText} !important; border: 1px solid ${rightBorder} !important; border-radius: 8px; }
+  .rd-theme .sc-ecJghI *,
+  .rd-theme .sc-iyBeIh * { color: ${contentText} !important; }
+  .rd-theme .sc-ecJghI p,
+  .rd-theme .sc-iyBeIh p { color: ${mutedText} !important; }
+  body[data-redoc] .sc-ecJghI,
+  body[data-redoc] .sc-iyBeIh { background: ${menuBg} !important; color: ${contentText} !important; border: 1px solid ${rightBorder} !important; border-radius: 8px; }
+  body[data-redoc] .sc-ecJghI *,
+  body[data-redoc] .sc-iyBeIh * { color: ${contentText} !important; }
+  body[data-redoc] .sc-ecJghI p,
+  body[data-redoc] .sc-iyBeIh p { color: ${mutedText} !important; }
+  body[data-redoc] [role='combobox'],
+  body[data-redoc] [aria-haspopup='listbox'] { background: ${controlBg} !important; color: ${contentText} !important; border: 1px solid ${rightBorder} !important; }
+
+  /* Server URL control rendered as a generic button */
+  .rd-theme [role='button'] > div { background: ${controlBg} !important; color: ${contentText} !important; border: 1px solid ${rightBorder} !important; border-radius: 8px; padding: 8px 10px; }
+  .rd-theme [role='button'] > div * { color: ${contentText} !important; }
+  /* Removed body-scoped generic role=button styling to prevent bleeding */
 
       /* Badges and hints */
       .rd-theme .required { color: ${requiredColor} !important; font-weight: 600 !important; }
@@ -268,23 +353,14 @@ export default function RedocPage() {
     `
   }, [mode])
 
-  if (loading) return <div className="p-4 text-sm opacity-70">Loading API docs…</div>
-  if (error)
-    return (
-      <div className="p-4">
-        <h2 className="text-lg font-semibold">API docs are unavailable</h2>
-        <p className="mt-2">Could not load API specification from the backend.</p>
-        <pre className="mt-3 text-red-500 whitespace-pre-wrap text-xs">{error}</pre>
-        <p className="mt-3 text-sm opacity-80">Make sure the backend is running on port 4000 and reload this page.</p>
-      </div>
-    )
+  // Let ReDoc fetch the spec via specUrl so its search index initializes properly
 
   return (
     <div className="rd-theme w-full min-h-[80vh] rounded-xl">
       <Suspense fallback={<div className="p-4 text-sm opacity-70">Loading viewer…</div>}>
         <RedocStandaloneLazy
           key={`redoc-${mode}`}
-          spec={spec}
+          specUrl="/api-docs/latest/openapi.json"
           options={{
             theme: redocTheme as any,
             scrollYOffset: 0,
