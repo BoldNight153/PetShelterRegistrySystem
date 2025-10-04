@@ -5,6 +5,8 @@ import { defineConfig } from "vite"
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Ensure Vite caches live under node_modules/.vite inside frontend, not in project root or legacy folders
+  cacheDir: path.resolve(__dirname, "node_modules/.vite"),
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -17,11 +19,6 @@ export default defineConfig({
   server: {
     proxy: {
       "/api-docs": {
-        target: "http://localhost:4000",
-        changeOrigin: true,
-      },
-      // Simple health check proxy so the frontend can query `/health` without CORS in dev
-      "/health": {
         target: "http://localhost:4000",
         changeOrigin: true,
       },
