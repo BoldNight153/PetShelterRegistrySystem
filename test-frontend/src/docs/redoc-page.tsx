@@ -51,8 +51,8 @@ export default function RedocPage() {
           'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
         code: {
           fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-          fontSize: '13px',
+            'JetBrains Mono, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", ui-monospace, monospace',
+          fontSize: '13.5px',
         },
         links: {
           color: '#4F46E5',
@@ -94,8 +94,8 @@ export default function RedocPage() {
           'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
         code: {
           fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-          fontSize: '13px',
+            'JetBrains Mono, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", ui-monospace, monospace',
+          fontSize: '13.5px',
         },
         links: {
           color: '#93C5FD',
@@ -173,6 +173,13 @@ export default function RedocPage() {
     const focusRing = isDark ? '#60A5FA' : '#2563EB'
     const requiredColor = isDark ? '#F87171' : '#EF4444'
     const deprecatedColor = isDark ? '#FBBF24' : '#D97706'
+  /* Syntax token colors */
+  const tokComment = isDark ? '#7A869A' : '#6B7280'
+  const tokKeyword = isDark ? '#93C5FD' : '#1D4ED8'
+  const tokString = isDark ? '#34D399' : '#047857'
+  const tokNumber = isDark ? '#FBBF24' : '#B45309'
+  const tokFunction = isDark ? '#A78BFA' : '#6D28D9'
+  const tokPunctuation = isDark ? '#9AA4B2' : '#6B7280'
     return `
       /* Base content colors */
       .rd-theme { background: ${contentBg} !important; color: ${contentText} !important; }
@@ -201,9 +208,21 @@ export default function RedocPage() {
       .rd-theme aside pre,
       .rd-theme aside code { background: ${codeBg} !important; color: ${codeText} !important; border-color: ${rightBorder} !important; }
 
-      /* Main content code blocks */
-      .rd-theme pre, .rd-theme pre code { background: ${codeBg} !important; color: ${codeText} !important; border: 1px solid ${rightBorder} !important; }
-      .rd-theme :not(pre) > code { background: ${inlineCodeBg} !important; color: ${inlineCodeText} !important; border: 1px solid ${rightBorder} !important; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
+  /* Main content code blocks */
+  .rd-theme pre { background: ${codeBg} !important; color: ${codeText} !important; border: 1px solid ${rightBorder} !important; border-radius: 8px; padding: 12px 14px; overflow: auto; }
+  .rd-theme pre code { background: transparent !important; color: ${codeText} !important; font-variant-ligatures: none; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; line-height: 1.55; font-size: 13.5px; tab-size: 2; }
+  .rd-theme :not(pre) > code { background: ${inlineCodeBg} !important; color: ${inlineCodeText} !important; border: 1px solid ${rightBorder} !important; padding: 0.125rem 0.25rem; border-radius: 0.25rem; font-variant-ligatures: none; -webkit-font-smoothing: antialiased; }
+  /* Syntax highlighting (Prism-based) */
+  .rd-theme pre code .token.comment,
+  .rd-theme pre code .token.prolog,
+  .rd-theme pre code .token.doctype,
+  .rd-theme pre code .token.cdata { color: ${tokComment} !important; }
+  .rd-theme pre code .token.punctuation { color: ${tokPunctuation} !important; }
+  .rd-theme pre code .token.boolean,
+  .rd-theme pre code .token.number { color: ${tokNumber} !important; }
+  .rd-theme pre code .token.keyword { color: ${tokKeyword} !important; }
+  .rd-theme pre code .token.function { color: ${tokFunction} !important; }
+  .rd-theme pre code .token.string { color: ${tokString} !important; }
 
       /* Tables in content */
       .rd-theme table, .rd-theme th, .rd-theme td { border-color: ${rightBorder} !important; }
