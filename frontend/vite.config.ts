@@ -20,6 +20,11 @@ export default defineConfig({
         target: "http://localhost:4000",
         changeOrigin: true,
       },
+      // Simple health check proxy so the frontend can query `/health` without CORS in dev
+      "/health": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
     },
   },
 })
