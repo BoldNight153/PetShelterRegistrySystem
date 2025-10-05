@@ -97,7 +97,7 @@ See `CHANGELOG.md`. Recent:
 
 We use a repo-level GitHub Project to plan and track work with milestones, issues, and PRs.
 
-- Project board: See the Projects tab in this repo (a link will appear once created).
+- Project board: https://github.com/users/BoldNight153/projects/3
 - Milestones: One per release (vX.Y.Z). Issues and PRs should be assigned to a milestone.
 - Labels: See `.github/labels.yml` for the scheme: `type:*`, `area:*`, `priority:*`, `docs`, `triage`.
 - Issues: Use templates (bug, feature, task). All issues auto-assign to the repo owner.
