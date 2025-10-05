@@ -1,5 +1,10 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import { PrismaClient } from '@prisma/client';
+import argon2 from 'argon2';
+import jwt, { SignOptions, Secret } from 'jsonwebtoken';
+
+const prisma = new PrismaClient();
 
 const router = Router();
 
@@ -36,13 +41,113 @@ function validateCsrf(req: any, res: any, next: any) {
   return next();
 }
 
-// Placeholders for Phase 1 endpoints
-router.post('/register', validateCsrf, (req, res) => {
-  return res.status(501).json({ error: 'Not implemented' });
+// Helpers
+function cookieBase() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+  };
+}
+
+function signAccessToken(userId: string) {
+  const secret: Secret = (process.env.JWT_ACCESS_SECRET || 'dev-access-secret') as Secret;
+  const payload = { sub: userId, typ: 'access' } as Record<string, any>;
+  const opts: SignOptions = { expiresIn: (process.env.ACCESS_TTL as any) || '15m' };
+  return jwt.sign(payload, secret, opts);
+}
+
+async function createRefreshToken(userId: string, userAgent?: string, ipAddress?: string) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const days = Number(process.env.REFRESH_DAYS || 30);
+  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  await prisma.refreshToken.create({
+    data: {
+      userId,
+      token,
+      expiresAt,
+      userAgent,
+      ipAddress,
+    },
+  });
+  return token;
+}
+
+function setAuthCookies(res: any, accessToken: string, refreshToken: string) {
+  // access cookie: short TTL via JWT exp; no maxAge needed
+  res.cookie('accessToken', accessToken, cookieBase());
+  // refresh cookie: explicitly set maxAge
+  const days = Number(process.env.REFRESH_DAYS || 30);
+  res.cookie('refreshToken', refreshToken, { ...cookieBase(), maxAge: days * 24 * 60 * 60 * 1000 });
+}
+
+async function logAudit(userId: string | null, action: string, req: any, metadata?: any) {
+  try {
+    await prisma.auditLog.create({
+      data: {
+        userId: userId || undefined,
+        action,
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent') || undefined,
+        metadata,
+      },
+    });
+  } catch (_) {
+    // best-effort; do not block auth flow on audit failure
+  }
+}
+
+// Register: email/password
+router.post('/register', validateCsrf, async (req, res) => {
+  try {
+    const { email, password, name } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return res.status(409).json({ error: 'account already exists' });
+    const hashOpts = process.env.NODE_ENV === 'test'
+      ? { type: argon2.argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
+      : { type: argon2.argon2id };
+    const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
+    const user = await prisma.user.create({ data: { email, passwordHash, name: name || null } });
+    await logAudit(user.id, 'auth.register', req);
+    const access = signAccessToken(user.id);
+    const refresh = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+    setAuthCookies(res, access, refresh);
+    return res.status(201).json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
+  } catch (err: any) {
+    // Log detailed error but avoid leaking internals in production
+    try {
+      (req as any).log?.error({ err }, 'register failed');
+    } catch (_) {
+      // no-op
+    }
+    const message = process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error';
+    return res.status(500).json({ error: message });
+  }
 });
 
-router.post('/login', validateCsrf, (req, res) => {
-  return res.status(501).json({ error: 'Not implemented' });
+// Login: email/password
+router.post('/login', validateCsrf, async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !user.passwordHash) return res.status(401).json({ error: 'invalid credentials' });
+    const ok = await argon2.verify(user.passwordHash, password);
+    if (!ok) return res.status(401).json({ error: 'invalid credentials' });
+    await logAudit(user.id, 'auth.login', req);
+    const access = signAccessToken(user.id);
+    const refresh = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+    setAuthCookies(res, access, refresh);
+    return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
+  } catch (err: any) {
+    try {
+      (req as any).log?.error({ err }, 'login failed');
+    } catch (_) {}
+    const message = process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error';
+    return res.status(500).json({ error: message });
+  }
 });
 
 router.post('/logout', validateCsrf, (req, res) => {
