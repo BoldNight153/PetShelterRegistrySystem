@@ -1,4 +1,4 @@
-# PetShelterRegistrySystem
+# PetShelterRegistrySystem [![Releases](https://img.shields.io/github/v/release/BoldNight153/PetShelterRegistrySystem?sort=semver&label=Releases&logo=github)](https://github.com/BoldNight153/PetShelterRegistrySystem/releases)
 
 A full-stack TypeScript project for a Pet Shelter Registry system featuring:
 
@@ -99,6 +99,28 @@ Latest releases (2025-10-05):
 - Root: v0.3.0 — https://github.com/BoldNight153/PetShelterRegistrySystem/releases/tag/v0.3.0
 - Backend: backend-v0.1.0 — https://github.com/BoldNight153/PetShelterRegistrySystem/releases/tag/backend-v0.1.0
 - Frontend: frontend-v1.0.0 — https://github.com/BoldNight153/PetShelterRegistrySystem/releases/tag/frontend-v1.0.0
+
+## Release automation (Release Please)
+
+This repo uses Release Please in monorepo mode with three packages:
+
+- Root (".") — simple strategy, aggregated `CHANGELOG.md` at the repo root, tag format `vX.Y.Z`.
+- Backend — Node strategy, per-package `backend/CHANGELOG.md`, tag format `backend-vX.Y.Z`.
+- Frontend — Node strategy, per-package `frontend/CHANGELOG.md`, tag format `frontend-vX.Y.Z`.
+
+How it works:
+- A workflow runs on pushes to `main` (or via manual dispatch) and opens a release PR from `release-please--branches--main`.
+- The PR is labeled `autorelease: pending`. Merging it creates Git tags and GitHub Releases for the affected packages.
+- Versions are tracked in `.release-please-manifest.json`.
+
+Notes and tips:
+- Root release PR titles use `chore: release ${version}` (component omitted on purpose for readability).
+- If you change Release Please config after a release PR is already open, close that PR and delete the branch `release-please--branches--main`, then re-run the workflow to regenerate with the new settings.
+- To manually re-run the workflow:
+
+```bash
+gh workflow run release-please
+```
 
 ## Project management
 
