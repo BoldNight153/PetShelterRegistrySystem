@@ -1,6 +1,6 @@
 {
   "name": "petshelter-backend",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
@@ -9,7 +9,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts",
-  "test": "jest --config jest.config.cjs --runInBand --detectOpenHandles",
+    "test": "jest --config jest.config.cjs --runInBand --detectOpenHandles",
     "lint": "eslint . --ext .ts"
   },
   "dependencies": {
@@ -24,9 +24,9 @@
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
-  "@types/express": "^5.0.3",
-  "@types/jest": "^30.0.0",
-  "@types/node": "^24.5.2",
+    "@types/express": "^5.0.3",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.5.2",
     "eslint": "^9.0.0",
     "jest": "^30.0.0",
     "prisma": "^6.16.2",
