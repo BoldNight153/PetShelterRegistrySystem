@@ -2,124 +2,48 @@ name: CI
 
 on:
   push:
-    branches: [ main, chore/ci-tests ]
+    branches:
+      - main
+      - feat/**
+      - chore/**
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
-  test:
+  backend-sqlite:
+    name: Backend (SQLite)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install backend deps
-        working-directory: backend
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
         run: npm ci
+
       - name: Generate Prisma client
-        working-directory: backend
         run: npx prisma generate
-      - name: Run migrations
-        working-directory: backend
+
+      - name: Run migrations (SQLite)
         env:
           DATABASE_URL: "file:./dev.db"
         run: npx prisma migrate dev --name ci --skip-seed
-      - name: Run seed
-        working-directory: backend
+
+      - name: Seed database
         run: npx ts-node --transpile-only prisma/seed.ts
+
       - name: Run tests
-        working-directory: backend
-        run: NODE_ENV=test npm test -- --runInBand
-name: CI (full Postgres)
-
-on:
-  push:
-    branches: [ main, chore/ci-tests ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  test-postgres:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:14
-        ports:
-          - 5432:5432
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: pets_test
-        options: >-
-          --health-cmd="pg_isready -U postgres -d pets_test"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=5
-
-    name: CI (full Postgres)
-
-    on:
-      push:
-        branches: [ main, chore/ci-tests ]
-
-    jobs:
-      test-postgres:
-        runs-on: ubuntu-latest
-        services:
-          postgres:
-            image: postgres:14
-            ports:
-              - 5432:5432
-            env:
-              POSTGRES_USER: postgres
-              POSTGRES_PASSWORD: postgres
-              POSTGRES_DB: pets_test
-            options: >-
-              --health-cmd="pg_isready -U postgres -d pets_test"
-              --health-interval=5s
-              --health-timeout=5s
-              --health-retries=5
-
-        steps:
-          - name: Checkout
-            uses: actions/checkout@v4
-
-          - name: Use Node.js 18
-            uses: actions/setup-node@v4
-            with:
-              node-version: '18'
-
-          - name: Wait for Postgres
-            run: |
-              for i in {1..10}; do
-                pg_isready -h localhost -p 5432 -U postgres -d pets_test && break || sleep 1;
-              done
-            env:
-              PGPASSWORD: postgres
-
-          - name: Install dependencies
-            run: npm ci
-
-          - name: Generate Prisma client
-            run: npx prisma generate
-
-          - name: Set DATABASE_URL for Postgres service
-            run: echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pets_test" >> $GITHUB_ENV
-
-          - name: Run migrations
-            run: npx prisma migrate deploy
-
-          - name: Seed database
-            run: npm run seed
-
-          - name: Start server in background
-            run: nohup node server.js &
-
-          - name: Run tests
-            run: npm test --silent
-
-          - name: Run smoke check
-            run: ./scripts/smoke.sh http://localhost:3000
+          NODE_ENV: test
+        run: npm test -- --runInBand
 
