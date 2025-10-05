@@ -2,6 +2,21 @@
 
 All notable changes to this repository will be documented in this file.
 
+## [0.3.0](https://github.com/BoldNight153/PetShelterRegistrySystem/compare/v0.2.1...v0.3.0) (2025-10-05)
+
+
+### Features
+
+* **frontend/header:** Mobile-only Team Switcher in sticky header ([e12d4ab](https://github.com/BoldNight153/PetShelterRegistrySystem/commit/e12d4ab8ced5dd547e321397f94e8319f5328166))
+* **frontend/header:** show Team Switcher in sticky header on mobile only; docs: add root README and changelog entry ([6c78bc8](https://github.com/BoldNight153/PetShelterRegistrySystem/commit/6c78bc85bc206490b5f17b5b14cf6bb3708b2da1))
+
+
+### Documentation
+
+* bump versions to v0.2.1, add PR/release notes artifacts ([8fa645c](https://github.com/BoldNight153/PetShelterRegistrySystem/commit/8fa645c7dbeb1613dafbe5fc48ab279a7974f3a9))
+* **changelog:** add v0.2.0 release section ([fe5174c](https://github.com/BoldNight153/PetShelterRegistrySystem/commit/fe5174c03cb26e35c54574de6668cd48325cbfeb))
+* **readme:** link repo Project board ([a89dcd4](https://github.com/BoldNight153/PetShelterRegistrySystem/commit/a89dcd47eea49a512dbb9d194a6b88e58c3142c5))
+
 ## [0.2.1] - 2025-10-04
 - feat(frontend/header): Show Team Switcher in the sticky header on small/mobile viewports and hide it on larger screens (md and up)
 - docs: Add comprehensive root README with project overview, local dev setup, theming, API docs, and troubleshooting
