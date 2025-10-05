@@ -82,6 +82,13 @@ function setAuthCookies(res: any, accessToken: string, refreshToken: string) {
   res.cookie('refreshToken', refreshToken, { ...cookieBase(), maxAge: days * 24 * 60 * 60 * 1000 });
 }
 
+function clearAuthCookies(res: any) {
+  // Clear both cookies by setting Max-Age=0
+  const base = cookieBase();
+  res.cookie('accessToken', '', { ...base, maxAge: 0 });
+  res.cookie('refreshToken', '', { ...base, maxAge: 0 });
+}
+
 async function logAudit(userId: string | null, action: string, req: any, metadata?: any) {
   try {
     await prisma.auditLog.create({
@@ -150,12 +157,49 @@ router.post('/login', validateCsrf, async (req, res) => {
   }
 });
 
-router.post('/logout', validateCsrf, (req, res) => {
-  return res.status(204).send();
+router.post('/logout', validateCsrf, async (req, res) => {
+  try {
+    const rt = req.cookies?.refreshToken as string | undefined;
+    if (rt) {
+      try {
+        const existing = await prisma.refreshToken.findUnique({ where: { token: rt } });
+        if (existing && !existing.revokedAt) {
+          await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date() } });
+          await logAudit(existing.userId, 'auth.logout', req, { reason: 'user initiated' });
+        }
+      } catch (_) {
+        // ignore revocation errors on logout
+      }
+    }
+    clearAuthCookies(res);
+    return res.status(204).send();
+  } catch (err: any) {
+    try { (req as any).log?.error({ err }, 'logout failed'); } catch (_) {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+  }
 });
 
-router.post('/refresh', validateCsrf, (req, res) => {
-  return res.status(501).json({ error: 'Not implemented' });
+router.post('/refresh', validateCsrf, async (req, res) => {
+  try {
+    const rt = req.cookies?.refreshToken as string | undefined;
+    if (!rt) return res.status(401).json({ error: 'missing refresh token' });
+    const existing = await prisma.refreshToken.findUnique({ where: { token: rt } });
+    if (!existing) return res.status(401).json({ error: 'invalid refresh token' });
+    if (existing.revokedAt) return res.status(401).json({ error: 'refresh token revoked' });
+    if (existing.expiresAt <= new Date()) return res.status(401).json({ error: 'refresh token expired' });
+
+    // rotate
+    const newToken = await createRefreshToken(existing.userId, req.get('user-agent') || undefined, req.ip);
+    await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date(), replacedByToken: newToken } });
+
+    const access = signAccessToken(existing.userId);
+    setAuthCookies(res, access, newToken);
+    await logAudit(existing.userId, 'auth.refresh', req, { rotatedFrom: rt });
+    return res.json({ ok: true });
+  } catch (err: any) {
+    try { (req as any).log?.error({ err }, 'refresh failed'); } catch (_) {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+  }
 });
 
 router.post('/verify-email', validateCsrf, (req, res) => {
