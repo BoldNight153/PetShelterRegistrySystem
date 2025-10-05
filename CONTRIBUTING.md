@@ -27,6 +27,9 @@ We recommend using squash merges so the PR title becomes the final commit messag
 - We use Release Please to open a release PR based on merged commits.
 - The release PR updates `CHANGELOG.md` and tags a version upon merge.
 
+### Force a release
+If no `feat`/`fix` landed but you still want a release (e.g., infra-only changes), label the PR with `release-please:force-release`. This forces Release Please to cut a version even when commit types would normally be ignored.
+
 ## Labels and milestones
 - Apply labels: `type:*`, `area:*`, `priority:*`, `docs`, `triage`.
 - Assign a milestone (e.g., `v0.2.2`).

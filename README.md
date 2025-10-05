@@ -105,7 +105,8 @@ We use a repo-level GitHub Project to plan and track work with milestones, issue
 
 Automation
 - Auto-add issues/PRs to the Project (requires two repo secrets):
-  - `PROJECT_URL` – Your GitHub Project URL
-  - `PROJECTS_TOKEN` – Classic PAT (repo, project:write)
+  - `PROJECT_URL` – Your GitHub Project URL (e.g., https://github.com/users/BoldNight153/projects/3)
+  - `PROJECTS_TOKEN` – Classic PAT with scopes: `repo`, `project` (or fine-grained token with write to this repo and Projects)
+  - Add secrets: Repo → Settings → Secrets and variables → Actions → New repository secret
 - Auto-assign issues/PRs to the repo owner
 - Release Please bot automates version bumps, changelog entries, and tags
