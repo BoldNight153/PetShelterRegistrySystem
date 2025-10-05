@@ -2,6 +2,13 @@
 
 All notable changes to this repository will be documented in this file.
 
+## [0.3.1](https://github.com/BoldNight153/PetShelterRegistrySystem/compare/v0.3.0...v0.3.1) (2025-10-05)
+
+
+### Documentation
+
+* **readme:** add Releases badge and explain Release Please monorepo tagging ([#28](https://github.com/BoldNight153/PetShelterRegistrySystem/issues/28)) ([97ade6d](https://github.com/BoldNight153/PetShelterRegistrySystem/commit/97ade6dcbfbbe5a5722772014ac346e8e7fece88))
+
 ## [0.3.0](https://github.com/BoldNight153/PetShelterRegistrySystem/compare/v0.2.1...v0.3.0) (2025-10-05)
 
 
