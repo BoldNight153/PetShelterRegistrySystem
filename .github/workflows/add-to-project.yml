@@ -2,7 +2,7 @@ name: add-to-project
 
 on:
   issues:
-    types: [opened, reopened]
+    types: [opened, reopened, edited, labeled]
   pull_request:
     types: [opened, reopened, ready_for_review]
 
