@@ -141,6 +141,133 @@ model Pet {
   @@index([species])
 }
 
+// --------------------
+// Auth & RBAC models
+// --------------------
+
+model User {
+  id             String           @id @default(uuid())
+  email          String           @unique
+  emailVerified  DateTime?
+  passwordHash   String?          // nullable for SSO-only users
+  name           String?
+  image          String?
+  accounts       Account[]
+  refreshTokens  RefreshToken[]
+  roles          UserRole[]
+  auditLogs      AuditLog[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model Account {
+  id                 String   @id @default(uuid())
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             String
+  provider           String
+  providerAccountId  String
+  accessToken        String?
+  refreshToken       String?
+  expiresAt          Int?
+  tokenType          String?
+  scope              String?
+  idToken            String?
+  profile            Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model RefreshToken {
+  id              String    @id @default(uuid())
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  token           String    @unique
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  replacedByToken String?
+  userAgent       String?
+  ipAddress       String?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model VerificationToken {
+  id          String   @id @default(uuid())
+  identifier  String   // e.g., email
+  token       String   @unique
+  type        String   // email_verify | password_reset
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([identifier, type])
+  @@index([expiresAt])
+}
+
+model Role {
+  id           String           @id @default(uuid())
+  name         String           @unique
+  rank         Int              @default(0)
+  description  String?
+  users        UserRole[]
+  permissions  RolePermission[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId    String
+  assignedAt DateTime @default(now())
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+model Permission {
+  id           String           @id @default(uuid())
+  name         String           @unique
+  description  String?
+  roles        RolePermission[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+model RolePermission {
+  id            String   @id @default(uuid())
+  role          Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId        String
+  permission    Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  permissionId  String
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId     String?
+  action     String
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, action, createdAt])
+}
+
 // =========================
 // Auth & RBAC (Phase 1)
 // =========================
