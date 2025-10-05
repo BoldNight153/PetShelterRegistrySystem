@@ -2,6 +2,22 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
+  // Seed base roles for RBAC (system_admin > admin > shelter_admin > staff > user)
+  const roles = [
+    { name: 'system_admin', rank: 100, description: 'Full system administrator' },
+    { name: 'admin', rank: 80, description: 'Organization administrator' },
+    { name: 'shelter_admin', rank: 60, description: 'Shelter administrator' },
+    { name: 'staff', rank: 40, description: 'Shelter staff' },
+    { name: 'user', rank: 10, description: 'Regular user' },
+  ];
+  for (const r of roles) {
+    await prisma.role.upsert({
+      where: { name: r.name },
+      update: { rank: r.rank, description: r.description },
+      create: r,
+    });
+  }
+
   // create shelters
   const s1 = await prisma.shelter.upsert({ where: { id: 'central-shelter' }, update: {}, create: { id: 'central-shelter', name: 'Central Shelter', address: { city: 'Metropolis' }, phone: '555-1234' } });
   const s2 = await prisma.shelter.upsert({ where: { id: 'north-shelter' }, update: {}, create: { id: 'north-shelter', name: 'North Shelter', address: { city: 'North Town' }, phone: '555-5678' } });

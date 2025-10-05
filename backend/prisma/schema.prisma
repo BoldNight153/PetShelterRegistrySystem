@@ -140,3 +140,124 @@ model Pet {
   @@index([name])
   @@index([species])
 }
+
+// =========================
+// Auth & RBAC (Phase 1)
+// =========================
+
+model User {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  emailVerified  DateTime?
+  passwordHash   String?   // null for SSO-only accounts
+  name           String?
+  image          String?
+  accounts       Account[]
+  refreshTokens  RefreshToken[]
+  roles          UserRole[]
+  auditLogs      AuditLog[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([email])
+}
+
+model Account {
+  id                 String   @id @default(uuid())
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             String
+  provider           String
+  providerAccountId  String
+  accessToken        String?
+  refreshToken       String?
+  expiresAt          DateTime?
+  scope              String?
+  tokenType          String?
+  profile            Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model RefreshToken {
+  id               String   @id @default(uuid())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String
+  token            String   @unique // opaque random string
+  family           String?  // optional family identifier for rotation policies
+  jti              String?  // JWT ID if embedding
+  revokedAt        DateTime?
+  replacedByToken  String?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum VerificationType {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+}
+
+model VerificationToken {
+  id         String            @id @default(uuid())
+  identifier String            // email or user identifier
+  token      String            @unique
+  type       VerificationType
+  expires    DateTime
+  createdAt  DateTime          @default(now())
+
+  @@index([identifier])
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  rank        Int      // higher rank means higher privileges
+  description String?
+  users       UserRole[]
+  permissions RolePermission[]
+  createdAt   DateTime @default(now())
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  role        Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId      String
+  permission  Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  permissionId String
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId String
+
+  @@id([userId, roleId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId     String?
+  action     String
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}

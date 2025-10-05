@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
@@ -13,6 +14,7 @@ import ownersRouter from './routes/owners';
 import medicalRouter from './routes/medicalRecords';
 import eventsRouter from './routes/events';
 import petOwnersRouter from './routes/petOwners';
+import authRouter from './routes/auth';
 // We'll serve ReDoc (Redocly) via a small HTML page instead of using the
 // now-unmaintained swagger-ui-express package.
 import fs from 'fs';
@@ -58,7 +60,12 @@ if (process.env.NODE_ENV === 'test') {
 const app = express();
 app.use(express.json());
 app.use(helmet());
-app.use(cors());
+// Enable CORS with credentials for frontend dev server
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  credentials: true,
+}));
+app.use(cookieParser(process.env.COOKIE_SECRET || 'dev-cookie-secret'));
 app.use(rateLimit({ windowMs: 60 * 1000, max: 200 }));
 // pino and pino-http have slightly different logger typings across versions;
 // cast to `any` to avoid a TS-only type mismatch while keeping runtime behavior.
@@ -169,6 +176,7 @@ app.use('/owners', ownersRouter);
 app.use('/medical', medicalRouter);
 app.use('/events', eventsRouter);
 app.use('/pet-owners', petOwnersRouter);
+app.use('/auth', authRouter);
 
 const prisma = new PrismaClient();
 const port = process.env.PORT ? Number(process.env.PORT) : 4000;
