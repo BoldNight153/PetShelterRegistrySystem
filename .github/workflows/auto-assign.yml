@@ -1,0 +1,28 @@
+name: auto-assign
+
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign issue
+        if: github.event_name == 'issues'
+        uses: actions-ecosystem/action-add-assignees@v1
+        with:
+          assignees: BoldNight153
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Assign PR
+        if: github.event_name == 'pull_request'
+        uses: actions-ecosystem/action-add-assignees@v1
+        with:
+          assignees: BoldNight153
+          github_token: ${{ secrets.GITHUB_TOKEN }}

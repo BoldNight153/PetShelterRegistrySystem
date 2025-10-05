@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions / Help
+    url: https://github.com/BoldNight153/PetShelterRegistrySystem/discussions
+    about: Ask usage questions or start a discussion.
+default_label: triage
+default_assignees:
+  - BoldNight153

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "component": "root",
+      "changelog-path": "CHANGELOG.md",
+      "pull-request-title-pattern": "chore: release ${version}",
+      "include-component-in-tag": false
+    },
+    "backend": {
+      "release-type": "node",
+      "component": "backend",
+      "changelog-path": "backend/CHANGELOG.md"
+    },
+    "frontend": {
+      "release-type": "node",
+      "component": "frontend",
+      "changelog-path": "frontend/CHANGELOG.md"
+    }
+  }
+}
