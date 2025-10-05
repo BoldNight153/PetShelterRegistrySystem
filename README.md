@@ -92,3 +92,20 @@ Frontend:
 See `CHANGELOG.md`. Recent:
 - 0.2.1 (2025-10-04) — Mobile-only Team Switcher in header; documentation updates
 - 0.2.0 (2025-09-28) — Backend foundation, routes, seeds, CI
+
+## Project management
+
+We use a repo-level GitHub Project to plan and track work with milestones, issues, and PRs.
+
+- Project board: See the Projects tab in this repo (a link will appear once created).
+- Milestones: One per release (vX.Y.Z). Issues and PRs should be assigned to a milestone.
+- Labels: See `.github/labels.yml` for the scheme: `type:*`, `area:*`, `priority:*`, `docs`, `triage`.
+- Issues: Use templates (bug, feature, task). All issues auto-assign to the repo owner.
+- PRs: Use the PR template; link issues (e.g., `Closes #123`) and pick a milestone.
+
+Automation
+- Auto-add issues/PRs to the Project (requires two repo secrets):
+  - `PROJECT_URL` – Your GitHub Project URL
+  - `PROJECTS_TOKEN` – Classic PAT (repo, project:write)
+- Auto-assign issues/PRs to the repo owner
+- Release Please bot automates version bumps, changelog entries, and tags

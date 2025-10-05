@@ -1,0 +1,51 @@
+labels:
+  - name: type:feat
+    color: 0E8A16
+    description: Feature / enhancement
+  - name: type:bug
+    color: D73A4A
+    description: Bug / defect
+  - name: type:chore
+    color: C5DEF5
+    description: Chore / maintenance
+  - name: docs
+    color: 0075CA
+    description: Documentation
+  - name: area:frontend
+    color: 5319E7
+    description: Frontend changes
+  - name: area:backend
+    color: 1D76DB
+    description: Backend changes
+  - name: area:devops
+    color: 0366D6
+    description: DevOps / CI/CD
+  - name: priority:P0
+    color: B60205
+    description: Critical priority
+  - name: priority:P1
+    color: D93F0B
+    description: High priority
+  - name: priority:P2
+    color: FBCA04
+    description: Medium priority
+  - name: triage
+    color: FEF2C0
+    description: Needs review / grooming
+
+  # Release Please / autorelease labels
+  - name: autorelease: pending
+    color: 0E8A16
+    description: Release Please PR awaiting merge
+  - name: autorelease: snapshot
+    color: 5319E7
+    description: Snapshot release PR
+  - name: autorelease: tagged
+    color: 0E8A16
+    description: Release tagged
+  - name: ignore-for-release
+    color: 6A737D
+    description: Exclude from release notes
+  - name: release-please:force-release
+    color: 1D76DB
+    description: Force a release regardless of commit types

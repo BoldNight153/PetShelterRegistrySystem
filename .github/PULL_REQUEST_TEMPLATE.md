@@ -1,46 +1,42 @@
 ## Summary
-Provide a concise overview of the change. Link issues if applicable (e.g., `Fixes #123`).
+Describe what this PR changes and why.
 
-## Why
-Explain the motivation and what problems this PR addresses.
+## Type (Conventional Commit)
+- [ ] feat (minor)
+- [ ] fix (patch)
+- [ ] chore/docs/test/refactor/perf (no version bump; included in notes)
 
-## What changed
-- Key changes, features, or fixes
-- Notable refactors or deprecations
+## Linked
+- Closes #ISSUE_NUMBER
+- Milestone: vX.Y.Z
+- Project: [Repo Project](../../projects)
 
-## How it works
-Describe relevant implementation details, architecture decisions, data flows, and edge cases. Include diagrams or references when helpful.
-
-## Files changed
-List noteworthy files or directories and the purpose of the changes.
-
-## QA checklist
-- [ ] Verified feature works in development
-- [ ] Added/updated unit/integration tests when applicable
-- [ ] Manually tested critical paths
-- [ ] Cross-browser/responsive checks (frontend)
-- [ ] Verified dark/light theme behavior (if applicable)
-
-## Risks and mitigations
-Call out any potential risks, performance implications, or rollout considerations and how they are mitigated.
-
-## Screenshots / Recordings (optional)
-Include UI before/after or demos if helpful.
-
-## Deployment notes (if applicable)
-Include migration steps, environment variable changes, or operational runbooks.
+## Screenshots / Notes
 
 ## Checklist
-- [ ] Code follows repository style and passes lint/typecheck
-- [ ] Tests pass locally
-- [ ] Database changes are reflected in migrations (if any)
-- [ ] Changelog or release notes updated (if applicable)
-- [ ] CI is expected to pass for this branch
+- [ ] Title follows Conventional Commits (e.g., `feat: ...`, `fix: ...`)
+- [ ] Linked to an issue
+- [ ] Labeled appropriately (type, area, priority)
+- [ ] Added/updated docs/tests as needed
+## Description
+
+Please include a summary of the change and which issue is fixed. Please also include relevant motivation and context.
+
+## Type of change
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation update
+
+## Checklist
+- [ ] My code follows the repository style guide and passes linting
+- [ ] I have run the test suite locally and all tests pass
+- [ ] I updated/added tests for my changes when applicable
+- [ ] I updated the Prisma schema and ran `prisma generate` when applicable
+- [ ] I ran database migrations (or included SQL/migration files) when applicable
+- [ ] I updated the changelog or release notes (if applicable)
+- [ ] I confirmed the CI workflow passes for this branch
+- [ ] I added deployment notes or migration instructions if this PR requires them
 
 ## Reviewer notes
-Add any special instructions, manual test steps, or areas you want focused feedback on.
-
----
-
-Tip: For theme/Redoc-focused PRs, consider using the specialized template:
-- .github/PULL_REQUEST_TEMPLATE/frontend-theme-redoc.md
+- Add any notes, manual steps, or special instructions for reviewers here.

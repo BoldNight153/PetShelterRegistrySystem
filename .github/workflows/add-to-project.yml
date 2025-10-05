@@ -1,0 +1,17 @@
+name: add-to-project
+
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add to GitHub Project
+        uses: actions/add-to-project@v0.6.1
+        with:
+          project-url: ${{ secrets.PROJECT_URL }}
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
