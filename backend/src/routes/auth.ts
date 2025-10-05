@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import jwt, { SignOptions, Secret } from 'jsonwebtoken';
 
-const prisma = new PrismaClient();
+const prisma: any = new PrismaClient();
 
 const router = Router();
 
@@ -58,6 +58,10 @@ function signAccessToken(userId: string) {
   return jwt.sign(payload, secret, opts);
 }
 
+function generateToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
 async function createRefreshToken(userId: string, userAgent?: string, ipAddress?: string) {
   const token = crypto.randomBytes(32).toString('hex');
   const days = Number(process.env.REFRESH_DAYS || 30);
@@ -102,6 +106,14 @@ async function logAudit(userId: string | null, action: string, req: any, metadat
     });
   } catch (_) {
     // best-effort; do not block auth flow on audit failure
+  }
+}
+
+async function revokeAllRefreshTokens(userId: string) {
+  try {
+    await prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+  } catch (_) {
+    // ignore
   }
 }
 
@@ -202,16 +214,104 @@ router.post('/refresh', validateCsrf, async (req, res) => {
   }
 });
 
-router.post('/verify-email', validateCsrf, (req, res) => {
-  return res.status(501).json({ error: 'Not implemented' });
+router.post('/request-email-verification', validateCsrf, async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'email is required' });
+    const user = await (prisma as any).user.findUnique({ where: { email } });
+    // Always respond 200 to avoid enumeration
+    if (!user) return res.json({ ok: true });
+    if (user.emailVerified) return res.json({ ok: true });
+    const token = generateToken();
+    const ttlMin = Number(process.env.EMAIL_VERIFICATION_TTL_MIN || 60 * 24); // default 24h
+    const expiresAt = new Date(Date.now() + ttlMin * 60 * 1000);
+    await (prisma as any).verificationToken.create({
+      data: { identifier: email, token, type: 'email_verify', expiresAt },
+    });
+    await logAudit(user.id, 'auth.email_verification.request', req);
+    try { (req as any).log?.info({ email, token }, 'email verification token issued'); } catch (_) {}
+    return res.json({ ok: true });
+  } catch (err: any) {
+    try { (req as any).log?.error({ err }, 'request-email-verification failed'); } catch (_) {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+  }
 });
 
-router.post('/request-password-reset', validateCsrf, (req, res) => {
-  return res.status(501).json({ error: 'Not implemented' });
+router.post('/verify-email', validateCsrf, async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ error: 'token is required' });
+    const vt = await (prisma as any).verificationToken.findUnique({ where: { token } });
+    if (!vt || vt.type !== 'email_verify') return res.status(400).json({ error: 'invalid token' });
+    if (vt.consumedAt) return res.status(400).json({ error: 'token already used' });
+    if (vt.expiresAt <= new Date()) return res.status(400).json({ error: 'token expired' });
+    const user = await (prisma as any).user.findUnique({ where: { email: vt.identifier } });
+    if (!user) return res.status(400).json({ error: 'invalid token' });
+    const updated = await (prisma as any).user.update({ where: { id: user.id }, data: { emailVerified: new Date() } });
+    await (prisma as any).verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
+    await revokeAllRefreshTokens(user.id);
+    await logAudit(user.id, 'auth.email_verification.verified', req);
+    // issue fresh session
+    const access = signAccessToken(user.id);
+    const refresh = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+    setAuthCookies(res, access, refresh);
+    return res.json({ id: updated.id, email: updated.email, emailVerified: updated.emailVerified });
+  } catch (err: any) {
+    try { (req as any).log?.error({ err }, 'verify-email failed'); } catch (_) {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+  }
 });
 
-router.post('/reset-password', validateCsrf, (req, res) => {
-  return res.status(501).json({ error: 'Not implemented' });
+router.post('/request-password-reset', validateCsrf, async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'email is required' });
+  const user = await (prisma as any).user.findUnique({ where: { email } });
+    // Always respond 200 to avoid user enumeration
+    if (!user) return res.json({ ok: true });
+    const token = generateToken();
+    const ttl = Number(process.env.PASSWORD_RESET_TTL_MIN || 60); // minutes
+    const expiresAt = new Date(Date.now() + ttl * 60 * 1000);
+    await (prisma as any).verificationToken.create({
+      data: { identifier: email, token, type: 'password_reset', expiresAt },
+    });
+    await logAudit(user.id, 'auth.password_reset.request', req);
+    // TODO: integrate email provider; for now, log only
+    try { (req as any).log?.info({ email, token }, 'password reset token issued'); } catch (_) {}
+    return res.json({ ok: true });
+  } catch (err: any) {
+    try { (req as any).log?.error({ err }, 'request-password-reset failed'); } catch (_) {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+  }
+});
+
+router.post('/reset-password', validateCsrf, async (req, res) => {
+  try {
+    const { token, password } = req.body || {};
+    if (!token || !password) return res.status(400).json({ error: 'token and password are required' });
+  const vt = await (prisma as any).verificationToken.findUnique({ where: { token } });
+    if (!vt || vt.type !== 'password_reset') return res.status(400).json({ error: 'invalid token' });
+    if (vt.consumedAt) return res.status(400).json({ error: 'token already used' });
+    if (vt.expiresAt <= new Date()) return res.status(400).json({ error: 'token expired' });
+  const user = await (prisma as any).user.findUnique({ where: { email: vt.identifier } });
+    if (!user) return res.status(400).json({ error: 'invalid token' });
+    const hashOpts = process.env.NODE_ENV === 'test'
+      ? { type: argon2.argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
+      : { type: argon2.argon2id };
+    const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
+  await (prisma as any).user.update({ where: { id: user.id }, data: { passwordHash } });
+  await (prisma as any).verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
+    await revokeAllRefreshTokens(user.id);
+    await logAudit(user.id, 'auth.password_reset.reset', req);
+    // issue new session cookies
+    const access = signAccessToken(user.id);
+    const refresh = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+    setAuthCookies(res, access, refresh);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    try { (req as any).log?.error({ err }, 'reset-password failed'); } catch (_) {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+  }
 });
 
 router.get('/me', (req, res) => {

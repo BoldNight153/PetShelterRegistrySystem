@@ -1,0 +1,312 @@
+openapi: 3.1.0
+info:
+  title: Pet Shelter Registry Admin API
+  version: 0.0.0
+  description: >-
+    Administrative endpoints for managing roles, permissions, and user role assignments.
+    This spec is restricted and should be accessible only to system administrators.
+servers:
+  - url: "http://localhost:{port}"
+    description: Local development server
+    variables:
+      port:
+        default: "4000"
+security: []
+components:
+  schemas:
+    Role:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        rank:
+          type: integer
+        description:
+          type:
+            - string
+            - "null"
+      required: [id, name, rank]
+    Permission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+      required: [id, name]
+    UserRole:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        roleId:
+          type: string
+          format: uuid
+      required: [userId, roleId]
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+          example:
+            error:
+              message: "validation failed"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+          example:
+            error: "not found"
+paths:
+  /admin/roles:
+    get:
+      summary: List roles
+      description: Returns all roles in the system, ordered by rank ascending.
+      tags: [Roles]
+      operationId: listRoles
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Role"
+              examples:
+                sample:
+                  value:
+                    - id: "7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c"
+                      name: "system_admin"
+                      rank: 0
+                      description: "Full administrative access"
+                    - id: "a1b2c3d4-5678-4e9f-9123-456789abcdef"
+                      name: "staff"
+                      rank: 50
+                      description: "Staff role with limited write access"
+  /admin/roles/upsert:
+    post:
+      summary: Create or update a role
+      description: Creates a role if it does not exist, otherwise updates rank/description.
+      tags: [Roles]
+      operationId: upsertRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                rank: { type: integer }
+                description: { type: string }
+              required: [name]
+            examples:
+              createSystemAdmin:
+                summary: Create system_admin role
+                value:
+                  name: system_admin
+                  rank: 0
+                  description: Full administrative access
+              updateStaff:
+                summary: Update staff role rank
+                value:
+                  name: staff
+                  rank: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+              examples:
+                created:
+                  value:
+                    id: "7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c"
+                    name: system_admin
+                    rank: 0
+                    description: Full administrative access
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /admin/roles/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Delete a role
+      description: Deletes a role by name. Will return 404 if the role does not exist.
+      tags: [Roles]
+      operationId: deleteRole
+      responses:
+        "204":
+          description: No Content
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /admin/permissions:
+    get:
+      summary: List permissions
+      description: Returns all permissions available in the system.
+      tags: [Permissions]
+      operationId: listPermissions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Permission"
+              examples:
+                sample:
+                  value:
+                    - id: "0f4a1b2c-3d4e-5f60-789a-bcdef0123456"
+                      name: "pets.write"
+                      description: "Create and update pets"
+                    - id: "123e4567-e89b-12d3-a456-426614174000"
+                      name: "shelters.write"
+                      description: "Create and update shelters"
+  /admin/permissions/grant:
+    post:
+      summary: Grant a permission to a role
+      description: Grants the specified permission to the given role.
+      tags: [Permissions]
+      operationId: grantPermission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roleName: { type: string }
+                permission: { type: string }
+              required: [roleName, permission]
+            examples:
+              grantPetsWriteToStaff:
+                value:
+                  roleName: staff
+                  permission: pets.write
+      responses:
+        "200":
+          description: OK
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /admin/permissions/revoke:
+    post:
+      summary: Revoke a permission from a role
+      description: Removes the specified permission from the given role.
+      tags: [Permissions]
+      operationId: revokePermission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roleName: { type: string }
+                permission: { type: string }
+              required: [roleName, permission]
+            examples:
+              revokePetsWriteFromStaff:
+                value:
+                  roleName: staff
+                  permission: pets.write
+      responses:
+        "200":
+          description: OK
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /admin/users/assign-role:
+    post:
+      summary: Assign a role to a user
+      description: Assigns an existing role to the specified user.
+      tags: [User Roles]
+      operationId: assignRoleToUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string }
+                roleName: { type: string }
+              required: [userId, roleName]
+            examples:
+              assignSystemAdmin:
+                value:
+                  userId: 123e4567-e89b-12d3-a456-426614174001
+                  roleName: system_admin
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRole"
+              examples:
+                sample:
+                  value:
+                    userId: 123e4567-e89b-12d3-a456-426614174001
+                    roleId: 7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /admin/users/revoke-role:
+    post:
+      summary: Revoke a role from a user
+      description: Removes an assigned role from the specified user.
+      tags: [User Roles]
+      operationId: revokeRoleFromUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string }
+                roleName: { type: string }
+              required: [userId, roleName]
+            examples:
+              revokeSystemAdmin:
+                value:
+                  userId: 123e4567-e89b-12d3-a456-426614174001
+                  roleName: system_admin
+      responses:
+        "200":
+          description: OK
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"

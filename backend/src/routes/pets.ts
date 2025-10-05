@@ -1,6 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
+import { requireRole } from '../middleware/auth';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -26,7 +27,7 @@ router.get('/', async (req, res) => {
   res.json(pets);
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireRole('staff', 'shelter_admin', 'admin', 'system_admin'), async (req, res) => {
   const parse = PetCreate.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: parse.error.format() });
 
@@ -59,7 +60,7 @@ router.get('/:id', async (req, res) => {
   res.json(pet);
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireRole('staff', 'shelter_admin', 'admin', 'system_admin'), async (req, res) => {
   const id = req.params.id;
   const parsed = PetUpdate.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
@@ -89,7 +90,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireRole('staff', 'shelter_admin', 'admin', 'system_admin'), async (req, res) => {
   const id = req.params.id;
   try {
     await prisma.pet.delete({ where: { id } });

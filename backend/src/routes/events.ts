@@ -1,6 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
+import { requirePermission } from '../middleware/auth';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -12,7 +13,7 @@ router.get('/', async (req, res) => {
   res.json(items);
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('events.write'), async (req, res) => {
   const parsed = EventSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
   const data = parsed.data;
@@ -27,7 +28,7 @@ router.get('/:id', async (req, res) => {
   res.json(item);
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('events.write'), async (req, res) => {
   const id = req.params.id;
   const parsed = EventSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
@@ -35,7 +36,7 @@ router.put('/:id', async (req, res) => {
   res.json(updated);
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('events.write'), async (req, res) => {
   const id = req.params.id;
   await prisma.event.delete({ where: { id } });
   res.status(204).end();

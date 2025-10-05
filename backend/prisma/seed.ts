@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+const prisma: any = new PrismaClient();
 
 async function main() {
   // Seed base roles for RBAC (system_admin > admin > shelter_admin > staff > user)
@@ -17,6 +17,35 @@ async function main() {
       create: r,
     });
   }
+
+  // Seed permissions
+  const permissions = [
+    'pets.read','pets.write','shelters.read','shelters.write','locations.read','locations.write','owners.read','owners.write','medical.read','medical.write','events.read','events.write'
+  ];
+  for (const name of permissions) {
+    await prisma.permission.upsert({ where: { name }, update: {}, create: { name } });
+  }
+
+  // Attach permissions to roles
+  async function grant(roleName: string, permNames: string[]) {
+    const role = await prisma.role.findUnique({ where: { name: roleName } });
+    if (!role) return;
+    for (const p of permNames) {
+      const perm = await prisma.permission.findUnique({ where: { name: p } });
+      if (!perm) continue;
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } as any },
+        update: {},
+        create: { roleId: role.id, permissionId: perm.id },
+      });
+    }
+  }
+
+  await grant('user', ['pets.read','shelters.read','locations.read','owners.read','medical.read','events.read']);
+  await grant('staff', ['pets.read','pets.write','shelters.read','locations.read','locations.write','owners.read','owners.write','medical.read','medical.write','events.read','events.write']);
+  await grant('shelter_admin', permissions);
+  await grant('admin', permissions);
+  await grant('system_admin', permissions);
 
   // create shelters
   const s1 = await prisma.shelter.upsert({ where: { id: 'central-shelter' }, update: {}, create: { id: 'central-shelter', name: 'Central Shelter', address: { city: 'Metropolis' }, phone: '555-1234' } });
@@ -43,7 +72,7 @@ async function main() {
 main()
   .catch(e => {
     console.error(e);
-    process.exit(1);
+    (globalThis as any).process?.exit?.(1);
   })
   .finally(async () => {
     await prisma.$disconnect();

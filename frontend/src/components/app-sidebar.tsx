@@ -96,7 +96,7 @@ const data = {
       icon: BookOpen,
       items: [
         {
-          title: "REST API Docs",
+          title: "Pets REST API",
           url: "/docs",
         },
         {

@@ -64,6 +64,12 @@ The app starts at http://localhost:5173 and proxies backend endpoints:
 
 ReDoc is mounted in `frontend/src/docs/redoc-page.tsx` via dynamic import. The theme adapts to app mode (light/dark) and listens to `themechange` events. Dropdowns and code blocks have contrast tweaks for readability.
 
+## API docs endpoints
+
+- Public docs (OpenAPI + ReDoc): GET `/api-docs/latest` and JSON at `/api-docs/latest/openapi.json`
+- Admin-only docs: GET `/api-docs/admin/latest` and JSON at `/api-docs/admin/latest/openapi.json`
+  - Access requires a user with the `system_admin` role; routes are gated server-side. Enabled in all environments.
+
 ## Scripts
 
 Backend:
