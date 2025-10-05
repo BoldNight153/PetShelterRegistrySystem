@@ -15,7 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Release Please
-        uses: google-github-actions/release-please-action@v4
+        # Use the recommended action (the google-github-actions variant is deprecated)
+        uses: googleapis/release-please-action@v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # Use a classic PAT with repo scope so PR creation works even if GITHUB_TOKEN
+          # is restricted from creating/approving pull requests in repo settings.
+          token: ${{ secrets.PROJECTS_TOKEN }}
