@@ -23,12 +23,12 @@
     "backend": {
       "release-type": "node",
       "component": "backend",
-      "changelog-path": "backend/CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md"
     },
     "frontend": {
       "release-type": "node",
       "component": "frontend",
-      "changelog-path": "frontend/CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }
