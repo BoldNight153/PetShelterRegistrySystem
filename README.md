@@ -93,6 +93,13 @@ See `CHANGELOG.md`. Recent:
 - 0.2.1 (2025-10-04) — Mobile-only Team Switcher in header; documentation updates
 - 0.2.0 (2025-09-28) — Backend foundation, routes, seeds, CI
 
+## Release notes
+
+Latest releases (2025-10-05):
+- Root: v0.3.0 — https://github.com/BoldNight153/PetShelterRegistrySystem/releases/tag/v0.3.0
+- Backend: backend-v0.1.0 — https://github.com/BoldNight153/PetShelterRegistrySystem/releases/tag/backend-v0.1.0
+- Frontend: frontend-v1.0.0 — https://github.com/BoldNight153/PetShelterRegistrySystem/releases/tag/frontend-v1.0.0
+
 ## Project management
 
 We use a repo-level GitHub Project to plan and track work with milestones, issues, and PRs.
