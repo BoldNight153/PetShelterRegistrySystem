@@ -171,7 +171,7 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
         <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser placement="sidebar" />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

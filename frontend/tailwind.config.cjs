@@ -24,6 +24,7 @@ module.exports = {
         accent: 'var(--color-accent)',
         'accent-foreground': 'var(--color-accent-foreground)',
         destructive: 'var(--color-destructive)',
+  success: 'var(--color-success)',
         border: 'var(--color-border)',
         input: 'var(--color-input)',
         ring: 'var(--color-ring)',

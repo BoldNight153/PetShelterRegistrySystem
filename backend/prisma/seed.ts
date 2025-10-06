@@ -1,4 +1,7 @@
 import { PrismaClient } from '@prisma/client';
+import argon2 from 'argon2';
+// Declare minimal process type to appease TS in environments without @types/node
+declare const process: { env: Record<string, string | undefined> };
 const prisma: any = new PrismaClient();
 
 async function main() {
@@ -67,6 +70,21 @@ async function main() {
   await prisma.petOwner.upsert({ where: { id: 'p2-o2' }, update: {}, create: { id: 'p2-o2', petId: p2.id, ownerId: o2.id, role: 'OWNER', isPrimary: true } });
 
   await prisma.medicalRecord.upsert({ where: { id: 'm1' }, update: {}, create: { id: 'm1', petId: p1.id, vetName: 'Dr. Vet', recordType: 'vaccine', notes: 'Rabies shot' } });
+
+  // Optional seed user for testing admin access
+  const adminEmail = (process as any)?.env?.SEED_ADMIN_EMAIL || 'admin@example.com';
+  const adminPass = (process as any)?.env?.SEED_ADMIN_PASSWORD || 'Admin123!@#';
+  const existing = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (!existing) {
+    // Use a light hash cost for seeding only
+  const passwordHash = await (argon2 as any).hash(adminPass, { type: (argon2 as any).argon2id });
+    const user = await prisma.user.create({ data: { email: adminEmail, passwordHash, name: 'Seed Admin', emailVerified: new Date() } });
+    const sysAdmin = await prisma.role.findUnique({ where: { name: 'system_admin' } });
+    if (sysAdmin) {
+      await prisma.userRole.create({ data: { userId: user.id, roleId: sysAdmin.id } });
+    }
+    console.log(`Seeded admin user: ${adminEmail} / ${adminPass}`);
+  }
 }
 
 main()

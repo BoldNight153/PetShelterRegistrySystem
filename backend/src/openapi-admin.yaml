@@ -5,6 +5,14 @@ info:
   description: >-
     Administrative endpoints for managing roles, permissions, and user role assignments.
     This spec is restricted and should be accessible only to system administrators.
+openapi: 3.1.0
+info:
+  title: Pet Shelter Registry Admin API
+  version: 0.0.0
+  description: >-
+    Administrative endpoints for managing roles, permissions, and user role assignments.
+    Access is restricted to users with the system_admin role. All endpoints require an
+    authenticated session and are typically consumed by internal operator tools.
 servers:
   - url: "http://localhost:{port}"
     description: Local development server
@@ -12,6 +20,13 @@ servers:
       port:
         default: "4000"
 security: []
+tags:
+  - name: Roles
+    description: Create, update, list, and delete roles.
+  - name: Permissions
+    description: Manage permission grants to roles.
+  - name: User Roles
+    description: Assign and revoke roles for specific users.
 components:
   schemas:
     Role:
@@ -22,8 +37,10 @@ components:
           format: uuid
         name:
           type: string
+          description: Unique role name (e.g., system_admin, admin, shelter_admin, staff, user)
         rank:
           type: integer
+          description: Higher rank implies higher privilege in UI sorting.
         description:
           type:
             - string
@@ -37,6 +54,7 @@ components:
           format: uuid
         name:
           type: string
+          description: Unique permission name (e.g., pets.write)
         description:
           type:
             - string
@@ -52,6 +70,40 @@ components:
           type: string
           format: uuid
       required: [userId, roleId]
+    UpsertRoleInput:
+      type: object
+      properties:
+        name:
+          type: string
+        rank:
+          type: integer
+          default: 0
+        description:
+          type: string
+      required: [name]
+    GrantPermissionInput:
+      type: object
+      properties:
+        roleName:
+          type: string
+        permission:
+          type: string
+      required: [roleName, permission]
+    AssignRoleInput:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        roleName:
+          type: string
+      required: [userId, roleName]
+    ApiOk:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required: [ok]
   responses:
     BadRequest:
       description: Bad request
@@ -61,10 +113,15 @@ components:
             type: object
             properties:
               error:
-                type: object
-          example:
-            error:
-              message: "validation failed"
+                oneOf:
+                  - type: string
+                  - type: object
+            required: [error]
+          examples:
+            validationError:
+              value:
+                error:
+                  message: "validation failed"
     NotFound:
       description: Resource not found
       content:
@@ -74,13 +131,44 @@ components:
             properties:
               error:
                 type: string
-          example:
-            error: "not found"
+            required: [error]
+          examples:
+            notFound:
+              value:
+                error: "not found"
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+            required: [error]
+          examples:
+            unauthorized:
+              value:
+                error: "unauthorized"
+    Forbidden:
+      description: Authenticated but lacks required role (system_admin)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+            required: [error]
+          examples:
+            forbidden:
+              value:
+                error: "forbidden"
 paths:
   /admin/roles:
     get:
       summary: List roles
-      description: Returns all roles in the system, ordered by rank ascending.
+      description: Returns all roles in the system, ordered by rank descending.
       tags: [Roles]
       operationId: listRoles
       responses:
@@ -97,12 +185,14 @@ paths:
                   value:
                     - id: "7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c"
                       name: "system_admin"
-                      rank: 0
+                      rank: 100
                       description: "Full administrative access"
                     - id: "a1b2c3d4-5678-4e9f-9123-456789abcdef"
                       name: "staff"
-                      rank: 50
-                      description: "Staff role with limited write access"
+                      rank: 40
+                      description: "Shelter staff"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /admin/roles/upsert:
     post:
       summary: Create or update a role
@@ -114,24 +204,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                name: { type: string }
-                rank: { type: integer }
-                description: { type: string }
-              required: [name]
+              $ref: "#/components/schemas/UpsertRoleInput"
             examples:
               createSystemAdmin:
                 summary: Create system_admin role
-                value:
-                  name: system_admin
-                  rank: 0
-                  description: Full administrative access
+                value: { name: system_admin, rank: 100, description: "Full administrative access" }
               updateStaff:
                 summary: Update staff role rank
-                value:
-                  name: staff
-                  rank: 50
+                value: { name: staff, rank: 40 }
       responses:
         "200":
           description: OK
@@ -144,10 +224,11 @@ paths:
                   value:
                     id: "7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c"
                     name: system_admin
-                    rank: 0
+                    rank: 100
                     description: Full administrative access
-        "400":
-          $ref: "#/components/responses/BadRequest"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /admin/roles/{name}:
     parameters:
       - name: name
@@ -161,10 +242,10 @@ paths:
       tags: [Roles]
       operationId: deleteRole
       responses:
-        "204":
-          description: No Content
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /admin/permissions:
     get:
       summary: List permissions
@@ -189,6 +270,8 @@ paths:
                     - id: "123e4567-e89b-12d3-a456-426614174000"
                       name: "shelters.write"
                       description: "Create and update shelters"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /admin/permissions/grant:
     post:
       summary: Grant a permission to a role
@@ -200,23 +283,24 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                roleName: { type: string }
-                permission: { type: string }
-              required: [roleName, permission]
+              $ref: "#/components/schemas/GrantPermissionInput"
             examples:
               grantPetsWriteToStaff:
-                value:
-                  roleName: staff
-                  permission: pets.write
+                value: { roleName: staff, permission: pets.write }
       responses:
         "200":
           description: OK
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiOk"
+              examples:
+                ok:
+                  value: { ok: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /admin/permissions/revoke:
     post:
       summary: Revoke a permission from a role
@@ -228,23 +312,24 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                roleName: { type: string }
-                permission: { type: string }
-              required: [roleName, permission]
+              $ref: "#/components/schemas/GrantPermissionInput"
             examples:
               revokePetsWriteFromStaff:
-                value:
-                  roleName: staff
-                  permission: pets.write
+                value: { roleName: staff, permission: pets.write }
       responses:
         "200":
           description: OK
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiOk"
+              examples:
+                ok:
+                  value: { ok: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /admin/users/assign-role:
     post:
       summary: Assign a role to a user
@@ -256,17 +341,53 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                userId: { type: string }
-                roleName: { type: string }
-              required: [userId, roleName]
+              $ref: "#/components/schemas/AssignRoleInput"
             examples:
               assignSystemAdmin:
-                value:
-                  userId: 123e4567-e89b-12d3-a456-426614174001
-                  roleName: system_admin
+                value: { userId: "123e4567-e89b-12d3-a456-426614174001", roleName: system_admin }
       responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRole"
+              examples:
+                sample:
+                  value: { userId: "123e4567-e89b-12d3-a456-426614174001", roleId: "7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/users/revoke-role:
+    post:
+      summary: Revoke a role from a user
+      description: Removes an assigned role from the specified user.
+      tags: [User Roles]
+      operationId: revokeRoleFromUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRoleInput"
+            examples:
+              revokeSystemAdmin:
+                value: { userId: "123e4567-e89b-12d3-a456-426614174001", roleName: system_admin }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiOk"
+              examples:
+                ok:
+                  value: { ok: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "200":
           description: OK
           content:

@@ -5,9 +5,11 @@ import { Drawer as DrawerPrimitive } from "vaul"
 
 import { cn } from "@/lib/utils"
 
-function Drawer({
-  ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Root>) {
+type DrawerRootProps = React.ComponentProps<typeof DrawerPrimitive.Root> & {
+  container?: HTMLElement | null
+}
+
+function Drawer({ container, ...props }: DrawerRootProps) {
   return <DrawerPrimitive.Root data-slot="drawer" {...props} />
 }
 
@@ -17,10 +19,8 @@ function DrawerTrigger({
   return <DrawerPrimitive.Trigger data-slot="drawer-trigger" {...props} />
 }
 
-function DrawerPortal({
-  ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Portal>) {
-  return <DrawerPrimitive.Portal data-slot="drawer-portal" {...props} />
+function DrawerPortal({ container, ...props }: React.ComponentProps<typeof DrawerPrimitive.Portal> & { container?: HTMLElement | null }) {
+  return <DrawerPrimitive.Portal data-slot="drawer-portal" container={container ?? undefined} {...props} />
 }
 
 function DrawerClose({
@@ -31,8 +31,9 @@ function DrawerClose({
 
 function DrawerOverlay({
   className,
+  insideContainer,
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Overlay>) {
+}: React.ComponentProps<typeof DrawerPrimitive.Overlay> & { insideContainer?: boolean }) {
   return (
     <DrawerPrimitive.Overlay
       data-slot="drawer-overlay"
@@ -48,15 +49,32 @@ function DrawerOverlay({
 function DrawerContent({
   className,
   children,
+  insideContainer,
+  container,
+  variant = "bottom",
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Content>) {
+}: React.ComponentProps<typeof DrawerPrimitive.Content> & { insideContainer?: boolean; container?: HTMLElement | null; variant?: "bottom" | "top" | "full" }) {
   return (
-    <DrawerPortal data-slot="drawer-portal">
-      <DrawerOverlay />
+    <DrawerPortal data-slot="drawer-portal" container={container}>
+      <DrawerOverlay insideContainer={insideContainer} />
       <DrawerPrimitive.Content
         data-slot="drawer-content"
         className={cn(
-          "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
+          "group/drawer-content bg-background z-60 flex h-auto flex-col w-full",
+          insideContainer
+            ? variant === "top"
+              ? "sticky top-0"
+              : variant === "full"
+                ? "sticky inset-x-0 top-0 h-full"
+                : "sticky bottom-0"
+            : variant === "top"
+              ? "fixed inset-x-0 top-0"
+              : variant === "full"
+                ? "fixed inset-0 h-svh"
+                : "fixed inset-x-0 bottom-0",
+          variant === "top" && "rounded-b-lg border-b shadow-lg max-h-[80vh]",
+          variant === "bottom" && "rounded-t-lg border-t shadow-lg max-h-[80vh]",
+          variant === "full" && "rounded-none border-0 shadow-none",
           "data-[vaul-drawer-direction=top]:inset-x-0 data-[vaul-drawer-direction=top]:top-0 data-[vaul-drawer-direction=top]:mb-24 data-[vaul-drawer-direction=top]:max-h-[80vh] data-[vaul-drawer-direction=top]:rounded-b-lg data-[vaul-drawer-direction=top]:border-b",
           "data-[vaul-drawer-direction=bottom]:inset-x-0 data-[vaul-drawer-direction=bottom]:bottom-0 data-[vaul-drawer-direction=bottom]:mt-24 data-[vaul-drawer-direction=bottom]:max-h-[80vh] data-[vaul-drawer-direction=bottom]:rounded-t-lg data-[vaul-drawer-direction=bottom]:border-t",
           "data-[vaul-drawer-direction=right]:inset-y-0 data-[vaul-drawer-direction=right]:right-0 data-[vaul-drawer-direction=right]:w-3/4 data-[vaul-drawer-direction=right]:border-l data-[vaul-drawer-direction=right]:sm:max-w-sm",

@@ -121,14 +121,21 @@ async function revokeAllRefreshTokens(userId: string) {
 router.post('/register', validateCsrf, async (req, res) => {
   try {
     const { email, password, name } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+    if (!email || !password || !name) return res.status(400).json({ error: 'name, email and password are required' });
+    // Basic server-side password policy: 8+ chars, upper, lower, digit, special
+    const strong = password.length >= 8 
+      && /[A-Z]/.test(password) 
+      && /[a-z]/.test(password) 
+      && /[0-9]/.test(password) 
+      && /[^A-Za-z0-9]/.test(password);
+    if (!strong) return res.status(400).json({ error: 'password does not meet complexity requirements' });
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return res.status(409).json({ error: 'account already exists' });
     const hashOpts = process.env.NODE_ENV === 'test'
       ? { type: argon2.argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
       : { type: argon2.argon2id };
     const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
-    const user = await prisma.user.create({ data: { email, passwordHash, name: name || null } });
+  const user = await prisma.user.create({ data: { email, passwordHash, name } });
     await logAudit(user.id, 'auth.register', req);
     const access = signAccessToken(user.id);
     const refresh = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
@@ -314,8 +321,16 @@ router.post('/reset-password', validateCsrf, async (req, res) => {
   }
 });
 
-router.get('/me', (req, res) => {
-  return res.json({ authenticated: false });
+router.get('/me', async (req: any, res) => {
+  try {
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) return res.status(401).json({ authenticated: false });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(401).json({ authenticated: false });
+    return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
+  } catch (err: any) {
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+  }
 });
 
 export default router;
