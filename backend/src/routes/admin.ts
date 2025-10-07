@@ -96,6 +96,19 @@ router.post('/users/assign-role', adminGuard, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   const role = await prisma.role.findUnique({ where: { name: roleName } });
   if (!user || !role) return res.status(404).json({ error: 'user or role not found' });
+  // RBAC: only management-level staff and admins can modify roles, and only assign roles lower than their own rank
+  const actorId = (req as any).user?.id as string;
+  const actorRoles = await prisma.userRole.findMany({ where: { userId: actorId }, include: { role: true } });
+  const isSystemAdmin = actorRoles.some((ur: any) => ur.role?.name === 'system_admin');
+  const actorMaxRank = Math.max(...actorRoles.map((ur: any) => ur.role?.rank ?? 0), 0);
+  if (!isSystemAdmin) {
+    // management-level staff or higher
+    const allowedManagers = ['admin', 'shelter_admin', 'staff_manager'];
+    const hasManagerRole = actorRoles.some((ur: any) => allowedManagers.includes(ur.role?.name));
+    if (!hasManagerRole) return res.status(403).json({ error: 'forbidden' });
+    if (role.rank >= actorMaxRank) return res.status(403).json({ error: 'cannot assign same or higher rank' });
+  }
+  // system_admin can assign any role, including system_admin
   const ur = await prisma.userRole.upsert({
     where: { userId_roleId: { userId, roleId: role.id } as any },
     update: {},
@@ -111,6 +124,17 @@ router.post('/users/revoke-role', adminGuard, async (req, res) => {
   const { userId, roleName } = parsed.data;
   const role = await prisma.role.findUnique({ where: { name: roleName } });
   if (!role) return res.status(404).json({ error: 'role not found' });
+  // Apply same manager/system_admin constraint for revocation
+  const actorId = (req as any).user?.id as string;
+  const actorRoles = await prisma.userRole.findMany({ where: { userId: actorId }, include: { role: true } });
+  const isSystemAdmin = actorRoles.some((ur: any) => ur.role?.name === 'system_admin');
+  const actorMaxRank = Math.max(...actorRoles.map((ur: any) => ur.role?.rank ?? 0), 0);
+  if (!isSystemAdmin) {
+    const allowedManagers = ['admin', 'shelter_admin', 'staff_manager'];
+    const hasManagerRole = actorRoles.some((ur: any) => allowedManagers.includes(ur.role?.name));
+    if (!hasManagerRole) return res.status(403).json({ error: 'forbidden' });
+    if (role.rank >= actorMaxRank) return res.status(403).json({ error: 'cannot revoke same or higher rank' });
+  }
   await prisma.userRole.delete({ where: { userId_roleId: { userId, roleId: role.id } as any } });
   await logAudit((req as any).user?.id ?? null, 'admin.users.revoke_role', req, { userId, roleName });
   res.json({ ok: true });

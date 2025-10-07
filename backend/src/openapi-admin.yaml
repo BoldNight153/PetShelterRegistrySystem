@@ -4,13 +4,6 @@ info:
   version: 0.0.0
   description: >-
     Administrative endpoints for managing roles, permissions, and user role assignments.
-    This spec is restricted and should be accessible only to system administrators.
-openapi: 3.1.0
-info:
-  title: Pet Shelter Registry Admin API
-  version: 0.0.0
-  description: >-
-    Administrative endpoints for managing roles, permissions, and user role assignments.
     Access is restricted to users with the system_admin role. All endpoints require an
     authenticated session and are typically consumed by internal operator tools.
 servers:
@@ -37,7 +30,9 @@ components:
           format: uuid
         name:
           type: string
-          description: Unique role name (e.g., system_admin, admin, shelter_admin, staff, user)
+          description: >-
+            Unique role name (e.g., system_admin, admin, shelter_admin, staff_manager,
+            staff, staff_assistant, veterinarian, volunteer, owner)
         rank:
           type: integer
           description: Higher rank implies higher privilege in UI sorting.
@@ -180,17 +175,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Role"
-              examples:
-                sample:
-                  value:
-                    - id: "7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c"
-                      name: "system_admin"
-                      rank: 100
-                      description: "Full administrative access"
-                    - id: "a1b2c3d4-5678-4e9f-9123-456789abcdef"
-                      name: "staff"
-                      rank: 40
-                      description: "Shelter staff"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /admin/roles/upsert:
@@ -205,13 +189,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/UpsertRoleInput"
-            examples:
-              createSystemAdmin:
-                summary: Create system_admin role
-                value: { name: system_admin, rank: 100, description: "Full administrative access" }
-              updateStaff:
-                summary: Update staff role rank
-                value: { name: staff, rank: 40 }
       responses:
         "200":
           description: OK
@@ -219,13 +196,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Role"
-              examples:
-                created:
-                  value:
-                    id: "7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c"
-                    name: system_admin
-                    rank: 100
-                    description: Full administrative access
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -261,15 +231,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Permission"
-              examples:
-                sample:
-                  value:
-                    - id: "0f4a1b2c-3d4e-5f60-789a-bcdef0123456"
-                      name: "pets.write"
-                      description: "Create and update pets"
-                    - id: "123e4567-e89b-12d3-a456-426614174000"
-                      name: "shelters.write"
-                      description: "Create and update shelters"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /admin/permissions/grant:
@@ -284,9 +245,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/GrantPermissionInput"
-            examples:
-              grantPetsWriteToStaff:
-                value: { roleName: staff, permission: pets.write }
       responses:
         "200":
           description: OK
@@ -294,9 +252,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiOk"
-              examples:
-                ok:
-                  value: { ok: true }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -313,9 +268,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/GrantPermissionInput"
-            examples:
-              revokePetsWriteFromStaff:
-                value: { roleName: staff, permission: pets.write }
       responses:
         "200":
           description: OK
@@ -323,9 +275,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiOk"
-              examples:
-                ok:
-                  value: { ok: true }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -342,9 +291,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AssignRoleInput"
-            examples:
-              assignSystemAdmin:
-                value: { userId: "123e4567-e89b-12d3-a456-426614174001", roleName: system_admin }
       responses:
         "200":
           description: OK
@@ -352,9 +298,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserRole"
-              examples:
-                sample:
-                  value: { userId: "123e4567-e89b-12d3-a456-426614174001", roleId: "7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -371,9 +314,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AssignRoleInput"
-            examples:
-              revokeSystemAdmin:
-                value: { userId: "123e4567-e89b-12d3-a456-426614174001", roleName: system_admin }
       responses:
         "200":
           description: OK
@@ -381,53 +321,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiOk"
-              examples:
-                ok:
-                  value: { ok: true }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserRole"
-              examples:
-                sample:
-                  value:
-                    userId: 123e4567-e89b-12d3-a456-426614174001
-                    roleId: 7e0e6c3c-0f6a-4b93-9a3c-9b0f9b0b9a3c
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /admin/users/revoke-role:
-    post:
-      summary: Revoke a role from a user
-      description: Removes an assigned role from the specified user.
-      tags: [User Roles]
-      operationId: revokeRoleFromUser
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                userId: { type: string }
-                roleName: { type: string }
-              required: [userId, roleName]
-            examples:
-              revokeSystemAdmin:
-                value:
-                  userId: 123e4567-e89b-12d3-a456-426614174001
-                  roleName: system_admin
-      responses:
-        "200":
-          description: OK
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"

@@ -5,13 +5,17 @@ declare const process: { env: Record<string, string | undefined> };
 const prisma: any = new PrismaClient();
 
 async function main() {
-  // Seed base roles for RBAC (system_admin > admin > shelter_admin > staff > user)
+  // Seed base roles for RBAC (system_admin > admin > shelter_admin > veterinarian > staff_manager > staff > staff_assistant > volunteer > owner)
   const roles = [
     { name: 'system_admin', rank: 100, description: 'Full system administrator' },
     { name: 'admin', rank: 80, description: 'Organization administrator' },
     { name: 'shelter_admin', rank: 60, description: 'Shelter administrator' },
+    { name: 'veterinarian', rank: 55, description: 'Veterinary professional' },
+    { name: 'staff_manager', rank: 50, description: 'Management-level shelter staff' },
     { name: 'staff', rank: 40, description: 'Shelter staff' },
-    { name: 'user', rank: 10, description: 'Regular user' },
+    { name: 'staff_assistant', rank: 30, description: 'Assistant or junior shelter staff' },
+    { name: 'volunteer', rank: 20, description: 'Volunteer' },
+    { name: 'owner', rank: 10, description: 'Pet owner portal user' },
   ];
   for (const r of roles) {
     await prisma.role.upsert({
@@ -44,8 +48,19 @@ async function main() {
     }
   }
 
-  await grant('user', ['pets.read','shelters.read','locations.read','owners.read','medical.read','events.read']);
+  // Owner (formerly 'user'): read-only baseline
+  await grant('owner', ['pets.read','shelters.read','locations.read','owners.read','medical.read','events.read']);
+  // Volunteer: conservative read-only for now (same as owner); refine later
+  await grant('volunteer', ['pets.read','shelters.read','locations.read','owners.read','medical.read','events.read']);
+  // Staff assistant: mostly read-only; allow recording events
+  await grant('staff_assistant', ['pets.read','shelters.read','locations.read','owners.read','medical.read','events.read','events.write']);
+  // Staff: operational writes (same as previous staff mapping)
   await grant('staff', ['pets.read','pets.write','shelters.read','locations.read','locations.write','owners.read','owners.write','medical.read','medical.write','events.read','events.write']);
+  // Staff manager: same as staff for now; refine later with additional privileges
+  await grant('staff_manager', ['pets.read','pets.write','shelters.read','locations.read','locations.write','owners.read','owners.write','medical.read','medical.write','events.read','events.write']);
+  // Veterinarian: focus on medical writes + relevant reads
+  await grant('veterinarian', ['pets.read','owners.read','medical.read','medical.write','events.read']);
+  // Admin tiers: full access
   await grant('shelter_admin', permissions);
   await grant('admin', permissions);
   await grant('system_admin', permissions);

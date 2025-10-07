@@ -15,7 +15,7 @@ export async function createLoggedInAdminAgent() {
   await agent
     .post('/auth/register')
     .set('x-csrf-token', String(csrfToken))
-    .send({ email, password });
+    .send({ email, password, name: 'Admin Tester' });
 
   const adminUser = await prisma.user.findUnique({ where: { email } });
   if (!adminUser) throw new Error('failed to create admin test user');

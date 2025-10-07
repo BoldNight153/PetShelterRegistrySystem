@@ -99,7 +99,7 @@ describe('Admin endpoints', () => {
     await agent2
       .post('/auth/register')
       .set('x-csrf-token', String(token))
-      .send({ email, password });
+      .send({ email, password, name: 'Test User' });
     const user = await prisma.user.findUnique({ where: { email } });
     expect(user).toBeTruthy();
 

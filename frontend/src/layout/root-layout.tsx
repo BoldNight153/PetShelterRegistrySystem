@@ -1,4 +1,5 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom"
+import * as React from "react"
 import { useEffect, useRef, useState } from "react"
 import { useAuth } from "@/lib/auth-context"
 import TeamSwitcher from "@/components/team-switcher"
@@ -125,6 +126,36 @@ export default function RootLayout() {
 
 function HeaderBar({ teams }: { teams: Array<{ name: string; logo: any; plan: string }> }) {
   const { authenticated } = useAuth()
+  const location = useLocation()
+
+  // Build simple, route-aware breadcrumbs
+  const path = location.pathname.replace(/\/+$/, "") || "/"
+  const segments = path === "/" ? [] : path.split("/").filter(Boolean)
+  const titleMap: Record<string, string> = {
+    "/": "Home",
+    "/docs": "Docs",
+    "/dashboard": "Dashboard",
+    "/login": "Sign in",
+    "/register": "Create account",
+    "/signup": "Create account",
+  }
+  const humanize = (s: string) =>
+    decodeURIComponent(s)
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+
+  const crumbs = (() => {
+    const items: Array<{ href: string; label: string }> = []
+    // Always include home crumb as the first item
+    items.push({ href: "/", label: titleMap["/"] })
+    let acc = ""
+    for (const seg of segments) {
+      acc += `/${seg}`
+      const label = titleMap[acc] ?? humanize(seg)
+      items.push({ href: acc, label })
+    }
+    return items
+  })()
   return (
     <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
       <div className="flex items-center gap-2 px-4">
@@ -136,13 +167,23 @@ function HeaderBar({ teams }: { teams: Array<{ name: string; logo: any; plan: st
         </div>
         <Breadcrumb>
           <BreadcrumbList>
-            <BreadcrumbItem className="hidden md:block">
-              <BreadcrumbLink href="#">Building Your Application</BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="hidden md:block" />
-            <BreadcrumbItem>
-              <BreadcrumbPage>Data Fetching</BreadcrumbPage>
-            </BreadcrumbItem>
+            {crumbs.map((c, idx) => {
+              const isLast = idx === crumbs.length - 1
+              return (
+                <React.Fragment key={c.href}>
+                  <BreadcrumbItem className={idx === 0 ? "hidden md:block" : undefined}>
+                    {isLast ? (
+                      <BreadcrumbPage>{c.label}</BreadcrumbPage>
+                    ) : (
+                      <BreadcrumbLink href={c.href}>{c.label}</BreadcrumbLink>
+                    )}
+                  </BreadcrumbItem>
+                  {!isLast && (
+                    <BreadcrumbSeparator className={idx === 0 ? "hidden md:block" : undefined} />
+                  )}
+                </React.Fragment>
+              )
+            })}
           </BreadcrumbList>
         </Breadcrumb>
       </div>

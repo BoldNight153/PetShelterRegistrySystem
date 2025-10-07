@@ -10,7 +10,7 @@ async function createUser(email: string, password = 'StrongP@ssw0rd!') {
   const res = await agent
     .post('/auth/register')
     .set('x-csrf-token', csrf)
-    .send({ email, password });
+    .send({ email, password, name: 'Test User' });
   // The register endpoint returns the created user object as the response body
   return { agent, user: res.body };
 }

@@ -22,7 +22,7 @@ describe('More routes integration tests', () => {
     await agent
       .post('/auth/register')
       .set('x-csrf-token', String(csrfToken))
-      .send({ email: testEmail, password });
+      .send({ email: testEmail, password, name: 'More Tests' });
 
     const user = await prisma.user.findUnique({ where: { email: String(testEmail) } });
     if (user) {

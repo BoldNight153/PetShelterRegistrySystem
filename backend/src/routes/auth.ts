@@ -327,7 +327,9 @@ router.get('/me', async (req: any, res) => {
     if (!userId) return res.status(401).json({ authenticated: false });
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(401).json({ authenticated: false });
-    return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
+    const roles: string[] = Array.isArray(req.user?.roles) ? req.user.roles : [];
+    const permissions: string[] = Array.isArray(req.user?.permissions) ? req.user.permissions : [];
+    return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified, roles, permissions });
   } catch (err: any) {
     return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
   }
