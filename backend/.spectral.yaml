@@ -1,0 +1,9 @@
+extends: spectral:oas
+rules:
+  operation-operationId-unique: error
+  operation-parameters: warn
+  no-$ref-siblings: error
+  info-contact: off
+  contact-properties: off
+  oas3-valid-media-example: warn
+  oas3-unused-component: warn

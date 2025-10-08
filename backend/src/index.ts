@@ -36,12 +36,19 @@ try {
 }
 // Load the Admin OpenAPI YAML spec at runtime as a separate artifact.
 try {
-  const adminYamlPath = path.join(__dirname, 'openapi-admin.yaml');
-  const raw = fs.readFileSync(adminYamlPath, 'utf8');
-  openapiAdmin = yaml.load(raw) as any;
+  // Prefer the file alongside the compiled output (dist)
+  let adminYamlPath = path.join(__dirname, 'openapi-admin.yaml');
+  let raw: string | null = null;
+  try {
+    raw = fs.readFileSync(adminYamlPath, 'utf8');
+  } catch (_) {
+    // Fallback: try project src path when running without copied assets
+    const srcFallback = path.resolve(process.cwd(), 'src', 'openapi-admin.yaml');
+    raw = fs.readFileSync(srcFallback, 'utf8');
+    adminYamlPath = srcFallback;
+  }
+  openapiAdmin = yaml.load(raw!) as any;
 } catch (err) {
-  // NOTE: In production we copy YAML files to dist/ in postbuild.
-  // TODO (future): Implement a runtime fallback path (e.g., try cwd/src) if needed.
   openapiAdmin = null;
 }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -207,9 +214,16 @@ try {
     app.get(`${adminLatestPath}/openapi.json`, adminGuard, (_req, res) => res.json(openapiAdmin));
 
     // raw YAML endpoints
+    const readAdminYamlRaw = () => {
+      try {
+        return fs.readFileSync(path.join(__dirname, 'openapi-admin.yaml'), 'utf8');
+      } catch (_) {
+        return fs.readFileSync(path.resolve(process.cwd(), 'src', 'openapi-admin.yaml'), 'utf8');
+      }
+    };
     app.get(`${adminDocsPath}/openapi.yaml`, adminGuard, (_req, res) => {
       try {
-        const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi-admin.yaml'), 'utf8');
+        const yamlRaw = readAdminYamlRaw();
         res.type('text/yaml').send(yamlRaw);
       } catch (err) {
         res.status(500).send('spec not available');
@@ -217,7 +231,7 @@ try {
     });
     app.get(`${adminLatestPath}/openapi.yaml`, adminGuard, (_req, res) => {
       try {
-        const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi-admin.yaml'), 'utf8');
+        const yamlRaw = readAdminYamlRaw();
         res.type('text/yaml').send(yamlRaw);
       } catch (err) {
         res.status(500).send('spec not available');

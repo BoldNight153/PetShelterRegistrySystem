@@ -26,9 +26,22 @@ jobs:
 
       - name: Lint OpenAPI specs with Redocly
         run: npm run lint:openapi
+  spectral-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # TODO (future): Add Spectral lint as an additional job or step
-      # - name: Install Spectral
-      #   run: npm i -g @stoplight/spectral-cli
-      # - name: Lint with Spectral
-      #   run: spectral lint src/openapi.yaml src/openapi-admin.yaml
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Spectral
+        run: npm i -g @stoplight/spectral-cli
+
+      - name: Lint OpenAPI specs with Spectral
+        run: spectral lint -r .spectral.yaml src/openapi.yaml src/openapi-admin.yaml
