@@ -11,7 +11,7 @@
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts",
     "test": "jest --config jest.config.cjs --runInBand --detectOpenHandles",
-    "lint": "eslint . --ext .ts",
+  "lint": "eslint -c eslint.config.mjs src --ext .ts",
     "lint:openapi": "redocly lint src/openapi.yaml src/openapi-admin.yaml"
   },
   "dependencies": {
