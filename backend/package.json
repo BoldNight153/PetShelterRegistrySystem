@@ -5,48 +5,51 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc -p .",
+    "postbuild": "cp src/openapi.yaml dist/openapi.yaml && cp src/openapi-admin.yaml dist/openapi-admin.yaml",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts",
     "test": "jest --config jest.config.cjs --runInBand --detectOpenHandles",
-    "lint": "eslint . --ext .ts"
+    "lint": "eslint . --ext .ts",
+    "lint:openapi": "redocly lint src/openapi.yaml src/openapi-admin.yaml"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
     "argon2": "^0.41.1",
+    "cookie": "^0.6.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "helmet": "^8.1.0",
+    "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
+    "oidc-client-ts": "^2.3.1",
     "pino": "^9.11.0",
     "pino-http": "^8.1.0",
-    "zod": "^4.0.0",
-    "js-yaml": "^4.1.0",
-    "oidc-client-ts": "^2.3.1",
-    "cookie": "^0.6.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.3",
+    "@redocly/cli": "^2.0.0",
     "@types/cookie-parser": "^1.4.7",
-    "@types/jsonwebtoken": "^9.0.6",
+    "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^24.5.2",
     "eslint": "^9.0.0",
+    "glob": "^11.0.3",
     "jest": "^30.0.0",
+    "lru-cache": "^11.2.1",
     "prisma": "^6.16.2",
+    "rimraf": "^6.0.1",
+    "superagent": "^10.2.3",
     "supertest": "^7.1.4",
     "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.0",
-    "rimraf": "^6.0.1",
-    "glob": "^11.0.3",
-    "superagent": "^10.2.3",
-    "lru-cache": "^11.2.1",
-    "@redocly/cli": "^2.0.0"
+    "typescript-eslint": "^8.46.0"
   },
   "optionalDependencies": {
     "lru-cache": "^9.1.2"

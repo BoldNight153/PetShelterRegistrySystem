@@ -40,6 +40,8 @@ try {
   const raw = fs.readFileSync(adminYamlPath, 'utf8');
   openapiAdmin = yaml.load(raw) as any;
 } catch (err) {
+  // NOTE: In production we copy YAML files to dist/ in postbuild.
+  // TODO (future): Implement a runtime fallback path (e.g., try cwd/src) if needed.
   openapiAdmin = null;
 }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
