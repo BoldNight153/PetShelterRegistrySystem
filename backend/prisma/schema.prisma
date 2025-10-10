@@ -267,3 +267,14 @@ model AuditLog {
 
   @@index([userId, action, createdAt])
 }
+
+// Time-series metric points for monitoring charts
+model MetricPoint {
+  id        String   @id @default(cuid())
+  metric    String
+  value     Float
+  labels    Json?
+  createdAt DateTime @default(now())
+
+  @@index([metric, createdAt])
+}

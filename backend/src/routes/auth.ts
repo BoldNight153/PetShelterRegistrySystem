@@ -335,4 +335,89 @@ router.get('/me', async (req: any, res) => {
   }
 });
 
+// Diagnostics: report active auth mode and useful details to debug auth locally/in prod
+router.get('/mode', (req: any, res) => {
+  const authMode = (process.env.AUTH_MODE || 'jwt').toLowerCase();
+  const cookies = req.cookies || {};
+  const sessionCookieName = process.env.SESSION_NAME || 'psrs.sid';
+
+  // Cookies presence
+  const hasSessionCookie = typeof cookies[sessionCookieName] === 'string' && cookies[sessionCookieName].length > 0;
+  const hasAccessCookie = typeof cookies['accessToken'] === 'string' && cookies['accessToken'].length > 0;
+  const hasRefreshCookie = typeof cookies['refreshToken'] === 'string' && cookies['refreshToken'].length > 0;
+
+  // Decode access claims (non-sensitive) if present
+  let accessClaims: any = null;
+  if (hasAccessCookie) {
+    try {
+      const decoded = jwt.decode(cookies['accessToken']);
+      if (decoded && typeof decoded === 'object') {
+        accessClaims = {
+          sub: (decoded as any).sub,
+          typ: (decoded as any).typ,
+          iat: (decoded as any).iat,
+          exp: (decoded as any).exp,
+        };
+      }
+    } catch (_) {
+      accessClaims = null;
+    }
+  }
+
+  // Providers config summary (no secrets)
+  const google = {
+    configured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI),
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || null,
+    scope: 'openid email profile',
+    hasClientId: Boolean(process.env.GOOGLE_CLIENT_ID),
+    hasClientSecret: Boolean(process.env.GOOGLE_CLIENT_SECRET),
+  };
+  const github = {
+    configured: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET && process.env.GITHUB_REDIRECT_URI),
+    redirectUri: process.env.GITHUB_REDIRECT_URI || null,
+    scope: 'read:user user:email',
+    hasClientId: Boolean(process.env.GITHUB_CLIENT_ID),
+    hasClientSecret: Boolean(process.env.GITHUB_CLIENT_SECRET),
+  };
+
+  // Current user info (id/roles/perms) if middleware populated it
+  const u = req.user && typeof req.user === 'object' ? req.user : null;
+  const user = u ? {
+    id: u.id ?? u.sub ?? null,
+    roles: Array.isArray(u.roles) ? u.roles : [],
+    permissions: Array.isArray(u.permissions) ? u.permissions : [],
+  } : null;
+
+  res.json({
+    authMode,
+    environment: {
+      nodeEnv: process.env.NODE_ENV || 'development',
+      corsOrigin: process.env.CORS_ORIGIN || '',
+      cookieDomain: process.env.COOKIE_DOMAIN || '',
+    },
+    cookies: {
+      session: { name: sessionCookieName, present: hasSessionCookie },
+      accessToken: { present: hasAccessCookie },
+      refreshToken: { present: hasRefreshCookie },
+      csrfToken: { present: Boolean(cookies['csrfToken']) },
+    },
+    session: {
+      enabled: authMode === 'session',
+      id: authMode === 'session' ? (req as any).sessionID || null : null,
+      isAuthenticated: typeof req.isAuthenticated === 'function' ? req.isAuthenticated() : undefined,
+      ttlDays: process.env.SESSION_TTL_DAYS ? Number(process.env.SESSION_TTL_DAYS) : undefined,
+    },
+    jwt: {
+      enabled: authMode === 'jwt',
+      accessClaims,
+    },
+    providers: { google, github },
+    redirects: {
+      success: process.env.OAUTH_SUCCESS_REDIRECT || null,
+      failure: process.env.OAUTH_FAILURE_REDIRECT || null,
+    },
+    user,
+  });
+});
+
 export default router;

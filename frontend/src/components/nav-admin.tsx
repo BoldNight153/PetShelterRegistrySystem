@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Shield, Users, KeyRound, BadgeCheck } from 'lucide-react'
+import { Shield, Users, KeyRound, BadgeCheck, Activity } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 
 const ADMIN_ROLES = new Set(['system_admin','admin','shelter_admin','staff_manager'])
@@ -9,6 +9,7 @@ export default function NavAdmin() {
   const roles = user?.roles || []
   const canSee = roles.some(r => ADMIN_ROLES.has(r))
   if (!canSee) return null
+  const isSystemAdmin = roles.includes('system_admin')
   return (
     <div className="px-2 py-1">
       <div className="text-xs uppercase text-muted-foreground px-2 pb-1">Admin</div>
@@ -33,6 +34,13 @@ export default function NavAdmin() {
             <Shield className="h-4 w-4" /> Audit Logs
           </Link>
         </li>
+        {isSystemAdmin && (
+          <li>
+            <Link className="flex items-center gap-2 rounded px-2 py-1 hover:bg-accent" to="/admin/server-info">
+              <Activity className="h-4 w-4" /> Server Info
+            </Link>
+          </li>
+        )}
       </ul>
     </div>
   )

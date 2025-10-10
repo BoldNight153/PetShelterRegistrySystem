@@ -9,6 +9,8 @@ import LoginPage from './pages/login'
 import RegisterPage from './pages/register'
 import { AuthProvider } from './lib/auth-context'
 import { ProtectedRoute } from './lib/auth-context'
+import ServerInfoPlaceholder from './pages/admin/server-info'
+import ServerInfoCharts from './pages/admin/server-info-charts'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -29,6 +31,16 @@ const router = createBrowserRouter([
       { path: 'dashboard', element: (
         <ProtectedRoute>
           <DashboardPage />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/server-info', element: (
+        <ProtectedRoute>
+          <ServerInfoPlaceholder />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/server-info/charts', element: (
+        <ProtectedRoute>
+          <ServerInfoCharts />
         </ProtectedRoute>
       ) },
       { path: 'login', element: <LoginPage /> },

@@ -21,12 +21,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const data = await apiLogin({ email, password });
+    // Set immediately so UI can reflect basic identity
     setUser(data);
+    // Hydrate roles/permissions and any server-side fields
+    try {
+      const res = await fetch('/auth/me', { credentials: 'include' });
+      if (res.ok) {
+        const me = await res.json();
+        setUser(me);
+      }
+    } catch (_) { /* ignore */ }
   }, []);
 
   const register = useCallback(async (email: string, password: string, name: string) => {
     const data = await apiRegister({ email, password, name });
     setUser(data);
+    try {
+      const res = await fetch('/auth/me', { credentials: 'include' });
+      if (res.ok) {
+        const me = await res.json();
+        setUser(me);
+      }
+    } catch (_) { /* ignore */ }
   }, []);
 
   const logout = useCallback(async () => {

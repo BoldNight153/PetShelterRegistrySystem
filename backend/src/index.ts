@@ -94,8 +94,189 @@ app.use(pinoHttp({ logger: logger as any }));
 // Parse access token from cookies/Authorization and attach req.user
 app.use(parseAuth as any);
 
-app.get('/health', async (req, res) => {
+// -----------------------------
+// Request metrics & event loop
+// -----------------------------
+type Histogram = { buckets: number[]; counts: number[] };
+const metrics = {
+  reqCount: 0,
+  errCount: 0,
+  durations: [] as number[],
+  // rolling event loop lag samples (ms)
+  loopLag: [] as number[],
+};
+
+// Simple middleware to record request durations and errors
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+  metrics.reqCount++;
+  let finished = false;
+  const done = () => {
+    if (finished) return;
+    finished = true;
+    const end = process.hrtime.bigint();
+    const ms = Number(end - start) / 1e6;
+    if (!Number.isNaN(ms) && isFinite(ms)) metrics.durations.push(ms);
+    if (res.statusCode >= 500) metrics.errCount++;
+    // keep durations bounded to last N samples
+    if (metrics.durations.length > 5000) metrics.durations.splice(0, metrics.durations.length - 5000);
+  };
+  res.on('finish', done);
+  res.on('close', done);
+  next();
+});
+
+// Periodically sample event loop lag
+if (process.env.NODE_ENV !== 'test') {
+  try {
+    // Use perf_hooks if available
+    const sampler = async () => {
+      try {
+        const { performance } = await import('node:perf_hooks');
+        const t1 = performance.now();
+        setImmediate(() => {
+          const t2 = performance.now();
+          const lag = Math.max(0, t2 - t1);
+          metrics.loopLag.push(lag);
+          if (metrics.loopLag.length > 1000) metrics.loopLag.splice(0, metrics.loopLag.length - 1000);
+        });
+      } catch {
+        // fallback: approximate with setTimeout drift
+        const ts = Date.now();
+        setTimeout(() => {
+          const drift = Math.max(0, Date.now() - ts - 100);
+          metrics.loopLag.push(drift);
+          if (metrics.loopLag.length > 1000) metrics.loopLag.splice(0, metrics.loopLag.length - 1000);
+        }, 100);
+      }
+    };
+    setInterval(sampler, 1000).unref();
+  } catch {}
+}
+
+function percentile(sorted: number[], p: number): number | null {
+  if (!sorted.length) return null;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))));
+  return sorted[idx];
+}
+
+// Admin metrics snapshot endpoint
+app.get('/admin/monitoring/metrics', requireRole('system_admin') as any, async (_req, res) => {
+  const recent = metrics.durations.slice(-2000).sort((a, b) => a - b);
+  const lag = metrics.loopLag.slice(-600);
+  const p50 = percentile(recent, 0.5);
+  const p90 = percentile(recent, 0.9);
+  const p99 = percentile(recent, 0.99);
+  res.json({
+    requests: {
+      count: metrics.reqCount,
+      errors: metrics.errCount,
+      p50,
+      p90,
+      p99,
+    },
+    loopLag: {
+      meanMs: lag.length ? lag.reduce((a, b) => a + b, 0) / lag.length : null,
+      maxMs: lag.length ? Math.max(...lag) : null,
+      samples: lag.slice(-120),
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Persist selected metrics periodically for charting
+const prismaForMetrics = new PrismaClient();
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(async () => {
+    try {
+      const recent = metrics.durations.slice(-100).sort((a, b) => a - b);
+      const p99 = percentile(recent, 0.99);
+      const errorRate = metrics.reqCount ? metrics.errCount / metrics.reqCount : 0;
+      const lag = metrics.loopLag.slice(-60);
+      const meanLag = lag.length ? lag.reduce((a, b) => a + b, 0) / lag.length : 0;
+      const points: Array<{ metric: string; value: number; labels?: any }> = [];
+      if (p99 != null) points.push({ metric: 'http.p99', value: p99 });
+      points.push({ metric: 'http.error_rate', value: errorRate });
+      points.push({ metric: 'eventloop.lag.mean', value: meanLag });
+      if (points.length) {
+        await (prismaForMetrics as any).metricPoint.createMany({ data: points.map(p => ({ metric: p.metric, value: p.value, labels: p.labels ?? undefined })) });
+      }
+    } catch (_err) {
+      // ignore sampling errors
+    }
+  }, 30_000).unref();
+}
+
+// Basic liveness and detail health endpoints
+app.get('/health', async (_req, res) => {
   res.json({ status: 'ok' });
+});
+app.get('/healthz', async (_req, res) => {
+  // quick liveness alias
+  res.type('text/plain').send('ok');
+});
+app.get('/readyz', async (_req, res) => {
+  // in future, check DB and external dependencies
+  res.type('text/plain').send('ready');
+});
+// Minimal runtime stats for system administrators
+app.get('/admin/monitoring/runtime', requireRole('system_admin') as any, async (_req, res) => {
+  const mem = process.memoryUsage();
+  const cpu = process.cpuUsage();
+  const uptimeSec = process.uptime();
+  const hr = process.hrtime();
+  const versions = process.versions;
+  const node = process.version;
+  const pid = process.pid;
+  const ppid = process.ppid;
+  // Event loop delay is available via perf_hooks in newer Node, optional here
+  let eventLoopLagMs: number | undefined = undefined;
+  try {
+    const { monitorEventLoopDelay } = await import('node:perf_hooks');
+    const h = monitorEventLoopDelay();
+    h.enable();
+    // sample briefly
+    setTimeout(() => h.disable(), 10);
+    eventLoopLagMs = h.mean / 1e6; // ns -> ms
+  } catch {}
+  res.json({
+    status: 'ok',
+    pid, ppid,
+    node,
+    versions,
+    uptimeSec,
+    hrtime: { sec: hr[0], nsec: hr[1] },
+    memory: {
+      rss: mem.rss,
+      heapTotal: mem.heapTotal,
+      heapUsed: mem.heapUsed,
+      external: (mem as any).external,
+      arrayBuffers: (mem as any).arrayBuffers,
+    },
+    cpu: {
+      userMicros: cpu.user,
+      systemMicros: cpu.system,
+    },
+    eventLoopLagMs,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Query recent persisted metrics (for charts)
+app.get('/admin/monitoring/series', requireRole('system_admin') as any, async (req, res) => {
+  const { metric = 'http.p99', minutes = '60' } = req.query as any;
+  const mins = Math.max(1, Math.min(24 * 60, Number(minutes) || 60));
+  const since = new Date(Date.now() - mins * 60 * 1000);
+  try {
+  const rows = await (prismaForMetrics as any).metricPoint.findMany({
+      where: { metric: String(metric), createdAt: { gte: since } },
+      orderBy: { createdAt: 'asc' },
+      select: { value: true, createdAt: true },
+    });
+    res.json({ metric, minutes: mins, points: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'failed to load series' });
+  }
 });
 
 // Swagger UI - main public docs mounted only in non-production by default.

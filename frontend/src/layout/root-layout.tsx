@@ -117,7 +117,8 @@ export default function RootLayout() {
             {/* When on an auth route and drawer is open, hide route content to avoid duplicate form fields */}
             {!(drawerOpen && isAuthPath(location.pathname)) && <Outlet />}
           </div>
-          <div id="content-overlay-root" className="absolute inset-0 z-50 w-full" />
+          {/* Overlay portal root: keep it non-interactive until something mounts inside it */}
+          <div id="content-overlay-root" className="absolute inset-0 z-50 w-full pointer-events-none" aria-hidden="true" />
         </main>
       </SidebarInset>
     </SidebarProvider>
