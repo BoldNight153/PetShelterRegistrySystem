@@ -6,6 +6,7 @@ type User = { id?: string; email?: string; name?: string; emailVerified?: string
 type AuthContextValue = {
   user: User;
   authenticated: boolean;
+  initializing: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -16,6 +17,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User>(null);
+  const [initializing, setInitializing] = useState<boolean>(true);
 
   const authenticated = !!user;
 
@@ -67,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { if (timer) window.clearInterval(timer); };
   }, [authenticated]);
 
-  const value = useMemo(() => ({ user, authenticated, login, register, logout, setUser }), [user, authenticated, login, register, logout]);
+  const value = useMemo(() => ({ user, authenticated, login, register, logout, setUser, initializing }), [user, authenticated, login, register, logout, initializing]);
   // Hydrate from /auth/me on mount
   useEffect(() => {
     (async () => {
@@ -78,6 +80,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (data?.email) setUser(data);
         }
       } catch (_) {}
+      finally {
+        setInitializing(false);
+      }
     })();
   }, []);
 
@@ -104,8 +109,9 @@ export async function withAutoRefresh(fn: () => Promise<Response>): Promise<Resp
 import { Navigate, useLocation } from "react-router-dom";
 import type { ReactElement } from "react";
 export function ProtectedRoute({ children }: { children: ReactElement }) {
-  const { authenticated } = useAuth();
+  const { authenticated, initializing } = useAuth();
   const location = useLocation();
+  if (initializing) return null;
   if (!authenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
