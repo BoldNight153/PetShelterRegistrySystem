@@ -3,21 +3,31 @@ import { useAuth } from '@/lib/auth-context'
 import { ShieldAlert } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, Legend } from 'recharts'
 
-function useJson<T>(url: string | null) {
+function useJson<T>(url: string | null, intervalMs = 15000) {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let cancel = false
-    if (!url) return
-    setLoading(true); setError(null)
-    fetch(url, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t || `HTTP ${r.status}`))))
-      .then(d => { if (!cancel) setData(d) })
-      .catch(e => { if (!cancel) setError(String(e?.message || e)) })
-      .finally(() => { if (!cancel) setLoading(false) })
-    return () => { cancel = true }
-  }, [url])
+    let timer: any
+    async function load() {
+      if (!url) return
+      setLoading(true); setError(null)
+      try {
+        const r = await fetch(url, { credentials: 'include' })
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const d = await r.json()
+        if (!cancel) setData(d)
+      } catch (e: any) {
+        if (!cancel) setError(String(e?.message || e))
+      } finally {
+        if (!cancel) setLoading(false)
+      }
+    }
+    load()
+    if (intervalMs > 0) timer = setInterval(load, intervalMs)
+    return () => { cancel = true; if (timer) clearInterval(timer) }
+  }, [url, intervalMs])
   return { data, loading, error }
 }
 
@@ -33,10 +43,10 @@ export default function ServerInfoCharts() {
     )
   }
 
-  const { data: metrics } = useJson<any>('/admin/monitoring/metrics')
-  const { data: p99Series } = useJson<any>('/admin/monitoring/series?metric=http.p99&minutes=120')
-  const { data: errSeries } = useJson<any>('/admin/monitoring/series?metric=http.error_rate&minutes=120')
-  const { data: lagSeries } = useJson<any>('/admin/monitoring/series?metric=eventloop.lag.mean&minutes=120')
+  const { data: metrics, loading: loadingSnap } = useJson<any>('/admin/monitoring/metrics', 15000)
+  const { data: p99Series, loading: loadingP99 } = useJson<any>('/admin/monitoring/series?metric=http.p99&minutes=120', 15000)
+  const { data: errSeries, loading: loadingErr } = useJson<any>('/admin/monitoring/series?metric=http.error_rate&minutes=120', 15000)
+  const { data: lagSeries, loading: loadingLag } = useJson<any>('/admin/monitoring/series?metric=eventloop.lag.mean&minutes=120', 15000)
 
   const p99 = useMemo(() => (p99Series?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [p99Series])
   const err = useMemo(() => (errSeries?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [errSeries])
@@ -46,8 +56,10 @@ export default function ServerInfoCharts() {
     <div className="p-6 space-y-8">
       <div>
         <h1 className="text-2xl font-semibold">Server Info</h1>
-        <p className="text-muted-foreground">Live metrics and recent history. Sampling every ~30s.</p>
+        <p className="text-muted-foreground">Live metrics and recent history. Sampling every ~30s, refresh every 15s.</p>
       </div>
+      {(loadingSnap && !metrics) && <div className="rounded border p-4 text-sm">Loading metrics…</div>}
+      {(!loadingSnap && !metrics) && <div className="rounded border p-4 text-sm">No metrics yet. Keep the server running and make a few requests; data is persisted every ~30 seconds.</div>}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="rounded border p-4">
           <div className="text-sm text-muted-foreground">Requests</div>

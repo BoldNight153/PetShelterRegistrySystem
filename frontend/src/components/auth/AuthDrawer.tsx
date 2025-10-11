@@ -17,6 +17,7 @@ export default function AuthDrawer({ open, onOpenChange, initialView = "login", 
   const [view, setView] = React.useState<"login" | "register">(initialView)
   React.useEffect(() => setView(initialView), [initialView])
   const [authMode, setAuthMode] = React.useState<'jwt' | 'session' | 'unknown'>('unknown')
+  const [providers, setProviders] = React.useState<{ google?: boolean; github?: boolean }>({})
 
   // Target the main content area so the drawer spans only the content, not the full viewport
   const container = React.useMemo(() => {
@@ -47,6 +48,9 @@ export default function AuthDrawer({ open, onOpenChange, initialView = "login", 
         if (!cancelled) {
           const m = String(data?.authMode || '').toLowerCase()
           setAuthMode(m === 'session' ? 'session' : 'jwt')
+          const google = !!data?.providers?.google?.configured
+          const github = !!data?.providers?.github?.configured
+          setProviders({ google, github })
         }
       } catch (_) { /* ignore */ }
     })()
@@ -61,18 +65,29 @@ export default function AuthDrawer({ open, onOpenChange, initialView = "login", 
   const OAuthButtons = () => {
     const googleHref = authMode === 'session' ? '/auth/session/google' : '/auth/oauth/google/start'
     const githubHref = authMode === 'session' ? '/auth/session/github' : '/auth/oauth/github/start'
-    const buttons: Array<{ label: string; icon: LucideIcon; href: string }> = [
-      { label: "Continue with Google", icon: Mail, href: googleHref },
-      { label: "Continue with GitHub", icon: Github, href: githubHref },
+    const isProd = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    const buttons: Array<{ label: string; icon: LucideIcon; href: string; enabled: boolean }> = [
+      { label: "Continue with Google", icon: Mail, href: googleHref, enabled: providers.google ?? false },
+      { label: "Continue with GitHub", icon: Github, href: githubHref, enabled: providers.github ?? false },
     ]
     return (
       <div className="mt-4 flex flex-col gap-2">
-        {buttons.map(b => (
-          <a key={b.label} href={b.href} className="inline-flex items-center justify-center gap-2 rounded border px-4 py-2 hover:bg-accent">
-            <b.icon className="h-4 w-4" />
-            <span className="text-sm">{b.label}</span>
-          </a>
-        ))}
+        {buttons.map(b => {
+          const hidden = isProd && !b.enabled
+          if (hidden) return null
+          const disabled = !isProd && !b.enabled
+          return (
+            <a
+              key={b.label}
+              href={disabled ? undefined : b.href}
+              className={`inline-flex items-center justify-center gap-2 rounded border px-4 py-2 ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent'}`}
+              onClick={(e) => { if (disabled) e.preventDefault() }}
+            >
+              <b.icon className="h-4 w-4" />
+              <span className="text-sm">{b.label}</span>
+            </a>
+          )
+        })}
       </div>
     )
   }

@@ -26,6 +26,22 @@ export default defineConfig({
         target: "http://localhost:4000",
         changeOrigin: true,
       },
+      "/admin/monitoring": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+      "/health": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+      "/healthz": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+      "/readyz": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
     },
   },
 })

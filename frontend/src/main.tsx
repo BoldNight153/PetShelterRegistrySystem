@@ -11,6 +11,7 @@ import { AuthProvider } from './lib/auth-context'
 import { ProtectedRoute } from './lib/auth-context'
 import ServerInfoPlaceholder from './pages/admin/server-info'
 import ServerInfoCharts from './pages/admin/server-info-charts'
+import ServerDashboard from './pages/admin/server-dashboard'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -35,7 +36,7 @@ const router = createBrowserRouter([
       ) },
       { path: 'admin/server-info', element: (
         <ProtectedRoute>
-          <ServerInfoPlaceholder />
+          <ServerDashboard />
         </ProtectedRoute>
       ) },
       { path: 'admin/server-info/charts', element: (

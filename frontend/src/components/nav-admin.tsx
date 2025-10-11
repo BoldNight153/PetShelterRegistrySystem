@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Shield, Users, KeyRound, BadgeCheck, Activity } from 'lucide-react'
+import { Shield, Users, KeyRound, BadgeCheck, LineChart, LayoutDashboard } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 
 const ADMIN_ROLES = new Set(['system_admin','admin','shelter_admin','staff_manager'])
@@ -36,9 +36,19 @@ export default function NavAdmin() {
         </li>
         {isSystemAdmin && (
           <li>
-            <Link className="flex items-center gap-2 rounded px-2 py-1 hover:bg-accent" to="/admin/server-info">
-              <Activity className="h-4 w-4" /> Server Info
-            </Link>
+            <div className="px-2 py-1 text-xs text-muted-foreground">Server</div>
+            <ul className="ml-2 space-y-1">
+              <li>
+                <Link className="flex items-center gap-2 rounded px-2 py-1 hover:bg-accent" to="/admin/server-info">
+                  <LayoutDashboard className="h-4 w-4" /> Dashboards
+                </Link>
+              </li>
+              <li>
+                <Link className="flex items-center gap-2 rounded px-2 py-1 hover:bg-accent" to="/admin/server-info/charts">
+                  <LineChart className="h-4 w-4" /> Charts
+                </Link>
+              </li>
+            </ul>
           </li>
         )}
       </ul>
