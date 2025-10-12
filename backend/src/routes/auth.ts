@@ -62,10 +62,28 @@ function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-async function createRefreshToken(userId: string, userAgent?: string, ipAddress?: string) {
+async function createRefreshToken(userId: string, userAgent?: string, ipAddress?: string): Promise<{ token: string; expiresAt: Date; maxAgeMs: number }>
+{
   const token = crypto.randomBytes(32).toString('hex');
-  const days = Number(process.env.REFRESH_DAYS || 30);
-  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  // Prefer settings.security.sessionMaxAgeMin, fallback to env REFRESH_DAYS (days)
+  let expiresAt: Date;
+  let maxAgeMs: number;
+  try {
+    const s = await (prisma as any).setting.findUnique({ where: { category_key: { category: 'security', key: 'sessionMaxAgeMin' } } });
+    const minutes = Number(s?.value ?? 0);
+    if (Number.isFinite(minutes) && minutes > 0) {
+      maxAgeMs = minutes * 60 * 1000;
+      expiresAt = new Date(Date.now() + maxAgeMs);
+    } else {
+      const days = Number(process.env.REFRESH_DAYS || 30);
+      maxAgeMs = days * 24 * 60 * 60 * 1000;
+      expiresAt = new Date(Date.now() + maxAgeMs);
+    }
+  } catch (_) {
+    const days = Number(process.env.REFRESH_DAYS || 30);
+    maxAgeMs = days * 24 * 60 * 60 * 1000;
+    expiresAt = new Date(Date.now() + maxAgeMs);
+  }
   await prisma.refreshToken.create({
     data: {
       userId,
@@ -75,15 +93,17 @@ async function createRefreshToken(userId: string, userAgent?: string, ipAddress?
       ipAddress,
     },
   });
-  return token;
+  return { token, expiresAt, maxAgeMs };
 }
 
-function setAuthCookies(res: any, accessToken: string, refreshToken: string) {
+function setAuthCookies(res: any, accessToken: string, refreshToken: string, refreshMaxAgeMs?: number) {
   // access cookie: short TTL via JWT exp; no maxAge needed
   res.cookie('accessToken', accessToken, cookieBase());
   // refresh cookie: explicitly set maxAge
-  const days = Number(process.env.REFRESH_DAYS || 30);
-  res.cookie('refreshToken', refreshToken, { ...cookieBase(), maxAge: days * 24 * 60 * 60 * 1000 });
+  const maxAge = typeof refreshMaxAgeMs === 'number' && refreshMaxAgeMs > 0
+    ? refreshMaxAgeMs
+    : Number(process.env.REFRESH_DAYS || 30) * 24 * 60 * 60 * 1000;
+  res.cookie('refreshToken', refreshToken, { ...cookieBase(), maxAge });
 }
 
 function clearAuthCookies(res: any) {
@@ -137,9 +157,9 @@ router.post('/register', validateCsrf, async (req, res) => {
     const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
   const user = await prisma.user.create({ data: { email, passwordHash, name } });
     await logAudit(user.id, 'auth.register', req);
-    const access = signAccessToken(user.id);
-    const refresh = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
-    setAuthCookies(res, access, refresh);
+  const access = signAccessToken(user.id);
+  const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+  setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.status(201).json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
   } catch (err: any) {
     // Log detailed error but avoid leaking internals in production
@@ -160,12 +180,18 @@ router.post('/login', validateCsrf, async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !user.passwordHash) return res.status(401).json({ error: 'invalid credentials' });
+    // Enforce email verification if enabled via settings
+    try {
+      const setting = await (prisma as any).setting.findUnique({ where: { category_key: { category: 'security', key: 'requireEmailVerification' } } });
+      const required = Boolean(setting?.value ?? true);
+      if (required && !user.emailVerified) return res.status(403).json({ error: 'email verification required' });
+    } catch (_) {}
     const ok = await argon2.verify(user.passwordHash, password);
     if (!ok) return res.status(401).json({ error: 'invalid credentials' });
     await logAudit(user.id, 'auth.login', req);
-    const access = signAccessToken(user.id);
-    const refresh = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
-    setAuthCookies(res, access, refresh);
+  const access = signAccessToken(user.id);
+  const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+  setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
   } catch (err: any) {
     try {
@@ -208,11 +234,11 @@ router.post('/refresh', validateCsrf, async (req, res) => {
     if (existing.expiresAt <= new Date()) return res.status(401).json({ error: 'refresh token expired' });
 
     // rotate
-    const newToken = await createRefreshToken(existing.userId, req.get('user-agent') || undefined, req.ip);
-    await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date(), replacedByToken: newToken } });
+  const created = await createRefreshToken(existing.userId, req.get('user-agent') || undefined, req.ip);
+  await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date(), replacedByToken: created.token } });
 
-    const access = signAccessToken(existing.userId);
-    setAuthCookies(res, access, newToken);
+  const access = signAccessToken(existing.userId);
+  setAuthCookies(res, access, created.token, created.maxAgeMs);
     await logAudit(existing.userId, 'auth.refresh', req, { rotatedFrom: rt });
     return res.json({ ok: true });
   } catch (err: any) {
@@ -259,9 +285,9 @@ router.post('/verify-email', validateCsrf, async (req, res) => {
     await revokeAllRefreshTokens(user.id);
     await logAudit(user.id, 'auth.email_verification.verified', req);
     // issue fresh session
-    const access = signAccessToken(user.id);
-    const refresh = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
-    setAuthCookies(res, access, refresh);
+  const access = signAccessToken(user.id);
+  const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+  setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ id: updated.id, email: updated.email, emailVerified: updated.emailVerified });
   } catch (err: any) {
     try { (req as any).log?.error({ err }, 'verify-email failed'); } catch (_) {}
@@ -311,9 +337,9 @@ router.post('/reset-password', validateCsrf, async (req, res) => {
     await revokeAllRefreshTokens(user.id);
     await logAudit(user.id, 'auth.password_reset.reset', req);
     // issue new session cookies
-    const access = signAccessToken(user.id);
-    const refresh = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
-    setAuthCookies(res, access, refresh);
+  const access = signAccessToken(user.id);
+  const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+  setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ ok: true });
   } catch (err: any) {
     try { (req as any).log?.error({ err }, 'reset-password failed'); } catch (_) {}
@@ -365,15 +391,23 @@ router.get('/mode', (req: any, res) => {
   }
 
   // Providers config summary (no secrets)
+  // Read provider enable flags from settings synchronously via cached env? We can only check env here; adjust enabled with settings via req.app locals if needed.
+  // For now, include settings flag snapshot by querying Prisma (best-effort, non-blocking)
+  let googleEnabled = true;
+  let githubEnabled = true;
+  try {
+    // These reads are async in /mode route, but we'll leave them best-effort using synchronous defaults and override in thenable
+  } catch {}
+
   const google = {
-    configured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI),
+    configured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI) && googleEnabled,
     redirectUri: process.env.GOOGLE_REDIRECT_URI || null,
     scope: 'openid email profile',
     hasClientId: Boolean(process.env.GOOGLE_CLIENT_ID),
     hasClientSecret: Boolean(process.env.GOOGLE_CLIENT_SECRET),
   };
   const github = {
-    configured: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET && process.env.GITHUB_REDIRECT_URI),
+    configured: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET && process.env.GITHUB_REDIRECT_URI) && githubEnabled,
     redirectUri: process.env.GITHUB_REDIRECT_URI || null,
     scope: 'read:user user:email',
     hasClientId: Boolean(process.env.GITHUB_CLIENT_ID),
@@ -388,7 +422,7 @@ router.get('/mode', (req: any, res) => {
     permissions: Array.isArray(u.permissions) ? u.permissions : [],
   } : null;
 
-  res.json({
+  const payload: any = {
     authMode,
     environment: {
       nodeEnv: process.env.NODE_ENV || 'development',
@@ -417,7 +451,81 @@ router.get('/mode', (req: any, res) => {
       failure: process.env.OAUTH_FAILURE_REDIRECT || null,
     },
     user,
-  });
+  };
+
+  // Try to override provider-enabled flags from settings (non-blocking)
+  (async () => {
+    try {
+      const authSettings = await (prisma as any).setting.findMany({ where: { category: 'auth' } });
+      const map = new Map(authSettings.map((s: any) => [s.key, s.value]));
+      const g = Boolean(map.get('google'));
+      const gh = Boolean(map.get('github'));
+      payload.providers.google.configured = payload.providers.google.configured && g;
+      payload.providers.github.configured = payload.providers.github.configured && gh;
+    } catch {}
+    res.json(payload);
+  })();
+});
+
+// -----------------------------
+// OAuth (stateless) start endpoints with provider toggle enforcement
+// -----------------------------
+
+function generateState(): string {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+async function isProviderEnabled(provider: 'google' | 'github'): Promise<boolean> {
+  try {
+    const s = await (prisma as any).setting.findUnique({ where: { category_key: { category: 'auth', key: provider } } });
+    return Boolean(s?.value ?? true);
+  } catch {
+    return true;
+  }
+}
+
+router.get('/oauth/:provider/start', async (req: any, res) => {
+  try {
+    const provider = String(req.params.provider);
+    if (provider !== 'google' && provider !== 'github') return res.status(404).json({ error: 'provider not supported' });
+    const enabled = await isProviderEnabled(provider as any);
+    if (!enabled) return res.status(403).json({ error: `${provider} login disabled` });
+
+    const state = generateState();
+    res.cookie('oauth_state', state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 10 * 60 * 1000,
+    });
+
+    if (provider === 'google') {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+      if (!clientId || !redirectUri) return res.status(500).json({ error: 'google not configured' });
+      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('scope', 'openid email profile');
+      authUrl.searchParams.set('state', state);
+      return res.redirect(302, authUrl.toString());
+    } else {
+      const clientId = process.env.GITHUB_CLIENT_ID;
+      const redirectUri = process.env.GITHUB_REDIRECT_URI;
+      if (!clientId || !redirectUri) return res.status(500).json({ error: 'github not configured' });
+      const authUrl = new URL('https://github.com/login/oauth/authorize');
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('scope', 'read:user user:email');
+      authUrl.searchParams.set('state', state);
+      return res.redirect(302, authUrl.toString());
+    }
+  } catch (err: any) {
+    try { (req as any).log?.error({ err }, 'oauth start failed'); } catch {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+  }
 });
 
 export default router;

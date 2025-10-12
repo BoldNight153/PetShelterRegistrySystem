@@ -9,9 +9,14 @@ import LoginPage from './pages/login'
 import RegisterPage from './pages/register'
 import { AuthProvider } from './lib/auth-context'
 import { ProtectedRoute } from './lib/auth-context'
-import ServerInfoPlaceholder from './pages/admin/server-info'
 import ServerInfoCharts from './pages/admin/server-info-charts'
 import ServerDashboard from './pages/admin/server-dashboard'
+import AdminDocsIntroduction from './pages/admin/docs/introduction'
+import AdminDocsGetStarted from './pages/admin/docs/get-started'
+import AdminDocsTutorials from './pages/admin/docs/tutorials'
+import AdminDocsChangelog from './pages/admin/docs/changelog'
+import AdminDocsExamples from './pages/admin/docs/examples'
+import AdminSettingsPage from './pages/admin/settings'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -42,6 +47,36 @@ const router = createBrowserRouter([
       { path: 'admin/server-info/charts', element: (
         <ProtectedRoute>
           <ServerInfoCharts />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/settings', element: (
+        <ProtectedRoute>
+          <AdminSettingsPage />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/docs/introduction', element: (
+        <ProtectedRoute>
+          <AdminDocsIntroduction />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/docs/get-started', element: (
+        <ProtectedRoute>
+          <AdminDocsGetStarted />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/docs/tutorials', element: (
+        <ProtectedRoute>
+          <AdminDocsTutorials />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/docs/examples', element: (
+        <ProtectedRoute>
+          <AdminDocsExamples />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/docs/changelog', element: (
+        <ProtectedRoute>
+          <AdminDocsChangelog />
         </ProtectedRoute>
       ) },
       { path: 'login', element: <LoginPage /> },

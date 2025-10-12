@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { ShieldAlert } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, Legend } from 'recharts'
+import { loadSettings } from '@/lib/api'
 
 function useJson<T>(url: string | null, intervalMs = 15000) {
   const [data, setData] = useState<T | null>(null)
@@ -43,10 +44,23 @@ export default function ServerInfoCharts() {
     )
   }
 
-  const { data: metrics, loading: loadingSnap } = useJson<any>('/admin/monitoring/metrics', 15000)
-  const { data: p99Series, loading: loadingP99 } = useJson<any>('/admin/monitoring/series?metric=http.p99&minutes=120', 15000)
-  const { data: errSeries, loading: loadingErr } = useJson<any>('/admin/monitoring/series?metric=http.error_rate&minutes=120', 15000)
-  const { data: lagSeries, loading: loadingLag } = useJson<any>('/admin/monitoring/series?metric=eventloop.lag.mean&minutes=120', 15000)
+  const [refreshMs, setRefreshMs] = useState(15000)
+  useEffect(() => {
+    let cancel = false
+    ;(async () => {
+      try {
+        const s = await loadSettings('monitoring')
+        const val = Number(s?.monitoring?.chartsRefreshSec ?? 15)
+        if (!cancel && Number.isFinite(val) && val > 0) setRefreshMs(val * 1000)
+      } catch {}
+    })()
+    return () => { cancel = true }
+  }, [])
+
+  const { data: metrics, loading: loadingSnap } = useJson<any>('/admin/monitoring/metrics', refreshMs)
+  const { data: p99Series } = useJson<any>('/admin/monitoring/series?metric=http.p99&minutes=120', refreshMs)
+  const { data: errSeries } = useJson<any>('/admin/monitoring/series?metric=http.error_rate&minutes=120', refreshMs)
+  const { data: lagSeries } = useJson<any>('/admin/monitoring/series?metric=eventloop.lag.mean&minutes=120', refreshMs)
 
   const p99 = useMemo(() => (p99Series?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [p99Series])
   const err = useMemo(() => (errSeries?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [errSeries])
@@ -56,7 +70,7 @@ export default function ServerInfoCharts() {
     <div className="p-6 space-y-8">
       <div>
         <h1 className="text-2xl font-semibold">Server Info</h1>
-        <p className="text-muted-foreground">Live metrics and recent history. Sampling every ~30s, refresh every 15s.</p>
+  <p className="text-muted-foreground">Live metrics and recent history. Sampling every ~30s, refresh every {Math.round(refreshMs/1000)}s.</p>
       </div>
       {(loadingSnap && !metrics) && <div className="rounded border p-4 text-sm">Loading metrics…</div>}
       {(!loadingSnap && !metrics) && <div className="rounded border p-4 text-sm">No metrics yet. Keep the server running and make a few requests; data is persisted every ~30 seconds.</div>}

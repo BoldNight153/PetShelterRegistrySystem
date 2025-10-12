@@ -100,6 +100,39 @@ async function main() {
     }
     console.log(`Seeded admin user: ${adminEmail} / ${adminPass}`);
   }
+
+  // Seed default application settings if not present
+  const defaultSettings: Record<string, Record<string, any>> = {
+    general: {
+      siteName: 'Pet Shelter Registry System',
+      environment: (process as any)?.env?.NODE_ENV || 'development',
+    },
+    monitoring: {
+      chartsRefreshSec: 15,
+      retentionDays: 7,
+    },
+    auth: {
+      google: true,
+      github: true,
+    },
+    docs: {
+      showPublicDocsLink: true,
+    },
+    security: {
+      requireEmailVerification: true,
+      // 30 days in minutes for refresh/session max-age fallback
+      sessionMaxAgeMin: 30 * 24 * 60,
+    },
+  };
+
+  for (const [category, entries] of Object.entries(defaultSettings)) {
+    for (const [key, value] of Object.entries(entries)) {
+      const existing = await prisma.setting.findUnique({ where: { category_key: { category, key } } });
+      if (!existing) {
+        await prisma.setting.create({ data: { category, key, value } });
+      }
+    }
+  }
 }
 
 main()

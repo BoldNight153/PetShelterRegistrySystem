@@ -353,6 +353,15 @@ export default function RedocPage() {
     `
   }, [mode])
 
+  // Choose which spec to render based on ?spec=pets|auth (default pets)
+  const specUrl = useMemo(() => {
+    if (typeof window === 'undefined') return '/api-docs/latest/openapi.json'
+    const u = new URL(window.location.href)
+    const which = (u.searchParams.get('spec') || 'pets').toLowerCase()
+    if (which === 'auth') return '/auth-docs/latest/openapi.json'
+    return '/api-docs/latest/openapi.json'
+  }, [])
+
   // Let ReDoc fetch the spec via specUrl so its search index initializes properly
 
   return (
@@ -360,7 +369,7 @@ export default function RedocPage() {
       <Suspense fallback={<div className="p-4 text-sm opacity-70">Loading viewer…</div>}>
         <RedocStandaloneLazy
           key={`redoc-${mode}`}
-          specUrl="/api-docs/latest/openapi.json"
+          specUrl={specUrl}
           options={{
             theme: redocTheme as any,
             scrollYOffset: 0,

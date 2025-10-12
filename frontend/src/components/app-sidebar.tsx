@@ -3,7 +3,6 @@
 import * as React from "react"
 import {
   AudioWaveform,
-  BookOpen,
   Bot,
   Command,
   Frame,
@@ -87,33 +86,6 @@ const data = {
         },
         {
           title: "Quantum",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Documentation",
-      url: "#",
-      icon: BookOpen,
-      items: [
-        {
-          title: "Pets REST API",
-          url: "/docs",
-        },
-        {
-          title: "Introduction",
-          url: "#",
-        },
-        {
-          title: "Get Started",
-          url: "#",
-        },
-        {
-          title: "Tutorials",
-          url: "#",
-        },
-        {
-          title: "Changelog",
           url: "#",
         },
       ],

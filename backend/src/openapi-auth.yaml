@@ -1,0 +1,377 @@
+openapi: 3.1.0
+info:
+  title: Auth REST API
+  version: 0.0.0
+  description: >-
+    Authentication and session endpoints for the Pet Shelter Registry System.
+    Uses cookie-based JWT access tokens and rotating refresh tokens with double-submit CSRF protection.
+  license:
+    name: MIT
+    url: "https://opensource.org/licenses/MIT"
+servers:
+  - url: "http://localhost:{port}"
+    description: Local development server
+    variables:
+      port:
+        default: "4000"
+security: []
+tags:
+  - name: Auth
+    description: Email/password auth, tokens, and diagnostics
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: accessToken
+      description: JWT access token issued by /auth/login or after verification/reset
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: x-csrf-token
+      description: Required for state-changing requests; value must match the csrfToken cookie
+  responses:
+    TooManyRequests:
+      description: Too Many Requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Authenticated but action is not allowed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          oneOf:
+            - type: string
+            - type: object
+      required: [error]
+paths:
+  /auth/csrf:
+    get:
+      tags: [Auth]
+      summary: Issue CSRF token
+      description: Returns a CSRF token and sets a non-HttpOnly csrfToken cookie for double-submit protection.
+      operationId: getCsrf
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  csrfToken: { type: string }
+                required: [csrfToken]
+              example:
+                csrfToken: "abc.def"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s http://localhost:4000/auth/csrf | jq
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      operationId: register
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string, format: password }
+              required: [name, email, password]
+            example:
+              name: "Admin"
+              email: "admin@example.com"
+              password: "Admin123!@#"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  email: { type: string }
+                  name: { type: string }
+                  emailVerified: { type: ["string", "null"], format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
+            curl -i -X POST http://localhost:4000/auth/register \
+              -H 'Content-Type: application/json' \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF" \
+              -d '{"name":"Admin","email":"admin@example.com","password":"Admin123!@#"}'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email/password
+      operationId: login
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string, format: password }
+              required: [email, password]
+            example:
+              email: "admin@example.com"
+              password: "Admin123!@#"
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: Sets accessToken and refreshToken cookies
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  email: { type: string }
+                  name: { type: string }
+                  emailVerified: { type: ["string", "null"], format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
+            curl -i -X POST http://localhost:4000/auth/login \
+              -H 'Content-Type: application/json' \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF" \
+              -d '{"email":"admin@example.com","password":"Admin123!@#"}'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout and revoke refresh token
+      operationId: logout
+      security:
+        - csrfHeader: []
+        - cookieAuth: []
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
+            curl -i -X POST http://localhost:4000/auth/logout \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF; refreshToken=<from login>" 
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token and issue new access token
+      operationId: refresh
+      security:
+        - csrfHeader: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
+            curl -i -X POST http://localhost:4000/auth/refresh \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF; refreshToken=<from login>" 
+
+  /auth/request-email-verification:
+    post:
+      tags: [Auth]
+      summary: Request email verification
+      operationId: requestEmailVerification
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+              required: [email]
+            example:
+              email: "user@example.com"
+      responses:
+        "200":
+          description: Always OK (to avoid enumeration)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                required: [ok]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verify email using token
+      operationId: verifyEmail
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+              required: [token]
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/request-password-reset:
+    post:
+      tags: [Auth]
+      summary: Request password reset email
+      operationId: requestPasswordReset
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+              required: [email]
+      responses:
+        "200":
+          description: Always OK (to avoid enumeration)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                required: [ok]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password using token
+      operationId: resetPassword
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                password: { type: string, format: password }
+              required: [token, password]
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/mode:
+    get:
+      tags: [Auth]
+      summary: Diagnostics for current authentication mode
+      operationId: authMode
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: object
+                    additionalProperties: { type: boolean }
+                  emailVerificationRequired: { type: boolean }
+                  sessionMaxAgeMin: { type: number }
+                required: [providers]
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/oauth/{provider}/start:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [google, github]
+        description: OAuth provider
+    get:
+      tags: [Auth]
+      summary: Start OAuth flow for provider
+      operationId: oauthStart
+      responses:
+        "200":
+          description: OK (may redirect)
+        "302":
+          description: Redirect to OAuth provider authorization URL
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500": { description: Provider not configured }

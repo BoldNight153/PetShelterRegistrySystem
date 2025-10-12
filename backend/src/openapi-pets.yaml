@@ -1,0 +1,968 @@
+openapi: 3.1.0
+info:
+  title: Pets REST API
+  version: 0.0.0
+  description: >-
+    REST API for shelters, locations, pets, owners, medical events, and relationships.
+    Uses cookie-based auth and CSRF for state-changing operations. Read endpoints are public by default.
+  termsOfService: "https://github.com/BoldNight153/PetShelterRegistrySystem/blob/main/TERMS.md"
+  contact:
+    name: BoldNight153
+    url: "https://github.com/BoldNight153"
+  license:
+    name: MIT
+    url: "https://opensource.org/licenses/MIT"
+servers:
+  - url: "http://localhost:{port}"
+    description: Local development server
+    variables:
+      port:
+        default: "4000"
+security: []
+tags:
+  - name: Pets
+    description: Manage pets within shelters
+  - name: Shelters
+    description: Manage shelters and their capacities
+  - name: Locations
+    description: Manage individual locations/kennels within shelters
+  - name: Owners
+    description: Manage owners and contacts
+  - name: Medical
+    description: Record medical events for pets
+  - name: Events
+    description: Track general system events
+  - name: PetOwners
+    description: Manage relationships between pets and owners
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: accessToken
+      description: JWT access token cookie
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: x-csrf-token
+      description: Must match csrfToken cookie for state-changing requests
+  responses:
+    TooManyRequests:
+      description: Too Many Requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: "not found"
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              message: "validation failed"
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            unauthorized:
+              value:
+                error: "unauthorized"
+    Forbidden:
+      description: Authenticated but not permitted (RBAC)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            forbidden:
+              value:
+                error: "forbidden"
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          oneOf:
+            - type: string
+            - type: object
+      required: [error]
+    Sex:
+      type: string
+      enum: [MALE, FEMALE, UNKNOWN]
+    PetStatus:
+      type: string
+      enum: [AVAILABLE, ADOPTED, TRANSFERRED, DECEASED]
+    OwnerRole:
+      type: string
+      enum: [OWNER, CONTACT, STAFF]
+    Shelter:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        address: { type: [object, "null"] }
+        phone: { type: [string, "null"] }
+        email: { type: [string, "null"] }
+        capacity: { type: [integer, "null"] }
+        notes: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, createdAt, updatedAt]
+      example:
+        id: "3decf807-6b07-4267-8054-2d456e77aaa1"
+        name: "Central Shelter"
+        address: { city: "Metropolis" }
+        phone: "555-1234"
+        createdAt: "2025-09-28T13:20:58.893Z"
+        updatedAt: "2025-09-28T13:20:58.893Z"
+    Location:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        shelterId: { type: string }
+        code: { type: string }
+        description: { type: [string, "null"] }
+        capacity: { type: [integer, "null"] }
+        notes: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, shelterId, code, createdAt]
+      example:
+        id: "47a149b0-c0aa-4eb1-be99-32c9541d0679"
+        shelterId: "3decf807-6b07-4267-8054-2d456e77aaa1"
+        code: "A-1"
+        description: "Front row cages"
+        createdAt: "2025-09-28T13:20:58.899Z"
+    Pet:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        species: { type: string }
+        breed: { type: [string, "null"] }
+        sex: { $ref: "#/components/schemas/Sex" }
+        dob: { type: [string, "null"], format: date }
+        microchip: { type: [string, "null"] }
+        color: { type: [string, "null"] }
+        weightKg: { type: [number, "null"] }
+        sterilized: { type: boolean }
+        status: { $ref: "#/components/schemas/PetStatus" }
+        isAlive: { type: boolean }
+        deceasedAt: { type: [string, "null"], format: date-time }
+        notes: { type: [string, "null"] }
+        intakeAt: { type: [string, "null"], format: date-time }
+        shelterId: { type: [string, "null"] }
+        locationId: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, species, sterilized, status, isAlive, createdAt, updatedAt]
+      example:
+        id: "031b7d02-14dc-4542-a9eb-9f23be036e14"
+        name: "Milo"
+        species: "Dog"
+        breed: "Beagle"
+        sex: "MALE"
+        sterilized: false
+        status: "AVAILABLE"
+        isAlive: true
+        intakeAt: "2025-09-28T13:20:58.907Z"
+        shelterId: "3decf807-6b07-4267-8054-2d456e77aaa1"
+        locationId: "47a149b0-c0aa-4eb1-be99-32c9541d0679"
+        createdAt: "2025-09-28T13:20:58.909Z"
+        updatedAt: "2025-09-28T13:20:58.909Z"
+    Owner:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: [string, "null"] }
+        phone: { type: [string, "null"] }
+        type:
+          oneOf:
+            - $ref: "#/components/schemas/OwnerRole"
+            - type: "null"
+        address: { type: [object, "null"] }
+        notes: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, firstName, lastName, createdAt, updatedAt]
+      example:
+        id: "36fa99ff-0a81-4451-af12-2d2d5c881a01"
+        firstName: "Alice"
+        lastName: "Smith"
+        email: "alice@example.com"
+        createdAt: "2025-09-28T13:20:58.903Z"
+        updatedAt: "2025-09-28T13:20:58.903Z"
+    MedicalRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        petId: { type: string }
+        eventType: { type: string }
+        notes: { type: [string, "null"] }
+        occurredAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, petId, eventType, occurredAt, createdAt]
+      example:
+        id: "mrec-1"
+        petId: "031b7d02-14dc-4542-a9eb-9f23be036e14"
+        eventType: "VACCINATION"
+        notes: "Rabies"
+        occurredAt: "2025-09-15T09:00:00Z"
+        createdAt: "2025-09-15T09:00:00Z"
+    Event:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        description: { type: [string, "null"] }
+        occurredAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, type, occurredAt, createdAt]
+      example:
+        id: "evt-1"
+        type: "CHECKIN"
+        description: "Pet intake"
+        occurredAt: "2025-09-28T13:20:58Z"
+        createdAt: "2025-09-28T13:20:58Z"
+    PetOwner:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        petId: { type: string }
+        ownerId: { type: string }
+        role: { $ref: "#/components/schemas/OwnerRole" }
+        createdAt: { type: string, format: date-time }
+      required: [id, petId, ownerId, role, createdAt]
+      example:
+        id: "po-1"
+        petId: "031b7d02-14dc-4542-a9eb-9f23be036e14"
+        ownerId: "36fa99ff-0a81-4451-af12-2d2d5c881a01"
+        role: "OWNER"
+        createdAt: "2025-09-28T13:20:58Z"
+
+paths:
+  /pets:
+    get:
+      tags: [Pets]
+      operationId: listPets
+      summary: List pets
+      description: Returns a list of pets (paginated top 100).
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s http://localhost:4000/pets | jq
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('http://localhost:4000/pets');
+            const pets = await res.json();
+            console.log(pets);
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+              example: []
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Pets]
+      operationId: createPet
+      summary: Create a pet
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        roles: [staff, shelter_admin, admin, system_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                species: { type: string }
+                breed: { type: string }
+                sex: { $ref: "#/components/schemas/Sex" }
+                dob: { type: string, format: date }
+                microchip: { type: string }
+                shelterId: { type: string }
+                locationId: { type: string }
+              required: [name, species]
+            example:
+              name: "Milo"
+              species: "Dog"
+              breed: "Beagle"
+              sex: "MALE"
+              shelterId: "3decf807-6b07-4267-8054-2d456e77aaa1"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
+            curl -X POST http://localhost:4000/pets \
+              -H 'Content-Type: application/json' \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF; accessToken=<jwt>" \
+              -d '{"name":"Milo","species":"Dog"}'
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('http://localhost:4000/pets', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-csrf-token': process.env.CSRF },
+              body: JSON.stringify({ name: 'Milo', species: 'Dog' }),
+              credentials: 'include',
+            });
+            console.log(await res.json());
+
+  /pets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+        description: Pet id
+    get:
+      tags: [Pets]
+      operationId: getPet
+      summary: Get pet by id
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Pets]
+      operationId: updatePet
+      summary: Update pet
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        roles: [staff, shelter_admin, admin, system_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Pet"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Pets]
+      operationId: deletePet
+      summary: Delete pet
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        roles: [staff, shelter_admin, admin, system_admin]
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /shelters:
+    get:
+      tags: [Shelters]
+      operationId: listShelters
+      summary: List shelters
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s http://localhost:4000/shelters | jq
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Shelter" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Shelters]
+      operationId: createShelter
+      summary: Create shelter
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        roles: [shelter_admin, admin, system_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Shelter" }
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
+            curl -X POST http://localhost:4000/shelters \
+              -H 'Content-Type: application/json' \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF; accessToken=<jwt>" \
+              -d '{"name":"Central Shelter"}'
+
+  /shelters/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+        description: Shelter id
+    get:
+      tags: [Shelters]
+      operationId: getShelter
+      summary: Get shelter
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Shelter" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Shelters]
+      operationId: updateShelter
+      summary: Update shelter
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        roles: [shelter_admin, admin, system_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Shelter" }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Shelters]
+      operationId: deleteShelter
+      summary: Delete shelter
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        roles: [shelter_admin, admin, system_admin]
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /locations:
+    get:
+      tags: [Locations]
+      operationId: listLocations
+      summary: List locations
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s http://localhost:4000/locations | jq
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Location" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Locations]
+      operationId: createLocation
+      summary: Create location
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [locations.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Location" }
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /locations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+        description: Location id
+    get:
+      tags: [Locations]
+      operationId: getLocation
+      summary: Get location
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Location" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Locations]
+      operationId: updateLocation
+      summary: Update location
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [locations.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Location" }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Locations]
+      operationId: deleteLocation
+      summary: Delete location
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [locations.write]
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /owners:
+    get:
+      tags: [Owners]
+      operationId: listOwners
+      summary: List owners
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s http://localhost:4000/owners | jq
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Owner" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Owners]
+      operationId: createOwner
+      summary: Create owner
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [owners.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Owner" }
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /owners/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+        description: Owner id
+    get:
+      tags: [Owners]
+      operationId: getOwner
+      summary: Get owner
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Owner" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Owners]
+      operationId: updateOwner
+      summary: Update owner
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [owners.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Owner" }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Owners]
+      operationId: deleteOwner
+      summary: Delete owner
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [owners.write]
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /medical:
+    get:
+      tags: [Medical]
+      operationId: listMedicalRecords
+      summary: List medical records
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s http://localhost:4000/medical | jq
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MedicalRecord" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Medical]
+      operationId: createMedicalRecord
+      summary: Create medical record
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [medical.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MedicalRecord" }
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /medical/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+        description: Medical record id
+    get:
+      tags: [Medical]
+      operationId: getMedicalRecord
+      summary: Get medical record
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MedicalRecord" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Medical]
+      operationId: updateMedicalRecord
+      summary: Update medical record
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [medical.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MedicalRecord" }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Medical]
+      operationId: deleteMedicalRecord
+      summary: Delete medical record
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [medical.write]
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /events:
+    get:
+      tags: [Events]
+      operationId: listEvents
+      summary: List events
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s http://localhost:4000/events | jq
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Event" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Events]
+      operationId: createEvent
+      summary: Create event
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [events.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Event" }
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /events/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+        description: Event id
+    get:
+      tags: [Events]
+      operationId: getEvent
+      summary: Get event
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Events]
+      operationId: updateEvent
+      summary: Update event
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [events.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Event" }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Events]
+      operationId: deleteEvent
+      summary: Delete event
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [events.write]
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /pet-owners:
+    get:
+      tags: [PetOwners]
+      operationId: listPetOwners
+      summary: List pet-owner links
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s http://localhost:4000/pet-owners | jq
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PetOwner" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [PetOwners]
+      operationId: createPetOwner
+      summary: Create pet-owner link
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [owners.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PetOwner" }
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /pet-owners/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+        description: PetOwner id
+    get:
+      tags: [PetOwners]
+      operationId: getPetOwner
+      summary: Get pet-owner link
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PetOwner" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [PetOwners]
+      operationId: updatePetOwner
+      summary: Update pet-owner link
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [owners.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PetOwner" }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [PetOwners]
+      operationId: deletePetOwner
+      summary: Delete pet-owner link
+      security:
+        - cookieAuth: []
+        - csrfHeader: []
+      x-rbac:
+        permissions: [owners.write]
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }

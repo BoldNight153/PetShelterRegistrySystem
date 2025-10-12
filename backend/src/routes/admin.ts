@@ -141,3 +141,48 @@ router.post('/users/revoke-role', adminGuard, async (req, res) => {
 });
 
 export default router;
+
+// ----------------------
+// Settings management
+// ----------------------
+// Place after default export so existing imports continue to work; router remains same instance
+
+const settingsGuard = requireRole('system_admin');
+
+// List all settings (optionally filter by category)
+router.get('/settings', settingsGuard, async (req: any, res) => {
+  const { category } = req.query as { category?: string };
+  const where = category ? { category: String(category) } : {};
+  const rows = await prisma.setting.findMany({ where, orderBy: [{ category: 'asc' }, { key: 'asc' }] });
+  // Shape into { [category]: { key: value } }
+  const result: Record<string, Record<string, any>> = {};
+  for (const r of rows) {
+    result[r.category] ||= {};
+    result[r.category][r.key] = r.value;
+  }
+  res.json({ settings: result });
+});
+
+// Upsert settings for a category; body: { category: string, entries: { key: string, value: any }[] }
+const UpsertSettingsSchema = z.object({
+  category: z.string().min(1),
+  entries: z.array(z.object({ key: z.string().min(1), value: z.any() })).min(1),
+});
+
+router.put('/settings', settingsGuard, async (req: any, res) => {
+  const parsed = UpsertSettingsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+  const { category, entries } = parsed.data;
+  const actorId = req.user?.id || null;
+  const writes = [] as any[];
+  for (const { key, value } of entries) {
+    writes.push(prisma.setting.upsert({
+      where: { category_key: { category, key } as any },
+      create: { category, key, value, updatedBy: actorId || undefined },
+      update: { value, updatedBy: actorId || undefined },
+    }));
+  }
+  await prisma.$transaction(writes);
+  await logAudit(actorId, 'admin.settings.upsert', req, { category, keys: entries.map(e => e.key) });
+  res.json({ ok: true });
+});

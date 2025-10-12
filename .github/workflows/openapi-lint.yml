@@ -44,4 +44,4 @@ jobs:
         run: npm i -g @stoplight/spectral-cli
 
       - name: Lint OpenAPI specs with Spectral
-        run: spectral lint -r .spectral.yaml src/openapi.yaml src/openapi-admin.yaml
+        run: spectral lint -r .spectral.yaml src/openapi-pets.yaml src/openapi-admin.yaml src/openapi-auth.yaml

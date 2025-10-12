@@ -5,14 +5,14 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc -p .",
-    "postbuild": "cp src/openapi.yaml dist/openapi.yaml && cp src/openapi-admin.yaml dist/openapi-admin.yaml",
+    "postbuild": "cp -f src/openapi-pets.yaml dist/openapi-pets.yaml && cp -f src/openapi-admin.yaml dist/openapi-admin.yaml && cp -f src/openapi-auth.yaml dist/openapi-auth.yaml",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts",
     "test": "jest --config jest.config.cjs --runInBand --detectOpenHandles",
-  "lint": "eslint -c eslint.config.mjs src --ext .ts",
-    "lint:openapi": "redocly lint src/openapi.yaml src/openapi-admin.yaml"
+    "lint": "eslint -c eslint.config.mjs src --ext .ts",
+    "lint:openapi": "redocly lint src/openapi-pets.yaml src/openapi-admin.yaml src/openapi-auth.yaml"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
@@ -48,6 +48,7 @@
     "glob": "^11.0.3",
     "jest": "^30.0.0",
     "lru-cache": "^11.2.1",
+    "marked": "^12.0.2",
     "prisma": "^6.16.2",
     "rimraf": "^6.0.1",
     "superagent": "^10.2.3",

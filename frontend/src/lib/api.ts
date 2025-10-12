@@ -73,3 +73,29 @@ export async function refresh() {
   if (!res.ok) return null;
   return res.json();
 }
+
+// ----------------------
+// Admin Settings API
+// ----------------------
+
+export type SettingsMap = Record<string, Record<string, any>>;
+
+export async function loadSettings(category?: string): Promise<SettingsMap> {
+  const url = category ? `/admin/settings?category=${encodeURIComponent(category)}` : `/admin/settings`;
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load settings');
+  const data = await res.json();
+  return (data.settings ?? {}) as SettingsMap;
+}
+
+export async function saveSettings(category: string, entries: { key: string; value: any }[]) {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify({ category, entries })
+  });
+  if (!res.ok) throw new Error('Failed to save settings');
+  return res.json();
+}

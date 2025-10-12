@@ -22,13 +22,15 @@ import { parseAuth, requireRole } from './middleware/auth';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { marked } from 'marked';
 // Load the OpenAPI YAML spec at runtime. We parse it with js-yaml so the
 // source can be hand-edited YAML rather than JSON. If parsing fails we
 // set `openapi` to null so the server still starts.
 let openapi: any = null;
 let openapiAdmin: any = null;
+let openapiAuth: any = null;
 try {
-  const yamlPath = path.join(__dirname, 'openapi.yaml');
+  const yamlPath = path.join(__dirname, 'openapi-pets.yaml');
   const raw = fs.readFileSync(yamlPath, 'utf8');
   openapi = yaml.load(raw) as any;
 } catch (err) {
@@ -50,6 +52,21 @@ try {
   openapiAdmin = yaml.load(raw!) as any;
 } catch (err) {
   openapiAdmin = null;
+}
+// Load Auth OpenAPI YAML
+try {
+  let authYamlPath = path.join(__dirname, 'openapi-auth.yaml');
+  let raw: string | null = null;
+  try {
+    raw = fs.readFileSync(authYamlPath, 'utf8');
+  } catch (_) {
+    const srcFallback = path.resolve(process.cwd(), 'src', 'openapi-auth.yaml');
+    raw = fs.readFileSync(srcFallback, 'utf8');
+    authYamlPath = srcFallback;
+  }
+  openapiAuth = yaml.load(raw!) as any;
+} catch (err) {
+  openapiAuth = null;
 }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pkg = require('../package.json');
@@ -186,6 +203,18 @@ app.get('/admin/monitoring/metrics', requireRole('system_admin') as any, async (
 
 // Persist selected metrics periodically for charting
 const prismaForMetrics = new PrismaClient();
+// Track last retention cleanup information and persist to settings
+let lastCleanupAt: Date | null = null;
+let lastCleanupDeleted: number | null = null;
+async function loadRetentionStatus() {
+  try {
+    const a = await (prismaForMetrics as any).setting.findUnique({ where: { category_key: { category: 'monitoring', key: 'lastCleanupAt' } } });
+    const d = await (prismaForMetrics as any).setting.findUnique({ where: { category_key: { category: 'monitoring', key: 'lastCleanupDeleted' } } });
+    lastCleanupAt = a?.value ? new Date(String(a.value)) : null;
+    lastCleanupDeleted = typeof d?.value === 'number' ? Number(d.value) : (d?.value != null ? Number(d.value) : null);
+  } catch {}
+}
+void loadRetentionStatus();
 if (process.env.NODE_ENV !== 'test') {
   setInterval(async () => {
     try {
@@ -205,6 +234,39 @@ if (process.env.NODE_ENV !== 'test') {
       // ignore sampling errors
     }
   }, 30_000).unref();
+
+  // Periodic retention cleanup for monitoring metrics
+  const retentionCleanup = async () => {
+    try {
+      // Default 7 days if no setting present
+      let days = 7;
+      try {
+        const row = await (prismaForMetrics as any).setting.findUnique({ where: { category_key: { category: 'monitoring', key: 'retentionDays' } } });
+        const v = Number(row?.value);
+        if (Number.isFinite(v) && v > 0) days = v;
+      } catch {}
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const result = await (prismaForMetrics as any).metricPoint.deleteMany({ where: { createdAt: { lt: cutoff } } });
+      lastCleanupAt = new Date();
+      lastCleanupDeleted = Number(result?.count ?? 0);
+      try {
+        await (prismaForMetrics as any).setting.upsert({
+          where: { category_key: { category: 'monitoring', key: 'lastCleanupAt' } },
+          create: { category: 'monitoring', key: 'lastCleanupAt', value: lastCleanupAt.toISOString() },
+          update: { value: lastCleanupAt.toISOString() },
+        });
+        await (prismaForMetrics as any).setting.upsert({
+          where: { category_key: { category: 'monitoring', key: 'lastCleanupDeleted' } },
+          create: { category: 'monitoring', key: 'lastCleanupDeleted', value: lastCleanupDeleted },
+          update: { value: lastCleanupDeleted },
+        });
+      } catch {}
+    } catch (err) {
+      try { (logger as any).warn({ err }, 'retention cleanup failed'); } catch {}
+    }
+  };
+  // Run hourly; unref so it won't keep the event loop alive
+  setInterval(retentionCleanup, 60 * 60 * 1000).unref();
 }
 
 // Basic liveness and detail health endpoints
@@ -258,8 +320,59 @@ app.get('/admin/monitoring/runtime', requireRole('system_admin') as any, async (
       systemMicros: cpu.system,
     },
     eventLoopLagMs,
+    retention: {
+      lastCleanupAt: lastCleanupAt ? lastCleanupAt.toISOString() : null,
+      lastCleanupDeleted,
+    },
     timestamp: new Date().toISOString(),
   });
+});
+
+// Admin Docs: API changelog (markdown rendered as HTML)
+app.get('/admin/docs/api-changelog', requireRole('system_admin') as any, async (_req, res) => {
+  try {
+    const mdPath = path.resolve(process.cwd(), 'src', 'docs', 'api-changelog.md');
+    const raw = fs.readFileSync(mdPath, 'utf8');
+    const html = marked.parse(raw);
+    res.type('text/html').send(String(html));
+  } catch (err) {
+    res.status(500).json({ error: 'changelog not available' });
+  }
+});
+
+// On-demand retention cleanup task
+app.post('/admin/monitoring/retention/cleanup', requireRole('system_admin') as any, async (req, res) => {
+  try {
+    await (async () => {
+      // Reuse logic from periodic cleanup
+      let days = 7;
+      try {
+        const row = await (prismaForMetrics as any).setting.findUnique({ where: { category_key: { category: 'monitoring', key: 'retentionDays' } } });
+        const v = Number(row?.value);
+        if (Number.isFinite(v) && v > 0) days = v;
+      } catch {}
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const result = await (prismaForMetrics as any).metricPoint.deleteMany({ where: { createdAt: { lt: cutoff } } });
+      lastCleanupAt = new Date();
+      lastCleanupDeleted = Number(result?.count ?? 0);
+      try {
+        await (prismaForMetrics as any).setting.upsert({
+          where: { category_key: { category: 'monitoring', key: 'lastCleanupAt' } },
+          create: { category: 'monitoring', key: 'lastCleanupAt', value: lastCleanupAt.toISOString() },
+          update: { value: lastCleanupAt.toISOString() },
+        });
+        await (prismaForMetrics as any).setting.upsert({
+          where: { category_key: { category: 'monitoring', key: 'lastCleanupDeleted' } },
+          create: { category: 'monitoring', key: 'lastCleanupDeleted', value: lastCleanupDeleted },
+          update: { value: lastCleanupDeleted },
+        });
+      } catch {}
+    })();
+    res.json({ ok: true, lastCleanupAt: lastCleanupAt?.toISOString() ?? null, lastCleanupDeleted });
+  } catch (err) {
+    try { (logger as any).warn({ err }, 'manual retention cleanup failed'); } catch {}
+    res.status(500).json({ error: 'failed to cleanup' });
+  }
 });
 
 // Query recent persisted metrics (for charts)
@@ -287,6 +400,8 @@ try {
       const version = pkg.version || '0.0.0';
       const docsPath = `/api-docs/v${version}`;
       const latestPath = `/api-docs/latest`;
+      const authDocsPath = `/auth-docs/v${version}`;
+      const authLatestPath = `/auth-docs/latest`;
       if (!openapi) {
         logger.warn('OpenAPI spec not found; skipping docs mount');
       } else {
@@ -300,7 +415,7 @@ try {
         // raw YAML endpoints (serve the original YAML file)
         app.get(`${docsPath}/openapi.yaml`, (_req, res) => {
           try {
-            const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi.yaml'), 'utf8');
+            const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi-pets.yaml'), 'utf8');
             res.type('text/yaml').send(yamlRaw);
           } catch (err) {
             res.status(500).send('spec not available');
@@ -308,7 +423,7 @@ try {
         });
         app.get(`${latestPath}/openapi.yaml`, (_req, res) => {
           try {
-            const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi.yaml'), 'utf8');
+            const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi-pets.yaml'), 'utf8');
             res.type('text/yaml').send(yamlRaw);
           } catch (err) {
             res.status(500).send('spec not available');
@@ -366,6 +481,74 @@ try {
         // Redirect /api-docs to latest for a stable default entrypoint
         app.get('/api-docs', (_req, res) => res.redirect(302, latestPath));
         logger.info({ docsPath, latestPath }, 'Swagger UI available');
+      }
+
+      // Mount Auth API ReDoc if available
+      if (openapiAuth) {
+        openapiAuth.info = openapiAuth.info || {};
+        openapiAuth.info.version = version;
+        app.get(`${authDocsPath}/openapi.json`, (_req, res) => res.json(openapiAuth));
+        app.get(`${authLatestPath}/openapi.json`, (_req, res) => res.json(openapiAuth));
+        const readAuthYamlRaw = () => {
+          try {
+            return fs.readFileSync(path.join(__dirname, 'openapi-auth.yaml'), 'utf8');
+          } catch (_) {
+            return fs.readFileSync(path.resolve(process.cwd(), 'src', 'openapi-auth.yaml'), 'utf8');
+          }
+        };
+        app.get(`${authDocsPath}/openapi.yaml`, (_req, res) => {
+          try {
+            const yamlRaw = readAuthYamlRaw();
+            res.type('text/yaml').send(yamlRaw);
+          } catch (err) {
+            res.status(500).send('spec not available');
+          }
+        });
+        app.get(`${authLatestPath}/openapi.yaml`, (_req, res) => {
+          try {
+            const yamlRaw = readAuthYamlRaw();
+            res.type('text/yaml').send(yamlRaw);
+          } catch (err) {
+            res.status(500).send('spec not available');
+          }
+        });
+        const REDOC_VERSION = 'v2.5.1';
+        const REDOC_CDN = `https://cdn.redoc.ly/redoc/${REDOC_VERSION}/bundles/redoc.standalone.js`;
+        const REDOC_INTEGRITY = 'sha384-up2uPEo+8XzxuLXKGY4DOk79DbbRclvlcx22QZ60aPWQf8LW69XJ8BWzLFewC05H';
+        const redocHtml = (specUrl: string) => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Auth API docs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">
+  </head>
+  <body>
+    <redoc spec-url='${specUrl}'></redoc>
+              <script src="${REDOC_CDN}"
+                      integrity="${REDOC_INTEGRITY}"
+                      crossorigin="anonymous"></script>
+  </body>
+</html>`;
+        const docsCsp = [
+          "default-src 'self'",
+          "script-src 'self' https://cdn.redoc.ly",
+          "script-src-elem 'self' https://cdn.redoc.ly",
+          "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'",
+          "font-src 'self' https://fonts.gstatic.com",
+          "img-src 'self' data:",
+          "connect-src 'self'",
+        ].join('; ');
+        app.get(authLatestPath, (_req, res) => {
+          res.set('Content-Security-Policy', docsCsp);
+          res.type('text/html').send(redocHtml(`${authLatestPath}/openapi.json`));
+        });
+        app.get(authDocsPath, (_req, res) => {
+          res.set('Content-Security-Policy', docsCsp);
+          res.type('text/html').send(redocHtml(`${authDocsPath}/openapi.json`));
+        });
+        app.get('/auth-docs', (_req, res) => res.redirect(302, authLatestPath));
+        logger.info({ authDocsPath, authLatestPath }, 'Auth Swagger UI available');
       }
   }
 } catch (err) {

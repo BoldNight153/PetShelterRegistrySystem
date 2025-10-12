@@ -81,7 +81,7 @@ export default function RootLayout() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
+  <SidebarInset className="flex flex-1 flex-col min-h-[100dvh]">
   <HeaderBar teams={teams} />
         {/* Toasts: top-right within the app content area */}
         <Toaster position="top-right" richColors closeButton />
@@ -112,10 +112,18 @@ export default function RootLayout() {
             }
           }}
         />
-        <main className="relative flex flex-1 flex-col gap-4 p-4 pt-0 w-full">
-          <div id="content-root">
-            {/* When on an auth route and drawer is open, hide route content to avoid duplicate form fields */}
-            {!(drawerOpen && isAuthPath(location.pathname)) && <Outlet />}
+        <main className="relative flex min-h-0 flex-1 flex-col p-4 pt-0 w-full">
+          {/* Fixed-height viewport area under sticky header; wrapper corners always visible */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="flex flex-1 flex-col rounded-xl border bg-sidebar">
+              {/* Scroll inside the wrapper so its rounded corners always remain visible */}
+              <div className="flex-1 overflow-auto p-4">
+                <div id="content-root">
+                  {/* When on an auth route and drawer is open, hide route content to avoid duplicate form fields */}
+                  {!(drawerOpen && isAuthPath(location.pathname)) && <Outlet />}
+                </div>
+              </div>
+            </div>
           </div>
           {/* Overlay portal root: keep it non-interactive until something mounts inside it */}
           <div id="content-overlay-root" className="absolute inset-0 z-50 w-full pointer-events-none" aria-hidden="true" />

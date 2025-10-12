@@ -278,3 +278,16 @@ model MetricPoint {
 
   @@index([metric, createdAt])
 }
+
+// Key-Value application settings grouped by category
+model Setting {
+  id        String   @id @default(cuid())
+  category  String
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?  // user id who last updated
+
+  @@unique([category, key])
+  @@index([category])
+}
