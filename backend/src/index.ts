@@ -660,6 +660,51 @@ app.use('/admin', adminRouter);
 const prisma = new PrismaClient();
 const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
+// -------------------------------------------------
+// SPA fallback: serve frontend for non-API HTML GETs
+// -------------------------------------------------
+// In development, redirect unknown HTML routes to the Vite dev server.
+// In production, if the frontend build exists, serve index.html.
+try {
+  const API_PREFIXES = [
+    '/api-docs', '/auth-docs', '/admin', '/pets', '/shelters', '/locations',
+    '/owners', '/medical', '/events', '/pet-owners', '/health', '/healthz', '/readyz'
+  ];
+
+  const isApiPath = (p: string) => API_PREFIXES.some((pref) => p === pref || p.startsWith(pref + '/'));
+  const isHtmlLike = (req: express.Request) =>
+    req.method === 'GET' &&
+    // only handle browser navigations asking for HTML
+    (req.headers.accept?.includes('text/html') ?? false) &&
+    // skip asset files with an extension
+    !path.extname(req.path);
+
+  if (process.env.NODE_ENV !== 'production') {
+    // Dev: send users to the Vite dev server when they hit the backend with an app route
+    app.get('*', (req, res, next) => {
+      if (isHtmlLike(req) && !isApiPath(req.path)) {
+        const target = `http://localhost:5173${req.path}${req.url.includes('?') ? '' : ''}`;
+        return res.redirect(302, target);
+      }
+      next();
+    });
+  } else {
+    // Prod: serve the built SPA if present
+    const clientDir = path.resolve(__dirname, '../../frontend/dist');
+    if (fs.existsSync(clientDir)) {
+      app.use(express.static(clientDir));
+      app.get('*', (req, res, next) => {
+        if (isHtmlLike(req) && !isApiPath(req.path)) {
+          return res.sendFile(path.join(clientDir, 'index.html'));
+        }
+        next();
+      });
+    }
+  }
+} catch (err) {
+  try { (logger as any).warn({ err }, 'Failed to set up SPA fallback'); } catch {}
+}
+
 // Start the server unless we're running tests. Tests import the `app`
 // directly and use SuperTest, so we shouldn't open a real network port.
 if (process.env.NODE_ENV !== 'test') {
