@@ -20,6 +20,7 @@ import { Separator } from "@/components/ui/separator"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import { getAuthDrawerVariant } from "@/lib/settings"
+import { DocsLightboxProvider } from "@/components/docs/lightbox-provider"
 
 export default function RootLayout() {
   const location = useLocation()
@@ -85,6 +86,7 @@ export default function RootLayout() {
   <HeaderBar teams={teams} />
         {/* Toasts: top-right within the app content area */}
         <Toaster position="top-right" richColors closeButton />
+        <DocsLightboxProvider>
         {/* Global route-aware Auth Drawer */}
         <AuthDrawer
           open={drawerOpen}
@@ -112,7 +114,7 @@ export default function RootLayout() {
             }
           }}
         />
-        <main className="relative flex min-h-0 flex-1 flex-col p-4 pt-0 w-full">
+  <main className="relative flex min-h-0 flex-1 flex-col p-4 pt-0 w-full">
           {/* Fixed-height viewport area under sticky header; wrapper corners always visible */}
           <div className="flex-1 min-h-0 overflow-hidden">
             <div className="flex flex-1 flex-col rounded-xl border bg-sidebar">
@@ -128,6 +130,7 @@ export default function RootLayout() {
           {/* Overlay portal root: keep it non-interactive until something mounts inside it */}
           <div id="content-overlay-root" className="absolute inset-0 z-50 w-full pointer-events-none" aria-hidden="true" />
         </main>
+        </DocsLightboxProvider>
       </SidebarInset>
     </SidebarProvider>
   )

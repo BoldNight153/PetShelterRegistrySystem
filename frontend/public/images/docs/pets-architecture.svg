@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640" preserveAspectRatio="xMidYMid meet" role="img" aria-label="High-level architecture diagram">
+  <defs>
+    <style>
+  .box { fill: #F8FAFC; stroke: #CBD5E1; stroke-width: 2; rx: 10; vector-effect: non-scaling-stroke; }
+      .title { font: 600 16px Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; fill: #0F172A; }
+      .label { font: 400 14px Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; fill: #334155; }
+  .arrow { stroke: #64748B; stroke-width: 2; marker-end: url(#arrowhead); vector-effect: non-scaling-stroke; }
+    </style>
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748B"/>
+    </marker>
+  </defs>
+  <rect class="box" x="40" y="40" width="260" height="120"/>
+  <text class="title" x="60" y="70" style="white-space: pre;">Clients</text>
+  <text class="label" x="60" y="98" style="white-space: pre;">• Web SPA (cookies + CSRF)</text>
+  <text class="label" x="60" y="122" style="white-space: pre;">• Admin UI</text>
+  <rect class="box" x="360" y="24" width="240" height="152"/>
+  <text class="title" x="380" y="54" style="white-space: pre;">Auth API</text>
+  <text class="label" x="380" y="84" style="white-space: pre;">• Login/OAuth</text>
+  <text class="label" x="380" y="108" style="white-space: pre;">• Session cookies</text>
+  <text class="label" x="380" y="132" style="white-space: pre;">• CSRF token</text>
+  <rect class="box" x="40" y="242" width="260" height="152"/>
+  <text class="title" x="60" y="272" style="white-space: pre; font-size: 16px;">Pets REST API</text>
+  <text class="label" x="60" y="302" style="white-space: pre; font-size: 14px;">• Pets, Owners, Shelters</text>
+  <text class="label" x="60" y="326" style="white-space: pre; font-size: 14px;">• Medical Records</text>
+  <text class="label" x="60" y="350" style="white-space: pre; font-size: 14px;">• Events (audit)</text>
+  <rect class="box" x="360" y="242" width="240" height="152"/>
+  <text class="title" x="380" y="272" style="white-space: pre; font-size: 16px;">Database</text>
+  <text class="label" x="380" y="302" style="white-space: pre; font-size: 14px;">• PostgreSQL (Prisma)</text>
+  <text class="label" x="380" y="326" style="white-space: pre; font-size: 14px;">• Enforced RBAC in handlers</text>
+  <line class="arrow" x1="300" y1="80" x2="360" y2="80"/>
+  <line class="arrow" x1="300" y1="110" x2="360" y2="110"/>
+  <line class="arrow" x1="300" y1="318" x2="360" y2="318"/>
+  <rect class="box" x="28" y="480" width="606" height="120"/>
+  <text class="label" x="40" y="502" style="white-space: pre;">Notes:</text>
+  <text class="label" x="60" y="526" style="white-space: pre;">1. Clients authenticate via Auth API which issues cookies + CSRF.</text>
+  <text class="label" x="60" y="550" style="white-space: pre;">2. Pets API enforces RBAC; sensitive mutations require CSRF.</text>
+  <text class="label" x="60" y="574" style="white-space: pre;">3. All APIs documented via ReDoc with versioned specs.</text>
+</svg>

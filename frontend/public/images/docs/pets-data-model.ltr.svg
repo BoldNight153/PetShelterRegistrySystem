@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="740" viewBox="0 0 960 740" role="img" aria-label="Pets data model diagram (LTR grid)">
+  <defs>
+    <style>
+      .box { fill: #F8FAFC; stroke: #CBD5E1; stroke-width: 2; rx: 10; }
+      .title { font: 600 16px Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; fill: #0F172A; }
+      .field { font: 400 14px Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; fill: #334155; }
+      .arrow { stroke: #475569; stroke-width: 2; fill: none; marker-end: url(#arrowhead); stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569" />
+    </marker>
+  </defs>
+
+  <!-- Grid columns: 60, 360, 660  -->
+  <!-- Top row: Pet | Owner | MedicalRecord  -->
+  <rect class="box" x="60" y="60" width="260" height="170" />
+  <text class="title" x="80" y="88">Pet</text>
+  <text class="field" x="80" y="116">id: string</text>
+  <text class="field" x="80" y="138">name: string</text>
+  <text class="field" x="80" y="160">species: enum</text>
+  <text class="field" x="80" y="182">status: enum</text>
+  <text class="field" x="80" y="204">shelterId: string</text>
+  <text class="field" x="80" y="226">ownerId?: string</text>
+
+  <rect class="box" x="360" y="60" width="240" height="140" />
+  <text class="title" x="380" y="88">Owner</text>
+  <text class="field" x="380" y="116">id: string</text>
+  <text class="field" x="380" y="138">name: string</text>
+  <text class="field" x="380" y="160">email: string</text>
+
+  <rect class="box" x="660" y="60" width="260" height="170" />
+  <text class="title" x="680" y="88">MedicalRecord</text>
+  <text class="field" x="680" y="116">id: string</text>
+  <text class="field" x="680" y="138">petId: string</text>
+  <text class="field" x="680" y="160">type: enum</text>
+  <text class="field" x="680" y="182">date: date</text>
+  <text class="field" x="680" y="204">notes?: string</text>
+
+  <!-- Second row: Shelter | Event | (spacer) -->
+  <rect class="box" x="60" y="280" width="260" height="170" />
+  <text class="title" x="80" y="308">Shelter</text>
+  <text class="field" x="80" y="336">id: string</text>
+  <text class="field" x="80" y="358">name: string</text>
+  <text class="field" x="80" y="380">locationId: string</text>
+  <text class="field" x="80" y="402">capacity: number</text>
+
+  <rect class="box" x="360" y="300" width="240" height="140" />
+  <text class="title" x="380" y="328">Event</text>
+  <text class="field" x="380" y="356">id: string</text>
+  <text class="field" x="380" y="378">entity: 'pet' | ...</text>
+  <text class="field" x="380" y="400">type: 'status_changed' | ...</text>
+  <text class="field" x="380" y="422">context: json</text>
+
+  <!-- Curved connectors (no overlaps) -->
+  <!-- Pet → Owner (right mid to left mid) -->
+  <path class="arrow" d="M 320 145 C 340 140, 350 135, 360 130" />
+  <!-- Owner → MedicalRecord (right mid to left mid) -->
+  <path class="arrow" d="M 600 130 C 615 130, 640 145, 660 145" />
+  <!-- Pet → MedicalRecord (dip below Owner, then rise) -->
+  <path class="arrow" d="M 320 145 C 360 220, 560 220, 660 145" />
+  <!-- Pet → Shelter (vertical curve) -->
+  <path class="arrow" d="M 190 230 C 190 250, 190 260, 190 280" />
+  <!-- Pet → Event (drop below Owner, then right) -->
+  <path class="arrow" d="M 320 145 C 330 210, 340 280, 360 300" />
+
+  <!-- Legend panel (below diagram, full width) -->
+  <rect class="box" x="50" y="520" width="860" height="170" />
+  <text class="title" x="70" y="548">Legend</text>
+  <text class="field" x="70" y="576">• Pet → Owner: optional (adopted)</text>
+  <text class="field" x="70" y="598">• Pet → Shelter: required</text>
+  <text class="field" x="70" y="620">• Pet → MedicalRecord: many</text>
+  <text class="field" x="70" y="642">• Pet → Event: many (audit trail)</text>
+</svg>

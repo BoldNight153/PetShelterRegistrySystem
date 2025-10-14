@@ -49,7 +49,7 @@ module.exports = {
       }
     }
   },
-  plugins: [],
+  plugins: [require('@tailwindcss/typography')],
   corePlugins: {},
   safelist: [],
   // Add a small plugin for custom utilities used by the demo page

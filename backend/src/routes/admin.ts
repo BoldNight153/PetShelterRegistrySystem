@@ -186,3 +186,42 @@ router.put('/settings', settingsGuard, async (req: any, res) => {
   await logAudit(actorId, 'admin.settings.upsert', req, { category, keys: entries.map(e => e.key) });
   res.json({ ok: true });
 });
+
+// ----------------------
+// Audit Logs listing
+// ----------------------
+
+const auditGuard = requireRole('admin', 'system_admin');
+router.get('/audit', auditGuard, async (req: any, res) => {
+  const page = Math.max(1, Number(req.query.page ?? 1));
+  const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize ?? 25)));
+  const q = (req.query.q ?? '').toString().trim();
+  const action = (req.query.action ?? '').toString().trim();
+  const userId = (req.query.userId ?? '').toString().trim();
+  const from = req.query.from ? new Date(String(req.query.from)) : null;
+  const to = req.query.to ? new Date(String(req.query.to)) : null;
+
+  const where: any = {};
+  if (action) where.action = { contains: action };
+  if (userId) where.userId = userId;
+  if (from || to) where.createdAt = { gte: from ?? undefined, lte: to ?? undefined };
+  if (q) {
+    where.OR = [
+      { ipAddress: { contains: q } },
+      { userAgent: { contains: q } },
+      { action: { contains: q } },
+    ];
+  }
+
+  const [total, items] = await Promise.all([
+    prisma.auditLog.count({ where }),
+    prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  res.json({ items, total, page, pageSize });
+});

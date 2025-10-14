@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="720" viewBox="0 0 960 720" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Pets data model diagram">
+  <defs>
+    <style>
+  .box { fill: #F8FAFC; stroke: #CBD5E1; stroke-width: 2; rx: 10; vector-effect: non-scaling-stroke; }
+      .title { font: 600 16px Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; fill: #0F172A; }
+      .field { font: 400 14px Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; fill: #334155; }
+  .arrow { stroke: #475569; stroke-width: 2; fill: none; marker-end: url(#arrowhead); stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    </style>
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect class="box" x="60" y="60" width="260" height="170"/>
+  <text class="title" x="80" y="88" style="white-space: pre;">Pet</text>
+  <text class="field" x="80" y="116" style="white-space: pre;">id: string</text>
+  <text class="field" x="80" y="138" style="white-space: pre;">name: string</text>
+  <text class="field" x="80" y="160" style="white-space: pre;">species: enum</text>
+  <text class="field" x="80" y="182" style="white-space: pre;">status: enum</text>
+  <text class="field" x="80" y="204" style="white-space: pre;">shelterId: string</text>
+  <text class="field" x="80" y="226" style="white-space: pre;">ownerId?: string</text>
+  <rect class="box" x="360" y="60" width="240" height="140"/>
+  <text class="title" x="380" y="88" style="white-space: pre;">Owner</text>
+  <text class="field" x="380" y="116" style="white-space: pre;">id: string</text>
+  <text class="field" x="380" y="138" style="white-space: pre;">name: string</text>
+  <text class="field" x="380" y="160" style="white-space: pre;">email: string</text>
+  <rect class="box" x="60" y="260" width="260" height="170"/>
+  <text class="title" x="80" y="288" style="white-space: pre;">Shelter</text>
+  <text class="field" x="80" y="316" style="white-space: pre;">id: string</text>
+  <text class="field" x="80" y="338" style="white-space: pre;">name: string</text>
+  <text class="field" x="80" y="360" style="white-space: pre;">locationId: string</text>
+  <text class="field" x="80" y="382" style="white-space: pre;">capacity: number</text>
+  <rect class="box" x="636.497" y="170.718" width="260" height="170"/>
+  <text class="title" x="656.497" y="198.718" style="white-space: pre; font-size: 16px;">MedicalRecord</text>
+  <text class="field" x="656.497" y="226.718" style="white-space: pre; font-size: 14px;">id: string</text>
+  <text class="field" x="656.497" y="248.718" style="white-space: pre; font-size: 14px;">petId: string</text>
+  <text class="field" x="656.497" y="270.718" style="white-space: pre; font-size: 14px;">type: enum</text>
+  <text class="field" x="656.497" y="292.718" style="white-space: pre; font-size: 14px;">date: date</text>
+  <text class="field" x="656.497" y="314.718" style="white-space: pre; font-size: 14px;">notes?: string</text>
+  <rect class="box" x="360" y="260" width="240" height="140"/>
+  <text class="title" x="380" y="288" style="white-space: pre;">Event</text>
+  <text class="field" x="380" y="316" style="white-space: pre;">id: string</text>
+  <text class="field" x="380" y="338" style="white-space: pre;">entity: 'pet' | ...</text>
+  <text class="field" x="380" y="360" style="white-space: pre;">type: 'status_changed' | ...</text>
+  <text class="field" x="380" y="382" style="white-space: pre;">context: json</text>
+  <path class="arrow" d="M 320 145 C 319.92 138.522 333.28 142.618 337.207 135.278 C 341.134 127.938 331.258 111.147 359.9 111.947"/>
+  <path class="arrow" d="M 320 145 C 361.5 146.409 322.978 226.752 358.941 227.4 C 388.991 227.941 428.542 227.666 443.97 227.517 C 459.398 227.368 498.735 226.374 539.363 226.883 C 579.991 227.392 612.363 226.699 636.201 226.185"/>
+  <path class="arrow" d="M 190 230 C 190 245, 190 250, 190 260"/>
+  <path class="arrow" d="M 320 145 C 331.814 147.107 336.84 151.288 338.99 156.515 C 341.14 161.742 340.414 168.015 340.723 174.304 C 341.032 180.594 341.462 186.342 341.777 192.758 C 342.092 199.175 342.292 206.259 342.14 215.22 C 341.989 224.181 344.02 220.047 341.814 244.211 C 339.608 268.375 333.961 289.254 332.879 298.275 C 331.797 307.296 341.85 313.188 360.189 312.815"/>
+  <rect class="box" x="50" y="470" width="860" height="170"/>
+  <text class="title" x="70" y="498" style="white-space: pre;">Legend</text>
+  <text class="field" x="70" y="526" style="white-space: pre;">• Pet → Owner: optional (adopted)</text>
+  <text class="field" x="70" y="548" style="white-space: pre;">• Pet → Shelter: required</text>
+  <text class="field" x="70" y="570" style="white-space: pre;">• Pet → MedicalRecord: many</text>
+  <text class="field" x="70" y="592" style="white-space: pre;">• Pet → Event: many (audit trail)</text>
+</svg>

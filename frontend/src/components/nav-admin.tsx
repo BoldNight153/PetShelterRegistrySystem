@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Shield, Users, KeyRound, BadgeCheck, LayoutDashboard, BookOpen, Settings, ChevronRight } from 'lucide-react'
+import { Shield, Users, KeyRound, BadgeCheck, LayoutDashboard, BookOpen, Settings, ChevronRight, FileText } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -46,7 +46,7 @@ export default function NavAdmin() {
         </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
-            <Link to="/admin/audit"><Shield className="h-4 w-4" /><span>Audit Logs</span></Link>
+            <Link to="/admin/audit-logs"><Shield className="h-4 w-4" /><span>Audit Logs</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
 
@@ -54,9 +54,9 @@ export default function NavAdmin() {
           <Collapsible asChild defaultOpen={false} className="group/collapsible">
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
-                <SidebarMenuButton tooltip="APIs">
-                  <BookOpen className="h-4 w-4" />
-                  <span>APIs</span>
+                <SidebarMenuButton tooltip="Docs">
+                  <FileText className="h-4 w-4" />
+                  <span>Docs</span>
                   <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                 </SidebarMenuButton>
               </CollapsibleTrigger>
@@ -67,83 +67,156 @@ export default function NavAdmin() {
                       <SidebarMenuItem>
                         <CollapsibleTrigger asChild>
                           <SidebarMenuSubButton>
-                            <span>Pets REST API</span>
+                            <BookOpen className="h-4 w-4" />
+                            <span>APIs</span>
                             <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                           </SidebarMenuSubButton>
                         </CollapsibleTrigger>
                         <CollapsibleContent>
                           <SidebarMenuSub>
+                            {/* Pets API */}
                             <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <a href="/docs"><span>ReDoc API Docs</span></a>
-                              </SidebarMenuSubButton>
+                              <Collapsible asChild defaultOpen={false} className="group/collapsible">
+                                <SidebarMenuItem>
+                                  <CollapsibleTrigger asChild>
+                                    <SidebarMenuSubButton>
+                                      <span>Pets REST API</span>
+                                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                                    </SidebarMenuSubButton>
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent>
+                                    <SidebarMenuSub>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/pets/spec"><span>ReDoc API Docs</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/pets/introduction"><span>Introduction</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/pets/get-started"><span>Get Started</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/pets/tutorials"><span>Tutorials</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/pets/changelog"><span>Changelog</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                    </SidebarMenuSub>
+                                  </CollapsibleContent>
+                                </SidebarMenuItem>
+                              </Collapsible>
                             </SidebarMenuSubItem>
+
+                            {/* Auth API */}
                             <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <Link to="/admin/docs/introduction"><span>Introduction</span></Link>
-                              </SidebarMenuSubButton>
+                              <Collapsible asChild defaultOpen={false} className="group/collapsible">
+                                <SidebarMenuItem>
+                                  <CollapsibleTrigger asChild>
+                                    <SidebarMenuSubButton>
+                                      <span>Auth REST API</span>
+                                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                                    </SidebarMenuSubButton>
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent>
+                                    <SidebarMenuSub>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/auth/spec"><span>ReDoc API Docs</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/auth/introduction"><span>Introduction</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/auth/get-started"><span>Get Started</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/auth/tutorials"><span>Tutorials</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/auth/changelog"><span>Changelog</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                    </SidebarMenuSub>
+                                  </CollapsibleContent>
+                                </SidebarMenuItem>
+                              </Collapsible>
                             </SidebarMenuSubItem>
+
+                            {/* Admin API */}
                             <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <Link to="/admin/docs/get-started"><span>Get Started</span></Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <Link to="/admin/docs/tutorials"><span>Tutorials</span></Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <Link to="/admin/docs/changelog"><span>Changelog</span></Link>
-                              </SidebarMenuSubButton>
+                              <Collapsible asChild defaultOpen={false} className="group/collapsible">
+                                <SidebarMenuItem>
+                                  <CollapsibleTrigger asChild>
+                                    <SidebarMenuSubButton>
+                                      <span>Admin REST API</span>
+                                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                                    </SidebarMenuSubButton>
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent>
+                                    <SidebarMenuSub>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/admin/spec"><span>ReDoc API Docs</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/admin/introduction"><span>Introduction</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/admin/get-started"><span>Get Started</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/admin/tutorials"><span>Tutorials</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                      <SidebarMenuSubItem>
+                                        <SidebarMenuSubButton asChild>
+                                          <Link to="/docs/api/admin/changelog"><span>Changelog</span></Link>
+                                        </SidebarMenuSubButton>
+                                      </SidebarMenuSubItem>
+                                    </SidebarMenuSub>
+                                  </CollapsibleContent>
+                                </SidebarMenuItem>
+                              </Collapsible>
                             </SidebarMenuSubItem>
                           </SidebarMenuSub>
                         </CollapsibleContent>
                       </SidebarMenuItem>
                     </Collapsible>
                   </SidebarMenuSubItem>
-
+                  {/* Siblings to APIs under Docs */}
                   <SidebarMenuSubItem>
-                    <Collapsible asChild defaultOpen={false} className="group/collapsible">
-                      <SidebarMenuItem>
-                        <CollapsibleTrigger asChild>
-                          <SidebarMenuSubButton>
-                            <span>Auth REST API</span>
-                            <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                          </SidebarMenuSubButton>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <SidebarMenuSub>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <a href="/docs?spec=auth"><span>ReDoc API Docs</span></a>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <Link to="/admin/docs/introduction"><span>Introduction</span></Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <Link to="/admin/docs/get-started"><span>Get Started</span></Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <Link to="/admin/docs/tutorials"><span>Tutorials</span></Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton asChild>
-                                <Link to="/admin/docs/changelog"><span>Changelog</span></Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                          </SidebarMenuSub>
-                        </CollapsibleContent>
-                      </SidebarMenuItem>
-                    </Collapsible>
+                    <SidebarMenuSubButton asChild>
+                      <Link to="/docs/architecture"><span>Architecture</span></Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link to="/docs/client-sdks"><span>Client SDKs</span></Link>
+                    </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
                 </SidebarMenuSub>
               </CollapsibleContent>
@@ -151,48 +224,7 @@ export default function NavAdmin() {
           </Collapsible>
         )}
 
-        {isSystemAdmin && (
-          <Collapsible asChild defaultOpen={false} className="group/collapsible">
-            <SidebarMenuItem>
-              <CollapsibleTrigger asChild>
-                <SidebarMenuButton tooltip="Admin REST API">
-                  <BookOpen className="h-4 w-4" />
-                  <span>Admin REST API</span>
-                  <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                </SidebarMenuButton>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton asChild>
-                      <a href="/api-docs/admin/latest"><span>ReDoc API Docs</span></a>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton asChild>
-                      <Link to="/admin/docs/introduction"><span>Introduction</span></Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton asChild>
-                      <Link to="/admin/docs/get-started"><span>Get Started</span></Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton asChild>
-                      <Link to="/admin/docs/tutorials"><span>Tutorials</span></Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton asChild>
-                      <Link to="/admin/docs/changelog"><span>Changelog</span></Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                </SidebarMenuSub>
-              </CollapsibleContent>
-            </SidebarMenuItem>
-          </Collapsible>
-        )}
+        
 
         {isSystemAdmin && (
           <Collapsible asChild defaultOpen={false} className="group/collapsible">
@@ -223,26 +255,14 @@ export default function NavAdmin() {
         )}
 
         {isSystemAdmin && (
-          <Collapsible asChild defaultOpen={false} className="group/collapsible">
-            <SidebarMenuItem>
-              <CollapsibleTrigger asChild>
-                <SidebarMenuButton tooltip="Settings">
-                  <Settings className="h-4 w-4" />
-                  <span>Settings</span>
-                  <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                </SidebarMenuButton>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton asChild>
-                      <Link to="/admin/settings"><span>General</span></Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                </SidebarMenuSub>
-              </CollapsibleContent>
-            </SidebarMenuItem>
-          </Collapsible>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Settings">
+              <Link to="/admin/settings">
+                <Settings className="h-4 w-4" />
+                <span>Settings</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         )}
       </SidebarMenu>
     </SidebarGroup>

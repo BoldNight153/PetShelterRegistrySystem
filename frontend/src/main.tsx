@@ -11,12 +11,15 @@ import { AuthProvider } from './lib/auth-context'
 import { ProtectedRoute } from './lib/auth-context'
 import ServerInfoCharts from './pages/admin/server-info-charts'
 import ServerDashboard from './pages/admin/server-dashboard'
-import AdminDocsIntroduction from './pages/admin/docs/introduction'
-import AdminDocsGetStarted from './pages/admin/docs/get-started'
-import AdminDocsTutorials from './pages/admin/docs/tutorials'
-import AdminDocsChangelog from './pages/admin/docs/changelog'
+import DocsIntroduction from './pages/docs/introduction'
+import DocsGetStarted from './pages/docs/get-started'
+import DocsTutorials from './pages/docs/tutorials'
+import DocsChangelog from './pages/docs/changelog'
+import DocsArchitecture from './pages/docs/architecture'
+import DocsClientSDKs from './pages/docs/client-sdks'
 import AdminDocsExamples from './pages/admin/docs/examples'
 import AdminSettingsPage from './pages/admin/settings'
+import AuditLogsPage from './pages/admin/audit-logs'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -32,8 +35,18 @@ const router = createBrowserRouter([
       </div>
     ),
     children: [
-      { index: true, element: <RedocPage /> },
-      { path: 'docs', element: <RedocPage /> },
+  { index: true, element: <RedocPage /> },
+  // Legacy docs entrypoint with query param support
+  { path: 'docs', element: <RedocPage /> },
+  // New docs IA: /docs/api/:api/spec and content pages per API
+  { path: 'docs/api/:api/spec', element: <RedocPage /> },
+  { path: 'docs/api/:api/introduction', element: <DocsIntroduction /> },
+  { path: 'docs/api/:api/get-started', element: <DocsGetStarted /> },
+  { path: 'docs/api/:api/tutorials', element: <DocsTutorials /> },
+  { path: 'docs/api/:api/changelog', element: <DocsChangelog /> },
+  // Other docs categories
+  { path: 'docs/architecture', element: <DocsArchitecture /> },
+  { path: 'docs/client-sdks', element: <DocsClientSDKs /> },
       { path: 'dashboard', element: (
         <ProtectedRoute>
           <DashboardPage />
@@ -54,31 +67,23 @@ const router = createBrowserRouter([
           <AdminSettingsPage />
         </ProtectedRoute>
       ) },
-      { path: 'admin/docs/introduction', element: (
+      { path: 'admin/audit-logs', element: (
         <ProtectedRoute>
-          <AdminDocsIntroduction />
+          <AuditLogsPage />
         </ProtectedRoute>
       ) },
-      { path: 'admin/docs/get-started', element: (
+      // Legacy alias for Audit Logs
+      { path: 'admin/audit', element: (
         <ProtectedRoute>
-          <AdminDocsGetStarted />
+          <AuditLogsPage />
         </ProtectedRoute>
       ) },
-      { path: 'admin/docs/tutorials', element: (
-        <ProtectedRoute>
-          <AdminDocsTutorials />
-        </ProtectedRoute>
-      ) },
-      { path: 'admin/docs/examples', element: (
-        <ProtectedRoute>
-          <AdminDocsExamples />
-        </ProtectedRoute>
-      ) },
-      { path: 'admin/docs/changelog', element: (
-        <ProtectedRoute>
-          <AdminDocsChangelog />
-        </ProtectedRoute>
-      ) },
+      // Keep legacy admin/docs/* content pages accessible without auth
+  { path: 'admin/docs/introduction', element: <DocsIntroduction /> },
+  { path: 'admin/docs/get-started', element: <DocsGetStarted /> },
+  { path: 'admin/docs/tutorials', element: <DocsTutorials /> },
+      { path: 'admin/docs/examples', element: <AdminDocsExamples /> },
+  { path: 'admin/docs/changelog', element: <DocsChangelog /> },
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
   { path: 'signup', element: <RegisterPage /> },
