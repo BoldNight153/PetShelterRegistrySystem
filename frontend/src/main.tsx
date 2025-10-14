@@ -20,6 +20,9 @@ import DocsClientSDKs from './pages/docs/client-sdks'
 import AdminDocsExamples from './pages/admin/docs/examples'
 import AdminSettingsPage from './pages/admin/settings'
 import AuditLogsPage from './pages/admin/audit-logs'
+import AdminUsersPage from './pages/admin/users'
+import AdminRolesPage from './pages/admin/roles'
+import AdminPermissionsPage from './pages/admin/permissions'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -70,6 +73,21 @@ const router = createBrowserRouter([
       { path: 'admin/audit-logs', element: (
         <ProtectedRoute>
           <AuditLogsPage />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/users', element: (
+        <ProtectedRoute>
+          <AdminUsersPage />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/roles', element: (
+        <ProtectedRoute>
+          <AdminRolesPage />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/permissions', element: (
+        <ProtectedRoute>
+          <AdminPermissionsPage />
         </ProtectedRoute>
       ) },
       // Legacy alias for Audit Logs

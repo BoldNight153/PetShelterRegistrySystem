@@ -655,6 +655,37 @@ app.use('/medical', medicalRouter);
 app.use('/events', eventsRouter);
 app.use('/pet-owners', petOwnersRouter);
 app.use('/auth', authRouter);
+// Admin SPA fallback: intercept HTML navigations under /admin that are not API
+// endpoints and either redirect to Vite in dev or serve the built index.html
+// in production. This must come BEFORE mounting the admin router so Express
+// doesn't short-circuit with a 404 from the router.
+try {
+  const acceptWantsHtml = (req: express.Request) => (req.headers.accept?.includes('text/html') ?? false);
+  const hasExt = (p: string) => !!path.extname(p);
+  // Consider only exact /audit and nested /audit/* as API, not /audit-logs
+  const isAdminApiPath = (p: string) =>
+    p === '/audit' || p.startsWith('/audit/') ||
+    p === '/monitoring' || p.startsWith('/monitoring/') ||
+    p === '/docs' || p.startsWith('/docs/');
+  const clientDir = path.resolve(__dirname, '../../frontend/dist');
+  if (process.env.NODE_ENV !== 'production') {
+    app.use('/admin', (req, res, next) => {
+      const urlPath = req.path;
+      if (req.method === 'GET' && acceptWantsHtml(req) && !hasExt(urlPath) && !isAdminApiPath(urlPath)) {
+        return res.redirect(302, `http://localhost:5173/admin${urlPath}${req.url.includes('?') ? '' : ''}`);
+      }
+      next();
+    });
+  } else if (fs.existsSync(clientDir)) {
+    app.use('/admin', (req, res, next) => {
+      const urlPath = req.path;
+      if (req.method === 'GET' && acceptWantsHtml(req) && !hasExt(urlPath) && !isAdminApiPath(urlPath)) {
+        return res.sendFile(path.join(clientDir, 'index.html'));
+      }
+      next();
+    });
+  }
+} catch {}
 app.use('/admin', adminRouter);
 
 const prisma = new PrismaClient();
@@ -666,9 +697,13 @@ const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 // In development, redirect unknown HTML routes to the Vite dev server.
 // In production, if the frontend build exists, serve index.html.
 try {
+  // Only treat actual backend API namespaces as API. Do NOT include the broad '/admin'
+  // prefix here, because the frontend has client-routed pages under /admin (e.g. /admin/audit-logs).
   const API_PREFIXES = [
-    '/api-docs', '/auth-docs', '/admin', '/pets', '/shelters', '/locations',
-    '/owners', '/medical', '/events', '/pet-owners', '/health', '/healthz', '/readyz'
+    '/api-docs', '/auth-docs', '/pets', '/shelters', '/locations',
+    '/owners', '/medical', '/events', '/pet-owners', '/health', '/healthz', '/readyz',
+    // Narrow admin API prefixes:
+    '/admin/audit', '/admin/monitoring', '/admin/docs'
   ];
 
   const isApiPath = (p: string) => API_PREFIXES.some((pref) => p === pref || p.startsWith(pref + '/'));
