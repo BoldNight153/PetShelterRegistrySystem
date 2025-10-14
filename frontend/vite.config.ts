@@ -18,6 +18,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      "/admin/audit": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
       "/api-docs": {
         target: "http://localhost:4000",
         changeOrigin: true,

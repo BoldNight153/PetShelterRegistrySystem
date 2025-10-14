@@ -25,6 +25,7 @@ export default function NavAdmin() {
   const canSee = roles.some(r => ADMIN_ROLES.has(r))
   if (!canSee) return null
   const isSystemAdmin = roles.includes('system_admin')
+  const isAdmin = isSystemAdmin || roles.includes('admin')
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Admin</SidebarGroupLabel>
@@ -44,11 +45,13 @@ export default function NavAdmin() {
             <Link to="/admin/users"><Users className="h-4 w-4" /><span>User Roles</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton asChild>
-            <Link to="/admin/audit-logs"><Shield className="h-4 w-4" /><span>Audit Logs</span></Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
+        {isAdmin && (
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild>
+              <Link to="/admin/audit-logs"><Shield className="h-4 w-4" /><span>Audit Logs</span></Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )}
 
         {isSystemAdmin && (
           <Collapsible asChild defaultOpen={false} className="group/collapsible">
@@ -63,8 +66,8 @@ export default function NavAdmin() {
               <CollapsibleContent>
                 <SidebarMenuSub>
                   <SidebarMenuSubItem>
-                    <Collapsible asChild defaultOpen={false} className="group/collapsible">
-                      <SidebarMenuItem>
+                    <Collapsible defaultOpen={false} className="group/collapsible">
+                      <div>
                         <CollapsibleTrigger asChild>
                           <SidebarMenuSubButton>
                             <BookOpen className="h-4 w-4" />
@@ -76,8 +79,8 @@ export default function NavAdmin() {
                           <SidebarMenuSub>
                             {/* Pets API */}
                             <SidebarMenuSubItem>
-                              <Collapsible asChild defaultOpen={false} className="group/collapsible">
-                                <SidebarMenuItem>
+                              <Collapsible defaultOpen={false} className="group/collapsible">
+                                <div>
                                   <CollapsibleTrigger asChild>
                                     <SidebarMenuSubButton>
                                       <span>Pets REST API</span>
@@ -113,14 +116,14 @@ export default function NavAdmin() {
                                       </SidebarMenuSubItem>
                                     </SidebarMenuSub>
                                   </CollapsibleContent>
-                                </SidebarMenuItem>
+                                </div>
                               </Collapsible>
                             </SidebarMenuSubItem>
 
                             {/* Auth API */}
                             <SidebarMenuSubItem>
-                              <Collapsible asChild defaultOpen={false} className="group/collapsible">
-                                <SidebarMenuItem>
+                              <Collapsible defaultOpen={false} className="group/collapsible">
+                                <div>
                                   <CollapsibleTrigger asChild>
                                     <SidebarMenuSubButton>
                                       <span>Auth REST API</span>
@@ -156,14 +159,14 @@ export default function NavAdmin() {
                                       </SidebarMenuSubItem>
                                     </SidebarMenuSub>
                                   </CollapsibleContent>
-                                </SidebarMenuItem>
+                                </div>
                               </Collapsible>
                             </SidebarMenuSubItem>
 
                             {/* Admin API */}
                             <SidebarMenuSubItem>
-                              <Collapsible asChild defaultOpen={false} className="group/collapsible">
-                                <SidebarMenuItem>
+                              <Collapsible defaultOpen={false} className="group/collapsible">
+                                <div>
                                   <CollapsibleTrigger asChild>
                                     <SidebarMenuSubButton>
                                       <span>Admin REST API</span>
@@ -199,12 +202,12 @@ export default function NavAdmin() {
                                       </SidebarMenuSubItem>
                                     </SidebarMenuSub>
                                   </CollapsibleContent>
-                                </SidebarMenuItem>
+                                </div>
                               </Collapsible>
                             </SidebarMenuSubItem>
                           </SidebarMenuSub>
                         </CollapsibleContent>
-                      </SidebarMenuItem>
+                      </div>
                     </Collapsible>
                   </SidebarMenuSubItem>
                   {/* Siblings to APIs under Docs */}

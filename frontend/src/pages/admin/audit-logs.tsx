@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Calendar, Filter, RefreshCcw, Search, Shield } from 'lucide-react'
 
@@ -40,7 +40,7 @@ export default function AuditLogsPage() {
     setParams(p, { replace: true })
   }, [page, pageSize, query, action, userId, from, to, setParams])
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -53,17 +53,43 @@ export default function AuditLogsPage() {
       if (from) url.searchParams.set('from', from)
       if (to) url.searchParams.set('to', to)
       const r = await fetch(url.toString(), { credentials: 'include' })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const json = await r.json()
+      if (r.status === 401) {
+        throw new Error('You are not signed in. Please log in to view audit logs.')
+      }
+      if (r.status === 403) {
+        throw new Error('Forbidden: your account does not have permission to view audit logs.')
+      }
+      if (!r.ok) {
+        // Try to read text to provide more context, but don't break on HTML
+        let msg = `HTTP ${r.status}`
+        try {
+          const text = await r.text()
+          if (text && !text.startsWith('{') && text.trim().startsWith('<!doctype')) {
+            msg += ' — received HTML instead of JSON (is the backend running or the dev proxy configured?)'
+          }
+        } catch {
+          // ignore parsing of text for message enrichment
+        }
+        throw new Error(msg)
+      }
+      let json: Page<AuditLog>
+      try {
+        json = await r.json()
+      } catch {
+        // Fallback if server returned HTML or non-JSON
+        const text = await r.text()
+        throw new Error(text?.slice(0, 200) || 'Unexpected response while parsing logs')
+      }
       setData(json)
-    } catch (e: any) {
-      setError(e.message || 'Failed to load')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to load'
+      setError(msg)
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, pageSize, query, action, userId, from, to])
 
-  useEffect(() => { fetchLogs() }, [page, pageSize, query, action, userId, from, to])
+  useEffect(() => { fetchLogs() }, [fetchLogs])
 
   const pages = useMemo(() => Math.max(1, Math.ceil(data.total / data.pageSize)), [data])
 
@@ -152,7 +178,7 @@ export default function AuditLogsPage() {
   )
 }
 
-function prettyMeta(meta: any) {
+function prettyMeta(meta: unknown) {
   try { return JSON.stringify(meta ?? null, null, 2) } catch { return String(meta) }
 }
 
