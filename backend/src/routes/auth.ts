@@ -528,4 +528,189 @@ router.get('/oauth/:provider/start', async (req: any, res) => {
   }
 });
 
+// ---------------------------------------------
+// OAuth callback for Google/GitHub
+// - Validates state (double-submit cookie)
+// - Exchanges code for tokens
+// - Fetches profile and links/creates user + Account
+// - Issues access/refresh cookies and redirects
+// ---------------------------------------------
+router.get('/oauth/:provider/callback', async (req: any, res) => {
+  const successRedirect = process.env.OAUTH_SUCCESS_REDIRECT || '/';
+  const failureRedirect = process.env.OAUTH_FAILURE_REDIRECT || '/login?error=oauth_failed';
+  const provider = String(req.params.provider);
+  try {
+    if (provider !== 'google' && provider !== 'github') return res.redirect(302, failureRedirect);
+    const enabled = await isProviderEnabled(provider as any);
+    if (!enabled) return res.redirect(302, `${failureRedirect}&reason=disabled`);
+
+    const { code, state } = req.query as any;
+    if (!code || !state) return res.redirect(302, `${failureRedirect}&reason=missing_params`);
+    const cookieState = req.cookies?.oauth_state;
+    // Clear state cookie regardless of outcome
+    res.cookie('oauth_state', '', { ...cookieBase(), httpOnly: true, maxAge: 0 });
+    if (!cookieState || cookieState !== state) {
+      await logAudit(null, `auth.oauth.${provider}.state_mismatch`, req);
+      return res.redirect(302, `${failureRedirect}&reason=state_mismatch`);
+    }
+
+    // Token exchange and profile fetch per provider
+    type OAuthTokens = { access_token: string; refresh_token?: string; expires_in?: number; id_token?: string; token_type?: string; scope?: string };
+    let tokens: OAuthTokens | null = null;
+    let profile: any = null;
+    let providerAccountId: string | null = null;
+    let email: string | null = null;
+    let emailVerified: boolean | null = null;
+    let name: string | null = null;
+    let image: string | null = null;
+
+    if (provider === 'google') {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+      if (!clientId || !clientSecret || !redirectUri) return res.redirect(302, `${failureRedirect}&reason=not_configured`);
+      const body = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code: String(code),
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      });
+      const r = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      } as any);
+      if (!r.ok) {
+        await logAudit(null, 'auth.oauth.google.token_error', req, { status: r.status });
+        return res.redirect(302, `${failureRedirect}&reason=token_exchange_failed`);
+      }
+      tokens = await r.json();
+      // Prefer OIDC userinfo for normalized fields
+      if (!tokens || !tokens.access_token) {
+        await logAudit(null, 'auth.oauth.google.missing_access_token', req);
+        return res.redirect(302, `${failureRedirect}&reason=missing_access_token`);
+      }
+      const accessToken = tokens.access_token as string;
+      const u = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      } as any);
+      if (!u.ok) {
+        await logAudit(null, 'auth.oauth.google.userinfo_error', req, { status: u.status });
+        return res.redirect(302, `${failureRedirect}&reason=userinfo_failed`);
+      }
+      profile = await u.json();
+      providerAccountId = String(profile.sub);
+      email = typeof profile.email === 'string' ? profile.email : null;
+      emailVerified = Boolean(profile.email_verified ?? false);
+      name = typeof profile.name === 'string' ? profile.name : null;
+      image = typeof profile.picture === 'string' ? profile.picture : null;
+    } else {
+      // github
+      const clientId = process.env.GITHUB_CLIENT_ID;
+      const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+      const redirectUri = process.env.GITHUB_REDIRECT_URI;
+      if (!clientId || !clientSecret || !redirectUri) return res.redirect(302, `${failureRedirect}&reason=not_configured`);
+      const body = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code: String(code),
+        redirect_uri: redirectUri,
+      });
+      const r = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        body,
+      } as any);
+      if (!r.ok) {
+        await logAudit(null, 'auth.oauth.github.token_error', req, { status: r.status });
+        return res.redirect(302, `${failureRedirect}&reason=token_exchange_failed`);
+      }
+      tokens = await r.json();
+
+      if (!tokens || !tokens.access_token) {
+        await logAudit(null, 'auth.oauth.github.missing_access_token', req);
+        return res.redirect(302, `${failureRedirect}&reason=missing_access_token`);
+      }
+      const accessToken = tokens.access_token as string;
+      const u = await fetch('https://api.github.com/user', {
+        headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'psrs-app' },
+      } as any);
+      if (!u.ok) {
+        await logAudit(null, 'auth.oauth.github.user_error', req, { status: u.status });
+        return res.redirect(302, `${failureRedirect}&reason=userinfo_failed`);
+      }
+      const up = await u.json();
+      providerAccountId = String(up.id);
+      name = typeof up.name === 'string' ? up.name : (typeof up.login === 'string' ? up.login : null);
+      image = typeof up.avatar_url === 'string' ? up.avatar_url : null;
+
+      // attempt to get verified email
+      try {
+        const e = await fetch('https://api.github.com/user/emails', {
+          headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'psrs-app', Accept: 'application/vnd.github+json' },
+        } as any);
+        if (e.ok) {
+          const emails = await e.json();
+          const primary = Array.isArray(emails) ? emails.find((x: any) => x.primary) : null;
+          if (primary?.email) {
+            email = String(primary.email);
+            emailVerified = Boolean(primary.verified);
+          } else if (Array.isArray(emails) && emails.length) {
+            email = String(emails[0].email);
+            emailVerified = Boolean(emails[0].verified);
+          }
+        }
+      } catch {}
+    }
+
+    if (!providerAccountId) return res.redirect(302, `${failureRedirect}&reason=missing_account_id`);
+
+    // Link or create user
+    let user: any = null;
+    const existingAccount = await prisma.account.findUnique({ where: { provider_providerAccountId: { provider, providerAccountId } } });
+    if (existingAccount) {
+      user = await prisma.user.findUnique({ where: { id: existingAccount.userId } });
+    } else {
+      if (email) {
+        const byEmail = await prisma.user.findUnique({ where: { email } });
+        if (byEmail) {
+          user = byEmail;
+        }
+      }
+      if (!user) {
+        user = await prisma.user.create({ data: { email: email || `${provider}:${providerAccountId}@user.local`, name: name || undefined, image: image || undefined, emailVerified: emailVerified ? new Date() : null } });
+      }
+      await prisma.account.create({ data: {
+        userId: user.id,
+        provider,
+        providerAccountId,
+        accessToken: tokens?.access_token,
+        refreshToken: tokens?.refresh_token,
+        tokenType: tokens?.token_type,
+        scope: tokens?.scope,
+        profile,
+      }});
+    }
+
+    // If email just verified by provider and user lacked it, mark verified
+    if (emailVerified && !user.emailVerified) {
+      try {
+        await prisma.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } });
+      } catch {}
+    }
+
+    // Issue cookies
+    const access = signAccessToken(user.id);
+    const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+    setAuthCookies(res, access, rt.token, rt.maxAgeMs);
+
+    await logAudit(user.id, `auth.oauth.${provider}.success`, req, { providerAccountId });
+    return res.redirect(302, successRedirect);
+  } catch (err: any) {
+    try { (req as any).log?.error({ err }, 'oauth callback failed'); } catch {}
+    return res.redirect(302, `${failureRedirect}&reason=exception`);
+  }
+});
+
 export default router;

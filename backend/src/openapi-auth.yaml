@@ -375,3 +375,30 @@ paths:
           description: Redirect to OAuth provider authorization URL
         "403": { $ref: "#/components/responses/Forbidden" }
         "500": { description: Provider not configured }
+
+  /auth/oauth/{provider}/callback:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [google, github]
+        description: OAuth provider
+      - name: code
+        in: query
+        required: true
+        schema: { type: string }
+      - name: state
+        in: query
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Auth]
+      summary: OAuth callback handler (code exchange and login)
+      operationId: oauthCallback
+      responses:
+        "302":
+          description: Redirects to success or failure URL
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { description: Callback error }

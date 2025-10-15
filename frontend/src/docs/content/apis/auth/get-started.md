@@ -174,4 +174,11 @@ Start the flow via redirect:
 - `GET /auth/oauth/google/start`
 - `GET /auth/oauth/github/start`
 
+The server handles the provider redirect back to:
+
+- `GET /auth/oauth/google/callback`
+- `GET /auth/oauth/github/callback`
+
+On success, it issues cookies and redirects to your app (configurable via `OAUTH_SUCCESS_REDIRECT`).
+
 Use `/auth/mode` to inspect current auth configuration and cookies.

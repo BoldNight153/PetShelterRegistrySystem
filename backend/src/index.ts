@@ -700,7 +700,7 @@ try {
   // Only treat actual backend API namespaces as API. Do NOT include the broad '/admin'
   // prefix here, because the frontend has client-routed pages under /admin (e.g. /admin/audit-logs).
   const API_PREFIXES = [
-    '/api-docs', '/auth-docs', '/pets', '/shelters', '/locations',
+    '/api-docs', '/auth-docs', '/auth', '/pets', '/shelters', '/locations',
     '/owners', '/medical', '/events', '/pet-owners', '/health', '/healthz', '/readyz',
     // Narrow admin API prefixes:
     '/admin/audit', '/admin/monitoring', '/admin/docs'

@@ -59,6 +59,18 @@ export default defineConfig({
         target: "http://localhost:4000",
         changeOrigin: true,
       },
+      "/admin/roles": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+      "/admin/permissions": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+      "/admin/users": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
       "/api-docs": {
         target: "http://localhost:4000",
         changeOrigin: true,

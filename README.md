@@ -99,6 +99,10 @@ See `CHANGELOG.md`. Recent:
 - 0.2.1 (2025-10-04) — Mobile-only Team Switcher in header; documentation updates
 - 0.2.0 (2025-09-28) — Backend foundation, routes, seeds, CI
 
+## V1.0.0 checklist
+
+See `V1.0.0-CHECKLIST.md` for the authoritative list of tasks required to ship V1.0.0. Open issues and PRs should reference the corresponding checklist items.
+
 ## Release notes
 
 Latest releases (2025-10-05):
