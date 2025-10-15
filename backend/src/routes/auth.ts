@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import jwt, { SignOptions, Secret } from 'jsonwebtoken';
+import { resetPasswordEmailTemplate, sendMail, verificationEmailTemplate } from '../lib/email';
 
 const prisma: any = new PrismaClient();
 
@@ -262,7 +263,16 @@ router.post('/request-email-verification', validateCsrf, async (req, res) => {
       data: { identifier: email, token, type: 'email_verify', expiresAt },
     });
     await logAudit(user.id, 'auth.email_verification.request', req);
-    try { (req as any).log?.info({ email, token }, 'email verification token issued'); } catch (_) {}
+    try {
+      const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173';
+      const verifyUrl = `${appOrigin}/verify-email?token=${encodeURIComponent(token)}`;
+      const tpl = verificationEmailTemplate({ verifyUrl });
+      await sendMail({ to: email, subject: 'Verify your email', text: tpl.text, html: tpl.html });
+      (req as any).log?.info({ email }, 'verification email sent');
+    } catch (e) {
+      // log and continue; avoid leaking internals
+      try { (req as any).log?.error({ e }, 'failed to send verification email'); } catch {}
+    }
     return res.json({ ok: true });
   } catch (err: any) {
     try { (req as any).log?.error({ err }, 'request-email-verification failed'); } catch (_) {}
@@ -309,8 +319,15 @@ router.post('/request-password-reset', validateCsrf, async (req, res) => {
       data: { identifier: email, token, type: 'password_reset', expiresAt },
     });
     await logAudit(user.id, 'auth.password_reset.request', req);
-    // TODO: integrate email provider; for now, log only
-    try { (req as any).log?.info({ email, token }, 'password reset token issued'); } catch (_) {}
+    try {
+      const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173';
+      const resetUrl = `${appOrigin}/reset-password?token=${encodeURIComponent(token)}`;
+      const tpl = resetPasswordEmailTemplate({ resetUrl });
+      await sendMail({ to: email, subject: 'Reset your password', text: tpl.text, html: tpl.html });
+      (req as any).log?.info({ email }, 'password reset email sent');
+    } catch (e) {
+      try { (req as any).log?.error({ e }, 'failed to send password reset email'); } catch {}
+    }
     return res.json({ ok: true });
   } catch (err: any) {
     try { (req as any).log?.error({ err }, 'request-password-reset failed'); } catch (_) {}

@@ -53,6 +53,22 @@ NODE_ENV=test npm test
 
 Then visit `/auth/oauth/google/start` or `/auth/oauth/github/start` from the browser.
 
+## Email delivery (verification & reset)
+
+For development, the server will log emails to the console if SMTP is not configured. To enable real email sending, set these variables in `.env`:
+
+```env
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=apikey-or-username
+SMTP_PASS=secret
+EMAIL_FROM="Pet Shelter <no-reply@example.com>"
+APP_ORIGIN=http://localhost:5173
+```
+
+APP_ORIGIN is used to build verification and reset links like `http://localhost:5173/verify-email?token=...` and `http://localhost:5173/reset-password?token=...`.
+
 CI notes
 
 - The repository contains a GitHub Actions workflow at `.github/workflows/ci.yml` that installs dependencies, runs Prisma generate, applies migrations against a local sqlite file, runs the seed script, and runs tests.

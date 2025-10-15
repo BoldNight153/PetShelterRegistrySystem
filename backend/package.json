@@ -25,6 +25,7 @@
     "helmet": "^8.1.0",
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.10.1",
     "oidc-client-ts": "^2.3.1",
     "pino": "^9.11.0",
     "pino-http": "^8.1.0",
