@@ -18,17 +18,25 @@
       "component": "root",
       "changelog-path": "CHANGELOG.md",
       "pull-request-title-pattern": "chore: release ${version}",
-      "include-component-in-tag": false
+      "include-component-in-tag": false,
+      "pull-request-header": "Release: see README Security quick start and Admin UI sections for setup guidance."
     },
     "backend": {
       "release-type": "node",
       "component": "backend",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "pull-request-header": "Backend release: includes security features. Refer to backend/README.md → Security quick start.",
+      "extra-files": [
+        { "type": "yaml", "path": "backend/src/openapi.yaml", "jsonpath": "$.info.version" },
+        { "type": "yaml", "path": "backend/src/openapi-auth.yaml", "jsonpath": "$.info.version" },
+        { "type": "yaml", "path": "backend/src/openapi-pets.yaml", "jsonpath": "$.info.version" }
+      ]
     },
     "frontend": {
       "release-type": "node",
       "component": "frontend",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "pull-request-header": "Frontend release: Admin Settings/Users updates; see root README for details."
     }
   }
 }

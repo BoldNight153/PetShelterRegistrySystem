@@ -73,3 +73,62 @@ CI notes
 
 - The repository contains a GitHub Actions workflow at `.github/workflows/ci.yml` that installs dependencies, runs Prisma generate, applies migrations against a local sqlite file, runs the seed script, and runs tests.
 - For production Postgres, set `DATABASE_URL` to your Postgres DSN and update `prisma/schema.prisma` provider accordingly before running migrations.
+
+## Security quick start
+
+This backend supports account lockout, per-IP rate limits, email verification, and password history enforcement.
+
+1) Pick defaults in .env (used if DB settings are absent):
+
+```env
+# Per-IP login rate limit
+LOGIN_IP_WINDOW_MS=60000
+LOGIN_IP_LIMIT=20
+
+# Per-user lockout behavior
+LOGIN_LOCK_WINDOW_MS=900000      # 15 minutes
+LOGIN_LOCK_THRESHOLD=5           # 5 failed attempts in window
+LOGIN_LOCK_DURATION_MS=900000    # 15 minutes
+
+# Password history
+PASSWORD_HISTORY_LIMIT=10
+
+# Email verification
+EMAIL_VERIFICATION_TTL_MIN=60
+PASSWORD_RESET_TTL_MIN=30
+```
+
+1) Seed database settings (override env at runtime). You can set these via Admin UI → Settings → Security or with a quick script:
+
+```ts
+// scripts/upsert-security-settings.ts (run with ts-node)
+import { PrismaClient } from '@prisma/client'
+const prisma = new PrismaClient()
+async function main() {
+  const entries = {
+    requireEmailVerification: true,
+    sessionMaxAgeMin: 60,
+    loginIpWindowSec: 60,
+    loginIpLimit: 20,
+    loginLockWindowSec: 900,
+    loginLockThreshold: 5,
+    loginLockDurationMin: 15,
+    passwordHistoryLimit: 10,
+  }
+  for (const [key, value] of Object.entries(entries)) {
+    await prisma.setting.upsert({
+      where: { category_key: { category: 'security', key } },
+      update: { value },
+      create: { category: 'security', key, value },
+    })
+  }
+  await prisma.$disconnect()
+}
+main()
+```
+
+1) Verify behavior
+
+- Login failures trigger per-IP throttling and per-user lockout after threshold within window; locked accounts return 423 until unlocked or expired
+- Admin lock/unlock under `/admin/users/*` revokes sessions and sends reset email on unlock
+- Password reset refuses recent passwords (last N), then records the new hash
