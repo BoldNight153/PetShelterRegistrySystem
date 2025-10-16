@@ -15,6 +15,14 @@ info:
 servers:
   - url: "/"
     description: Same-origin (recommended for deployed environments)
+  - url: "{scheme}://{host}"
+    description: Absolute template for non-same-origin testing
+    variables:
+      scheme:
+        enum: [http, https]
+        default: http
+      host:
+        default: localhost:4000
 security: []
 tags:
   - name: Pets
