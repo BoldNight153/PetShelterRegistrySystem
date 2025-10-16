@@ -17,6 +17,7 @@ import petOwnersRouter from './routes/petOwners';
 import adminRouter from './routes/admin';
 import authRouter from './routes/auth';
 import { parseAuth, requireRole } from './middleware/auth';
+
 // We'll serve ReDoc (Redocly) via a small HTML page instead of using the
 // now-unmaintained swagger-ui-express package.
 import fs from 'fs';
