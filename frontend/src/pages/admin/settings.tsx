@@ -21,7 +21,16 @@ export default function AdminSettingsPage() {
   const [monitoring, setMonitoring] = useState({ chartsRefreshSec: 15, retentionDays: 7 })
   const [auth, setAuthSettings] = useState({ mode: 'session' as 'session' | 'jwt', google: false, github: false })
   const [docs, setDocs] = useState({ showPublicDocsLink: true })
-  const [security, setSecurity] = useState({ sessionMaxAgeMin: 60, requireEmailVerification: true })
+  const [security, setSecurity] = useState({
+    sessionMaxAgeMin: 60,
+    requireEmailVerification: true,
+    loginIpWindowSec: 60,
+    loginIpLimit: 20,
+    loginLockWindowSec: 15 * 60,
+    loginLockThreshold: 5,
+    loginLockDurationMin: 15,
+    passwordHistoryLimit: 10,
+  })
 
   useEffect(() => {
     let cancel = false
@@ -45,7 +54,13 @@ export default function AdminSettingsPage() {
         if (s.docs) setDocs({ showPublicDocsLink: Boolean(s.docs.showPublicDocsLink ?? true) })
         if (s.security) setSecurity({
           sessionMaxAgeMin: Number(s.security.sessionMaxAgeMin ?? 60),
-          requireEmailVerification: Boolean(s.security.requireEmailVerification ?? true)
+          requireEmailVerification: Boolean(s.security.requireEmailVerification ?? true),
+          loginIpWindowSec: Number(s.security.loginIpWindowSec ?? 60),
+          loginIpLimit: Number(s.security.loginIpLimit ?? 20),
+          loginLockWindowSec: Number(s.security.loginLockWindowSec ?? 15 * 60),
+          loginLockThreshold: Number(s.security.loginLockThreshold ?? 5),
+          loginLockDurationMin: Number(s.security.loginLockDurationMin ?? 15),
+          passwordHistoryLimit: Number(s.security.passwordHistoryLimit ?? 10),
         })
       } finally {
         if (!cancel) setLoading(false)
@@ -85,6 +100,12 @@ export default function AdminSettingsPage() {
       if (id === 'security') await saveSettings('security', [
         { key: 'sessionMaxAgeMin', value: Number(security.sessionMaxAgeMin) },
         { key: 'requireEmailVerification', value: Boolean(security.requireEmailVerification) },
+        { key: 'loginIpWindowSec', value: Number(security.loginIpWindowSec) },
+        { key: 'loginIpLimit', value: Number(security.loginIpLimit) },
+        { key: 'loginLockWindowSec', value: Number(security.loginLockWindowSec) },
+        { key: 'loginLockThreshold', value: Number(security.loginLockThreshold) },
+        { key: 'loginLockDurationMin', value: Number(security.loginLockDurationMin) },
+        { key: 'passwordHistoryLimit', value: Number(security.passwordHistoryLimit) },
       ])
     } finally {
       setSaving(null)
@@ -183,6 +204,33 @@ export default function AdminSettingsPage() {
               <div>
                 <label className="block text-sm font-medium">Require email verification</label>
                 <label className="mt-1 inline-flex items-center gap-2 text-sm"><input type="checkbox" className="accent-foreground" checked={security.requireEmailVerification} onChange={e => setSecurity({ ...security, requireEmailVerification: e.target.checked })} /> Enforce verification before login</label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium">Login IP window (seconds)</label>
+                  <input type="number" min={10} step={10} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginIpWindowSec} onChange={e => setSecurity({ ...security, loginIpWindowSec: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Login IP limit (attempts)</label>
+                  <input type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginIpLimit} onChange={e => setSecurity({ ...security, loginIpLimit: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Lock window (seconds)</label>
+                  <input type="number" min={30} step={30} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginLockWindowSec} onChange={e => setSecurity({ ...security, loginLockWindowSec: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Lock threshold (failures)</label>
+                  <input type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginLockThreshold} onChange={e => setSecurity({ ...security, loginLockThreshold: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Lock duration (minutes)</label>
+                  <input type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginLockDurationMin} onChange={e => setSecurity({ ...security, loginLockDurationMin: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Password history limit</label>
+                  <input type="number" min={0} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.passwordHistoryLimit} onChange={e => setSecurity({ ...security, passwordHistoryLimit: Number(e.target.value) })} />
+                  <p className="text-xs text-muted-foreground mt-1">How many previous passwords are disallowed on reset.</p>
+                </div>
               </div>
               <div className="pt-2"><button disabled={saving==='security'} onClick={() => saveCategory('security')} className="px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm">{saving==='security' ? 'Saving…' : 'Save Security'}</button></div>
             </div>
