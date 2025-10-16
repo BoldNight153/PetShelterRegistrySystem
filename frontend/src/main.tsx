@@ -24,6 +24,7 @@ import AdminUsersPage from './pages/admin/users'
 import AdminRolesPage from './pages/admin/roles'
 import AdminPermissionsPage from './pages/admin/permissions'
 import AdminAboutPage from './pages/admin/about'
+import AboutPage from './pages/about'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -39,7 +40,7 @@ const router = createBrowserRouter([
       </div>
     ),
     children: [
-  { index: true, element: <RedocPage /> },
+  { index: true, element: <AboutPage /> },
   // Legacy docs entrypoint with query param support
   { path: 'docs', element: <RedocPage /> },
   // New docs IA: /docs/api/:api/spec and content pages per API

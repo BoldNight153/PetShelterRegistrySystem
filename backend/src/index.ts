@@ -340,6 +340,63 @@ app.get('/admin/docs/api-changelog', requireRole('system_admin') as any, async (
   }
 });
 
+// Admin Docs: Render project READMEs and CHANGELOGs as HTML (or raw)
+// Usage:
+//  - GET /admin/docs/readme/:target?format=raw|html
+//  - GET /admin/docs/changelog/:target?format=raw|html
+//    where :target in { root, backend, frontend }
+// All routes require system_admin role.
+const adminDocsGuard = requireRole('system_admin');
+function resolveDocPath(kind: 'readme' | 'changelog', target: string): string | null {
+  const file = kind === 'readme' ? 'README.md' : 'CHANGELOG.md';
+  const cwd = process.cwd(); // backend directory
+  switch (target) {
+    case 'root':
+      return path.resolve(cwd, '..', file);
+    case 'backend':
+      return path.resolve(cwd, file);
+    case 'frontend':
+      return path.resolve(cwd, '..', 'frontend', file);
+    default:
+      return null;
+  }
+}
+
+function sendMarkdown(res: express.Response, rawMd: string, format: string | undefined) {
+  if ((format || '').toLowerCase() === 'raw') {
+    res.type('text/markdown').send(rawMd);
+  } else {
+    const html = marked.parse(rawMd);
+    res.type('text/html').send(String(html));
+  }
+}
+
+app.get('/admin/docs/readme/:target', adminDocsGuard as any, async (req, res) => {
+  const { target } = req.params as { target: string };
+  const { format } = req.query as { format?: string };
+  const p = resolveDocPath('readme', target);
+  if (!p) return res.status(400).json({ error: 'invalid target' });
+  try {
+    const raw = fs.readFileSync(p, 'utf8');
+    return sendMarkdown(res, raw, format);
+  } catch {
+    return res.status(404).json({ error: 'document not found' });
+  }
+});
+
+app.get('/admin/docs/changelog/:target', adminDocsGuard as any, async (req, res) => {
+  const { target } = req.params as { target: string };
+  const { format } = req.query as { format?: string };
+  const p = resolveDocPath('changelog', target);
+  if (!p) return res.status(400).json({ error: 'invalid target' });
+  try {
+    const raw = fs.readFileSync(p, 'utf8');
+    return sendMarkdown(res, raw, format);
+  } catch {
+    return res.status(404).json({ error: 'document not found' });
+  }
+});
+
 // On-demand retention cleanup task
 app.post('/admin/monitoring/retention/cleanup', requireRole('system_admin') as any, async (req, res) => {
   try {
