@@ -6,14 +6,6 @@ import { ShieldAlert } from 'lucide-react'
 export default function AdminSettingsPage() {
   const { user } = useAuth()
   const isSystemAdmin = !!user?.roles?.includes('system_admin')
-  if (!isSystemAdmin) {
-    return (
-      <div className="p-6">
-        <div className="flex items-center gap-2 text-red-600 dark:text-red-400"><ShieldAlert className="h-5 w-5" /> Access denied</div>
-        <p className="text-sm text-muted-foreground mt-2">This page is restricted to system administrators.</p>
-      </div>
-    )
-  }
   const sections = [
     { id: 'general', label: 'General' },
     { id: 'monitoring', label: 'Monitoring' },
@@ -38,8 +30,8 @@ export default function AdminSettingsPage() {
         const s = await loadSettings()
         if (cancel) return
         if (s.general) setGeneral({
-          appName: s.general.appName ?? 'Pet Shelter Registry',
-          supportEmail: s.general.supportEmail ?? ''
+          appName: String(s.general.appName ?? 'Pet Shelter Registry'),
+          supportEmail: String(s.general.supportEmail ?? '')
         })
         if (s.monitoring) setMonitoring({
           chartsRefreshSec: Number(s.monitoring.chartsRefreshSec ?? 15),
@@ -61,6 +53,15 @@ export default function AdminSettingsPage() {
     })()
     return () => { cancel = true }
   }, [])
+
+  if (!isSystemAdmin) {
+    return (
+      <div className="p-6">
+        <div className="flex items-center gap-2 text-red-600 dark:text-red-400"><ShieldAlert className="h-5 w-5" /> Access denied</div>
+        <p className="text-sm text-muted-foreground mt-2">This page is restricted to system administrators.</p>
+      </div>
+    )
+  }
 
   async function saveCategory(id: string) {
     try {
@@ -140,8 +141,8 @@ export default function AdminSettingsPage() {
             <h2 className="text-lg font-medium">Authentication</h2>
             <div className="rounded border p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium">Auth mode</label>
-                <select className="mt-1 w-60 rounded-md border px-3 py-2 bg-background" value={auth.mode} onChange={e => setAuthSettings({ ...auth, mode: e.target.value as any })}>
+                <label htmlFor="auth-mode" className="block text-sm font-medium">Auth mode</label>
+                <select id="auth-mode" aria-label="Authentication mode" className="mt-1 w-60 rounded-md border px-3 py-2 bg-background" value={auth.mode} onChange={e => setAuthSettings({ ...auth, mode: (e.target.value as 'session' | 'jwt') })}>
                   <option value="session">session</option>
                   <option value="jwt">jwt</option>
                 </select>

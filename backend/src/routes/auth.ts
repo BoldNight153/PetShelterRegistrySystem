@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
@@ -6,13 +6,19 @@ import jwt, { SignOptions, Secret } from 'jsonwebtoken';
 import { resetPasswordEmailTemplate, sendMail, verificationEmailTemplate } from '../lib/email';
 import { getCount, incrementAndCheck, resetWindow } from '../lib/rateLimit';
 
-const prisma: any = new PrismaClient();
+const prisma = new PrismaClient();
+
+// Deduped constants for lint rules
+const INTERNAL_ERROR = 'internal error';
+const HEADER_UA = 'user-agent';
+const INVALID_TOKEN = 'invalid token';
+const AUDIT_LOGIN_LOCKED = 'auth.login.locked_user';
 
 const router = Router();
 
 // Simple andi-CSRF implementation using double-submit cookie pattern.
 // GET /auth/csrf - issues a CSRF token and sets a cookie (httpOnly=false) so the browser can send it back via header.
-router.get('/csrf', (req, res) => {
+router.get('/csrf', (_req: Request, res: Response) => {
   const secret = process.env.CSRF_SECRET || 'dev-csrf-secret';
   const token = crypto.randomBytes(16).toString('hex');
   // Optionally sign; here we attach a simple HMAC for tamper detection
@@ -30,17 +36,21 @@ router.get('/csrf', (req, res) => {
 });
 
 // Middleware to validate CSRF on state-changing requests
-function validateCsrf(req: any, res: any, next: any) {
-  const secret = process.env.CSRF_SECRET || 'dev-csrf-secret';
+function validateCsrf(req: Request, res: Response, next: NextFunction): void {
   const fromCookie = req.cookies?.csrfToken;
   const fromHeader = req.header('x-csrf-token');
-  if (!fromCookie || !fromHeader) return res.status(403).json({ error: 'CSRF token missing' });
+  if (!fromCookie || !fromHeader) {
+    res.status(403).json({ error: 'CSRF token missing' });
+    return;
+  }
   const [token, sig] = String(fromCookie).split('.');
+  const secret = process.env.CSRF_SECRET || 'dev-csrf-secret';
   const expected = crypto.createHmac('sha256', secret).update(token).digest('hex');
   if (sig !== expected || fromHeader !== fromCookie) {
-    return res.status(403).json({ error: 'CSRF token invalid' });
+    res.status(403).json({ error: 'CSRF token invalid' });
+    return;
   }
-  return next();
+  next();
 }
 
 // Helpers
@@ -81,7 +91,7 @@ async function createRefreshToken(userId: string, userAgent?: string, ipAddress?
       maxAgeMs = days * 24 * 60 * 60 * 1000;
       expiresAt = new Date(Date.now() + maxAgeMs);
     }
-  } catch (_) {
+  } catch {
     const days = Number(process.env.REFRESH_DAYS || 30);
     maxAgeMs = days * 24 * 60 * 60 * 1000;
     expiresAt = new Date(Date.now() + maxAgeMs);
@@ -98,7 +108,7 @@ async function createRefreshToken(userId: string, userAgent?: string, ipAddress?
   return { token, expiresAt, maxAgeMs };
 }
 
-function setAuthCookies(res: any, accessToken: string, refreshToken: string, refreshMaxAgeMs?: number) {
+function setAuthCookies(res: Response, accessToken: string, refreshToken: string, refreshMaxAgeMs?: number): void {
   // access cookie: short TTL via JWT exp; no maxAge needed
   res.cookie('accessToken', accessToken, cookieBase());
   // refresh cookie: explicitly set maxAge
@@ -108,25 +118,30 @@ function setAuthCookies(res: any, accessToken: string, refreshToken: string, ref
   res.cookie('refreshToken', refreshToken, { ...cookieBase(), maxAge });
 }
 
-function clearAuthCookies(res: any) {
+function clearAuthCookies(res: Response): void {
   // Clear both cookies by setting Max-Age=0
   const base = cookieBase();
   res.cookie('accessToken', '', { ...base, maxAge: 0 });
   res.cookie('refreshToken', '', { ...base, maxAge: 0 });
 }
 
-async function logAudit(userId: string | null, action: string, req: any, metadata?: any) {
+async function logAudit(
+  userId: string | null,
+  action: string,
+  req: { ip?: string; get: (name: string) => string | undefined },
+  metadata?: any,
+) {
   try {
     await prisma.auditLog.create({
       data: {
         userId: userId || undefined,
         action,
         ipAddress: req.ip,
-        userAgent: req.get('user-agent') || undefined,
+        userAgent: req.get(HEADER_UA) || undefined,
         metadata,
       },
     });
-  } catch (_) {
+  } catch {
     // best-effort; do not block auth flow on audit failure
   }
 }
@@ -134,15 +149,15 @@ async function logAudit(userId: string | null, action: string, req: any, metadat
 async function revokeAllRefreshTokens(userId: string) {
   try {
     await prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-  } catch (_) {
+  } catch {
     // ignore
   }
 }
 
 // Register: email/password
-router.post('/register', validateCsrf, async (req, res) => {
+router.post('/register', validateCsrf, async (req: Request, res: Response) => {
   try {
-    const { email, password, name } = req.body || {};
+    const { email, password, name } = (req.body || {}) as { email?: string; password?: string; name?: string };
     if (!email || !password || !name) return res.status(400).json({ error: 'name, email and password are required' });
     // Basic server-side password policy: 8+ chars, upper, lower, digit, special
     const strong = password.length >= 8
@@ -157,50 +172,62 @@ router.post('/register', validateCsrf, async (req, res) => {
       ? { type: argon2.argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
       : { type: argon2.argon2id };
     const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
-  const user = await prisma.user.create({ data: { email, passwordHash, name } });
-    await logAudit(user.id, 'auth.register', req);
-  const access = signAccessToken(user.id);
-  const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
-  setAuthCookies(res, access, rt.token, rt.maxAgeMs);
+    const user = await prisma.user.create({ data: { email, passwordHash, name } });
+  await logAudit(user.id, 'auth.register', { ip: req.ip, get: req.get.bind(req) });
+    const access = signAccessToken(user.id);
+    const rt = await createRefreshToken(user.id, req.get(HEADER_UA) || undefined, req.ip);
+    setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.status(201).json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
   } catch (err: any) {
     // Log detailed error but avoid leaking internals in production
     try {
       (req as any).log?.error({ err }, 'register failed');
-    } catch (_) {
+    } catch {
       // no-op
     }
-    const message = process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error';
+    const message = process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR;
     return res.status(500).json({ error: message });
   }
 });
 
 // Login: email/password
-router.post('/login', validateCsrf, async (req, res) => {
+router.post('/login', validateCsrf, async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body || {};
+    const { email, password } = (req.body || {}) as { email?: string; password?: string };
     if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+    // Persisted lock check
+    const now = new Date();
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+  const activeLock = await (prisma as any).userLock.findFirst({ where: { userId: existingUser.id, unlockedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, orderBy: { lockedAt: 'desc' } });
+      if (activeLock) {
+        return res.status(429).json({ error: 'account locked', reason: activeLock.reason, until: activeLock.expiresAt ?? null });
+      }
+      // Auto-cleanup expired locks lazily
+  const expired = await (prisma as any).userLock.findMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } } });
+      if (expired.length) {
+  await (prisma as any).userLock.updateMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } }, data: { unlockedAt: now } });
+      }
+    }
     // Rate limiting & lockout
     const ip = req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
-    const ua = req.get('user-agent') || undefined;
+    const ua = req.get(HEADER_UA) || undefined;
     const ipWindowMs = Number(process.env.LOGIN_IP_WINDOW_MS || 60_000);
     const ipLimit = Number(process.env.LOGIN_IP_LIMIT || 20);
-    const userWindowMs = Number(process.env.LOGIN_USER_WINDOW_MS || 60_000);
-    const userLimit = Number(process.env.LOGIN_USER_LIMIT || 10);
     const lockWindowMs = Number(process.env.LOGIN_LOCK_WINDOW_MS || 15 * 60_000); // 15 min
     const lockThreshold = Number(process.env.LOGIN_LOCK_THRESHOLD || 5);
 
     // Throttle raw attempts per IP
     const ipCheck = await incrementAndCheck({ scope: 'auth_login_ip', key: String(ip), windowMs: ipWindowMs, limit: ipLimit });
     if (!ipCheck.allowed) {
-      await logAudit(null, 'auth.login.throttled_ip', req, { ip, ua });
+  await logAudit(null, 'auth.login.throttled_ip', { ip: req.ip, get: req.get.bind(req) }, { ip, ua });
       return res.status(429).json({ error: 'too many attempts, try again later' });
     }
 
     // Check recent failures for this email for lockout
     const userFail = await getCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
     if (userFail.count >= lockThreshold) {
-      await logAudit(null, 'auth.login.locked_user', req, { email });
+  await logAudit(null, AUDIT_LOGIN_LOCKED, { ip: req.ip, get: req.get.bind(req) }, { email });
       return res.status(429).json({ error: 'account temporarily locked due to failed attempts' });
     }
     const user = await prisma.user.findUnique({ where: { email } });
@@ -211,38 +238,41 @@ router.post('/login', validateCsrf, async (req, res) => {
     }
     // Enforce email verification if enabled via settings
     try {
-      const setting = await (prisma as any).setting.findUnique({ where: { category_key: { category: 'security', key: 'requireEmailVerification' } } });
+      const setting = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'requireEmailVerification' } } as any });
       const required = Boolean(setting?.value ?? true);
-    if (required && !user.emailVerified) return res.status(403).json({ error: 'email verification required' });
-    } catch (_) {}
+      if (required && !user.emailVerified) return res.status(403).json({ error: 'email verification required' });
+    } catch {}
     const ok = await argon2.verify(user.passwordHash, password);
     if (!ok) {
       await incrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER });
       // Re-check threshold to decide whether to lock now
       const after = await getCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
       if (after.count >= lockThreshold) {
-        await logAudit(user.id, 'auth.login.locked_user', req, { email });
+    await logAudit(user.id, AUDIT_LOGIN_LOCKED, { ip: req.ip, get: req.get.bind(req) }, { email });
+        // Create persisted auto lock with expiry
+        const durationMs = Number(process.env.LOGIN_LOCK_DURATION_MS || 15 * 60_000);
+  await (prisma as any).userLock.create({ data: { userId: user.id, reason: 'auto_failed_logins', manual: false, lockedAt: new Date(), expiresAt: new Date(Date.now() + durationMs) } });
         return res.status(429).json({ error: 'account temporarily locked due to failed attempts' });
       }
       return res.status(401).json({ error: 'invalid credentials' });
     }
-  await logAudit(user.id, 'auth.login', req);
-  // Success: reset failure window
-  await resetWindow('auth_login_user_fail', String(email).toLowerCase(), lockWindowMs);
-  const access = signAccessToken(user.id);
-  const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
-  setAuthCookies(res, access, rt.token, rt.maxAgeMs);
+    await logAudit(user.id, 'auth.login', { ip: req.ip, get: req.get.bind(req) });
+    // Success: reset failure window
+    await resetWindow('auth_login_user_fail', String(email).toLowerCase(), lockWindowMs);
+    const access = signAccessToken(user.id);
+    const rt = await createRefreshToken(user.id, req.get(HEADER_UA) || undefined, req.ip);
+    setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
   } catch (err: any) {
     try {
       (req as any).log?.error({ err }, 'login failed');
-    } catch (_) {}
-    const message = process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error';
+    } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR;
     return res.status(500).json({ error: message });
   }
 });
 
-router.post('/logout', validateCsrf, async (req, res) => {
+router.post('/logout', validateCsrf, async (req: Request, res: Response) => {
   try {
     const rt = req.cookies?.refreshToken as string | undefined;
     if (rt) {
@@ -250,21 +280,21 @@ router.post('/logout', validateCsrf, async (req, res) => {
         const existing = await prisma.refreshToken.findUnique({ where: { token: rt } });
         if (existing && !existing.revokedAt) {
           await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date() } });
-          await logAudit(existing.userId, 'auth.logout', req, { reason: 'user initiated' });
+    await logAudit(existing.userId, 'auth.logout', { ip: req.ip, get: req.get.bind(req) }, { reason: 'user initiated' });
         }
-      } catch (_) {
+      } catch {
         // ignore revocation errors on logout
       }
     }
     clearAuthCookies(res);
     return res.status(204).send();
   } catch (err: any) {
-    try { (req as any).log?.error({ err }, 'logout failed'); } catch (_) {}
-    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+    try { (req as any).log?.error({ err }, 'logout failed'); } catch {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
   }
 });
 
-router.post('/refresh', validateCsrf, async (req, res) => {
+router.post('/refresh', validateCsrf, async (req: Request, res: Response) => {
   try {
     const rt = req.cookies?.refreshToken as string | undefined;
     if (!rt) return res.status(401).json({ error: 'missing refresh token' });
@@ -274,34 +304,36 @@ router.post('/refresh', validateCsrf, async (req, res) => {
     if (existing.expiresAt <= new Date()) return res.status(401).json({ error: 'refresh token expired' });
 
     // rotate
-  const created = await createRefreshToken(existing.userId, req.get('user-agent') || undefined, req.ip);
-  await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date(), replacedByToken: created.token } });
+    const created = await createRefreshToken(existing.userId, req.get(HEADER_UA) || undefined, req.ip);
+    await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date(), replacedByToken: created.token } });
 
-  const access = signAccessToken(existing.userId);
-  setAuthCookies(res, access, created.token, created.maxAgeMs);
+    const access = signAccessToken(existing.userId);
+    setAuthCookies(res, access, created.token, created.maxAgeMs);
     await logAudit(existing.userId, 'auth.refresh', req, { rotatedFrom: rt });
+  await logAudit(existing.userId, 'auth.refresh', { ip: req.ip, get: req.get.bind(req) }, { rotatedFrom: rt });
     return res.json({ ok: true });
   } catch (err: any) {
-    try { (req as any).log?.error({ err }, 'refresh failed'); } catch (_) {}
-    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+    try { (req as any).log?.error({ err }, 'refresh failed'); } catch {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
   }
 });
 
-router.post('/request-email-verification', validateCsrf, async (req, res) => {
+router.post('/request-email-verification', validateCsrf, async (req: Request, res: Response) => {
   try {
-    const { email } = req.body || {};
+    const { email } = (req.body || {}) as { email?: string };
     if (!email) return res.status(400).json({ error: 'email is required' });
-    const user = await (prisma as any).user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email } });
     // Always respond 200 to avoid enumeration
     if (!user) return res.json({ ok: true });
     if (user.emailVerified) return res.json({ ok: true });
     const token = generateToken();
     const ttlMin = Number(process.env.EMAIL_VERIFICATION_TTL_MIN || 60 * 24); // default 24h
     const expiresAt = new Date(Date.now() + ttlMin * 60 * 1000);
-    await (prisma as any).verificationToken.create({
+    await prisma.verificationToken.create({
       data: { identifier: email, token, type: 'email_verify', expiresAt },
     });
     await logAudit(user.id, 'auth.email_verification.request', req);
+  await logAudit(user.id, 'auth.email_verification.request', { ip: req.ip, get: req.get.bind(req) });
     try {
       const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173';
       const verifyUrl = `${appOrigin}/verify-email?token=${encodeURIComponent(token)}`;
@@ -314,50 +346,52 @@ router.post('/request-email-verification', validateCsrf, async (req, res) => {
     }
     return res.json({ ok: true });
   } catch (err: any) {
-    try { (req as any).log?.error({ err }, 'request-email-verification failed'); } catch (_) {}
-    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+    try { (req as any).log?.error({ err }, 'request-email-verification failed'); } catch {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
   }
 });
 
-router.post('/verify-email', validateCsrf, async (req, res) => {
+router.post('/verify-email', validateCsrf, async (req: Request, res: Response) => {
   try {
-    const { token } = req.body || {};
+    const { token } = (req.body || {}) as { token?: string };
     if (!token) return res.status(400).json({ error: 'token is required' });
-    const vt = await (prisma as any).verificationToken.findUnique({ where: { token } });
-    if (!vt || vt.type !== 'email_verify') return res.status(400).json({ error: 'invalid token' });
+    const vt = await prisma.verificationToken.findUnique({ where: { token } });
+  if (!vt || vt.type !== 'email_verify') return res.status(400).json({ error: INVALID_TOKEN });
     if (vt.consumedAt) return res.status(400).json({ error: 'token already used' });
     if (vt.expiresAt <= new Date()) return res.status(400).json({ error: 'token expired' });
-    const user = await (prisma as any).user.findUnique({ where: { email: vt.identifier } });
-    if (!user) return res.status(400).json({ error: 'invalid token' });
-    const updated = await (prisma as any).user.update({ where: { id: user.id }, data: { emailVerified: new Date() } });
-    await (prisma as any).verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
+    const user = await prisma.user.findUnique({ where: { email: vt.identifier } });
+  if (!user) return res.status(400).json({ error: INVALID_TOKEN });
+    const updated = await prisma.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } });
+    await prisma.verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
     await revokeAllRefreshTokens(user.id);
     await logAudit(user.id, 'auth.email_verification.verified', req);
+  await logAudit(user.id, 'auth.email_verification.verified', { ip: req.ip, get: req.get.bind(req) });
     // issue fresh session
-  const access = signAccessToken(user.id);
-  const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
-  setAuthCookies(res, access, rt.token, rt.maxAgeMs);
+    const access = signAccessToken(user.id);
+    const rt = await createRefreshToken(user.id, req.get(HEADER_UA) || undefined, req.ip);
+    setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ id: updated.id, email: updated.email, emailVerified: updated.emailVerified });
   } catch (err: any) {
-    try { (req as any).log?.error({ err }, 'verify-email failed'); } catch (_) {}
-    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+    try { (req as any).log?.error({ err }, 'verify-email failed'); } catch {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
   }
 });
 
-router.post('/request-password-reset', validateCsrf, async (req, res) => {
+router.post('/request-password-reset', validateCsrf, async (req: Request, res: Response) => {
   try {
-    const { email } = req.body || {};
+    const { email } = (req.body || {}) as { email?: string };
     if (!email) return res.status(400).json({ error: 'email is required' });
-  const user = await (prisma as any).user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email } });
     // Always respond 200 to avoid user enumeration
     if (!user) return res.json({ ok: true });
     const token = generateToken();
     const ttl = Number(process.env.PASSWORD_RESET_TTL_MIN || 60); // minutes
     const expiresAt = new Date(Date.now() + ttl * 60 * 1000);
-    await (prisma as any).verificationToken.create({
+    await prisma.verificationToken.create({
       data: { identifier: email, token, type: 'password_reset', expiresAt },
     });
     await logAudit(user.id, 'auth.password_reset.request', req);
+  await logAudit(user.id, 'auth.password_reset.request', { ip: req.ip, get: req.get.bind(req) });
     try {
       const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173';
       const resetUrl = `${appOrigin}/reset-password?token=${encodeURIComponent(token)}`;
@@ -369,45 +403,70 @@ router.post('/request-password-reset', validateCsrf, async (req, res) => {
     }
     return res.json({ ok: true });
   } catch (err: any) {
-    try { (req as any).log?.error({ err }, 'request-password-reset failed'); } catch (_) {}
-    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+    try { (req as any).log?.error({ err }, 'request-password-reset failed'); } catch {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
   }
 });
 
-router.post('/reset-password', validateCsrf, async (req, res) => {
+router.post('/reset-password', validateCsrf, async (req: Request, res: Response) => {
   try {
-    const { token, password } = req.body || {};
+    const { token, password } = (req.body || {}) as { token?: string; password?: string };
     if (!token || !password) return res.status(400).json({ error: 'token and password are required' });
-  const vt = await (prisma as any).verificationToken.findUnique({ where: { token } });
-    if (!vt || vt.type !== 'password_reset') return res.status(400).json({ error: 'invalid token' });
+    const vt = await prisma.verificationToken.findUnique({ where: { token } });
+  if (!vt || vt.type !== 'password_reset') return res.status(400).json({ error: INVALID_TOKEN });
     if (vt.consumedAt) return res.status(400).json({ error: 'token already used' });
     if (vt.expiresAt <= new Date()) return res.status(400).json({ error: 'token expired' });
-  const user = await (prisma as any).user.findUnique({ where: { email: vt.identifier } });
-    if (!user) return res.status(400).json({ error: 'invalid token' });
+    const user = await prisma.user.findUnique({ where: { email: vt.identifier } });
+  if (!user) return res.status(400).json({ error: INVALID_TOKEN });
+    // Enforce password history: not among last N
+    const historyLimit = Number(process.env.PASSWORD_HISTORY_LIMIT || 10);
+    if (historyLimit > 0 && user.passwordHash) {
+  const history = await (prisma as any).passwordHistory.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: historyLimit });
+      for (const h of history) {
+        const match = await argon2.verify(String(h.passwordHash), password).catch(() => false);
+        if (match) return res.status(400).json({ error: 'new password must not match any of the last 10 passwords' });
+      }
+      // Also prevent setting same as current
+      const currentMatches = await argon2.verify(user.passwordHash, password).catch(() => false);
+      if (currentMatches) return res.status(400).json({ error: 'new password must not match your current password' });
+    }
     const hashOpts = process.env.NODE_ENV === 'test'
       ? { type: argon2.argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
       : { type: argon2.argon2id };
     const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
-  const updateData: any = { passwordHash };
-  // If the account wasn't verified yet, password reset via emailed token proves control of inbox.
-  // Mark emailVerified to allow immediate login post-reset.
-  if (!user.emailVerified) updateData.emailVerified = new Date();
-  await (prisma as any).user.update({ where: { id: user.id }, data: updateData });
-  await (prisma as any).verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
+    const updateData: any = { passwordHash };
+    // If the account wasn't verified yet, password reset via emailed token proves control of inbox.
+    // Mark emailVerified to allow immediate login post-reset.
+    if (!user.emailVerified) updateData.emailVerified = new Date();
+    // Save previous hash into history if it existed
+    if (user.passwordHash) {
+  try { await (prisma as any).passwordHistory.create({ data: { userId: user.id, passwordHash: user.passwordHash } }); } catch {}
+      // Trim to last N
+      try {
+        const extra = await (prisma as any).passwordHistory.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, skip: historyLimit, take: 1000 });
+        if (extra.length) {
+          const ids: string[] = (extra as Array<{ id: string }>).map(e => String(e.id));
+          await (prisma as any).passwordHistory.deleteMany({ where: { id: { in: ids } } });
+        }
+      } catch {}
+    }
+    await prisma.user.update({ where: { id: user.id }, data: updateData });
+    await prisma.verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
     await revokeAllRefreshTokens(user.id);
     await logAudit(user.id, 'auth.password_reset.reset', req);
+  await logAudit(user.id, 'auth.password_reset.reset', { ip: req.ip, get: req.get.bind(req) });
     // issue new session cookies
-  const access = signAccessToken(user.id);
-  const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
-  setAuthCookies(res, access, rt.token, rt.maxAgeMs);
+    const access = signAccessToken(user.id);
+    const rt = await createRefreshToken(user.id, req.get(HEADER_UA) || undefined, req.ip);
+    setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ ok: true });
   } catch (err: any) {
-    try { (req as any).log?.error({ err }, 'reset-password failed'); } catch (_) {}
-    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+    try { (req as any).log?.error({ err }, 'reset-password failed'); } catch {}
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
   }
 });
 
-router.get('/me', async (req: any, res) => {
+router.get('/me', async (req: any, res: Response) => {
   try {
     const userId = req.user?.id || req.user?.sub;
     if (!userId) return res.status(401).json({ authenticated: false });
@@ -417,12 +476,12 @@ router.get('/me', async (req: any, res) => {
     const permissions: string[] = Array.isArray(req.user?.permissions) ? req.user.permissions : [];
     return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified, roles, permissions });
   } catch (err: any) {
-    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
   }
 });
 
 // Diagnostics: report active auth mode and useful details to debug auth locally/in prod
-router.get('/mode', (req: any, res) => {
+router.get('/mode', (req: any, res: Response) => {
   const authMode = (process.env.AUTH_MODE || 'jwt').toLowerCase();
   const cookies = req.cookies || {};
   const sessionCookieName = process.env.SESSION_NAME || 'psrs.sid';
@@ -436,7 +495,7 @@ router.get('/mode', (req: any, res) => {
   let accessClaims: any = null;
   if (hasAccessCookie) {
     try {
-      const decoded = jwt.decode(cookies['accessToken']);
+    const decoded = jwt.decode(String(cookies['accessToken']));
       if (decoded && typeof decoded === 'object') {
         accessClaims = {
           sub: (decoded as any).sub,
@@ -445,7 +504,7 @@ router.get('/mode', (req: any, res) => {
           exp: (decoded as any).exp,
         };
       }
-    } catch (_) {
+  } catch {
       accessClaims = null;
     }
   }
@@ -497,7 +556,7 @@ router.get('/mode', (req: any, res) => {
     },
     session: {
       enabled: authMode === 'session',
-      id: authMode === 'session' ? (req as any).sessionID || null : null,
+  id: authMode === 'session' ? (typeof req.sessionID === 'string' ? req.sessionID : null) : null,
       isAuthenticated: typeof req.isAuthenticated === 'function' ? req.isAuthenticated() : undefined,
       ttlDays: process.env.SESSION_TTL_DAYS ? Number(process.env.SESSION_TTL_DAYS) : undefined,
     },
@@ -514,9 +573,9 @@ router.get('/mode', (req: any, res) => {
   };
 
   // Try to override provider-enabled flags from settings (non-blocking)
-  (async () => {
+  void (async () => {
     try {
-      const authSettings = await (prisma as any).setting.findMany({ where: { category: 'auth' } });
+      const authSettings = await prisma.setting.findMany({ where: { category: 'auth' } });
       const map = new Map(authSettings.map((s: any) => [s.key, s.value]));
       const g = Boolean(map.get('google'));
       const gh = Boolean(map.get('github'));
@@ -535,20 +594,25 @@ function generateState(): string {
   return crypto.randomBytes(16).toString('hex');
 }
 
+function isOAuthProvider(p: string): p is 'google' | 'github' {
+  return p === 'google' || p === 'github';
+}
+
 async function isProviderEnabled(provider: 'google' | 'github'): Promise<boolean> {
   try {
-    const s = await (prisma as any).setting.findUnique({ where: { category_key: { category: 'auth', key: provider } } });
+    const s = await prisma.setting.findUnique({ where: { category_key: { category: 'auth', key: provider } } as any });
     return Boolean(s?.value ?? true);
   } catch {
     return true;
   }
 }
 
-router.get('/oauth/:provider/start', async (req: any, res) => {
+router.get('/oauth/:provider/start', async (req: any, res: Response) => {
   try {
     const provider = String(req.params.provider);
-    if (provider !== 'google' && provider !== 'github') return res.status(404).json({ error: 'provider not supported' });
-    const enabled = await isProviderEnabled(provider as any);
+    if (!isOAuthProvider(provider)) return res.status(404).json({ error: 'provider not supported' });
+    const prov: 'google' | 'github' = provider;
+    const enabled = await isProviderEnabled(prov);
     if (!enabled) return res.status(403).json({ error: `${provider} login disabled` });
 
     const state = generateState();
@@ -560,7 +624,7 @@ router.get('/oauth/:provider/start', async (req: any, res) => {
       maxAge: 10 * 60 * 1000,
     });
 
-    if (provider === 'google') {
+    if (prov === 'google') {
       const clientId = process.env.GOOGLE_CLIENT_ID;
       const redirectUri = process.env.GOOGLE_REDIRECT_URI;
       if (!clientId || !redirectUri) return res.status(500).json({ error: 'google not configured' });
@@ -583,7 +647,7 @@ router.get('/oauth/:provider/start', async (req: any, res) => {
       return res.redirect(302, authUrl.toString());
     }
   } catch (err: any) {
-    try { (req as any).log?.error({ err }, 'oauth start failed'); } catch {}
+    try { req.log?.error({ err }, 'oauth start failed'); } catch {}
     return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
   }
 });
@@ -600,17 +664,19 @@ router.get('/oauth/:provider/callback', async (req: any, res) => {
   const failureRedirect = process.env.OAUTH_FAILURE_REDIRECT || '/login?error=oauth_failed';
   const provider = String(req.params.provider);
   try {
-    if (provider !== 'google' && provider !== 'github') return res.redirect(302, failureRedirect);
-    const enabled = await isProviderEnabled(provider as any);
+    if (!isOAuthProvider(provider)) return res.redirect(302, failureRedirect);
+    const prov: 'google' | 'github' = provider;
+    const enabled = await isProviderEnabled(prov);
     if (!enabled) return res.redirect(302, `${failureRedirect}&reason=disabled`);
 
-    const { code, state } = req.query as any;
+  const { code, state } = req.query as { code?: string; state?: string };
     if (!code || !state) return res.redirect(302, `${failureRedirect}&reason=missing_params`);
     const cookieState = req.cookies?.oauth_state;
     // Clear state cookie regardless of outcome
     res.cookie('oauth_state', '', { ...cookieBase(), httpOnly: true, maxAge: 0 });
     if (!cookieState || cookieState !== state) {
-      await logAudit(null, `auth.oauth.${provider}.state_mismatch`, req);
+    await logAudit(null, `auth.oauth.${provider}.state_mismatch`, { ip: req.ip, get: req.get.bind(req) });
+  await logAudit(null, `auth.oauth.${provider}.state_mismatch`, { ip: req.ip, get: req.get.bind(req) });
       return res.redirect(302, `${failureRedirect}&reason=state_mismatch`);
     }
 
@@ -624,7 +690,7 @@ router.get('/oauth/:provider/callback', async (req: any, res) => {
     let name: string | null = null;
     let image: string | null = null;
 
-    if (provider === 'google') {
+    if (prov === 'google') {
       const clientId = process.env.GOOGLE_CLIENT_ID;
       const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
       const redirectUri = process.env.GOOGLE_REDIRECT_URI;
@@ -640,23 +706,23 @@ router.get('/oauth/:provider/callback', async (req: any, res) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body,
-      } as any);
+      } as RequestInit);
       if (!r.ok) {
-        await logAudit(null, 'auth.oauth.google.token_error', req, { status: r.status });
+        await logAudit(null, 'auth.oauth.google.token_error', req as { ip?: string; get: (name: string) => string | undefined }, { status: r.status });
         return res.redirect(302, `${failureRedirect}&reason=token_exchange_failed`);
       }
       tokens = await r.json();
       // Prefer OIDC userinfo for normalized fields
       if (!tokens || !tokens.access_token) {
-        await logAudit(null, 'auth.oauth.google.missing_access_token', req);
+        await logAudit(null, 'auth.oauth.google.missing_access_token', req as { ip?: string; get: (name: string) => string | undefined });
         return res.redirect(302, `${failureRedirect}&reason=missing_access_token`);
       }
-      const accessToken = tokens.access_token as string;
+      const accessToken = tokens.access_token;
       const u = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
         headers: { Authorization: `Bearer ${accessToken}` },
-      } as any);
+      } as RequestInit);
       if (!u.ok) {
-        await logAudit(null, 'auth.oauth.google.userinfo_error', req, { status: u.status });
+        await logAudit(null, 'auth.oauth.google.userinfo_error', req as { ip?: string; get: (name: string) => string | undefined }, { status: u.status });
         return res.redirect(302, `${failureRedirect}&reason=userinfo_failed`);
       }
       profile = await u.json();
@@ -681,23 +747,23 @@ router.get('/oauth/:provider/callback', async (req: any, res) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
         body,
-      } as any);
+      } as RequestInit);
       if (!r.ok) {
-        await logAudit(null, 'auth.oauth.github.token_error', req, { status: r.status });
+        await logAudit(null, 'auth.oauth.github.token_error', req as { ip?: string; get: (name: string) => string | undefined }, { status: r.status });
         return res.redirect(302, `${failureRedirect}&reason=token_exchange_failed`);
       }
       tokens = await r.json();
 
       if (!tokens || !tokens.access_token) {
-        await logAudit(null, 'auth.oauth.github.missing_access_token', req);
+        await logAudit(null, 'auth.oauth.github.missing_access_token', req as { ip?: string; get: (name: string) => string | undefined });
         return res.redirect(302, `${failureRedirect}&reason=missing_access_token`);
       }
-      const accessToken = tokens.access_token as string;
+      const accessToken = tokens.access_token;
       const u = await fetch('https://api.github.com/user', {
         headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'psrs-app' },
-      } as any);
+      } as RequestInit);
       if (!u.ok) {
-        await logAudit(null, 'auth.oauth.github.user_error', req, { status: u.status });
+        await logAudit(null, 'auth.oauth.github.user_error', req as { ip?: string; get: (name: string) => string | undefined }, { status: u.status });
         return res.redirect(302, `${failureRedirect}&reason=userinfo_failed`);
       }
       const up = await u.json();
@@ -709,7 +775,7 @@ router.get('/oauth/:provider/callback', async (req: any, res) => {
       try {
         const e = await fetch('https://api.github.com/user/emails', {
           headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'psrs-app', Accept: 'application/vnd.github+json' },
-        } as any);
+        } as RequestInit);
         if (e.ok) {
           const emails = await e.json();
           const primary = Array.isArray(emails) ? emails.find((x: any) => x.primary) : null;
@@ -724,7 +790,7 @@ router.get('/oauth/:provider/callback', async (req: any, res) => {
       } catch {}
     }
 
-    if (!providerAccountId) return res.redirect(302, `${failureRedirect}&reason=missing_account_id`);
+  if (!providerAccountId) return res.redirect(302, `${failureRedirect}&reason=missing_account_id`);
 
     // Link or create user
     let user: any = null;
@@ -761,14 +827,16 @@ router.get('/oauth/:provider/callback', async (req: any, res) => {
     }
 
     // Issue cookies
-    const access = signAccessToken(user.id);
-    const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
+    const access = signAccessToken(String(user.id));
+  const ua: string | undefined = typeof req.get === 'function' ? (req.get(HEADER_UA) || undefined) : undefined;
+  const ipAddr: string | undefined = typeof req.ip === 'string' ? req.ip : undefined;
+  const rt = await createRefreshToken(String(user.id), ua, ipAddr);
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
 
-    await logAudit(user.id, `auth.oauth.${provider}.success`, req, { providerAccountId });
+    await logAudit(String(user.id), `auth.oauth.${provider}.success`, req as { ip?: string; get: (name: string) => string | undefined }, { providerAccountId });
     return res.redirect(302, successRedirect);
   } catch (err: any) {
-    try { (req as any).log?.error({ err }, 'oauth callback failed'); } catch {}
+    try { req.log?.error({ err }, 'oauth callback failed'); } catch {}
     return res.redirect(302, `${failureRedirect}&reason=exception`);
   }
 });

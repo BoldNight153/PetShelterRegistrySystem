@@ -110,6 +110,7 @@ export async function saveSettings(category: string, entries: { key: string; val
 export type Role = { id: string; name: string; rank: number; description?: string | null };
 export type Permission = { id: string; name: string; description?: string | null };
 export type UserSummary = { id: string; email: string; name?: string | null; roles: string[] };
+export type UserSummaryWithLock = UserSummary & { lock: { reason: string; until: string | null } | null };
 
 export async function listRoles(): Promise<Role[]> {
   const res = await fetch(`/admin/roles`, { credentials: 'include' });
@@ -175,7 +176,7 @@ export async function revokePermission(roleName: string, permission: string) {
   return res.json();
 }
 
-export async function searchUsers(q?: string, page = 1, pageSize = 20): Promise<{ items: UserSummary[]; total: number; page: number; pageSize: number }> {
+export async function searchUsers(q?: string, page = 1, pageSize = 20): Promise<{ items: UserSummaryWithLock[]; total: number; page: number; pageSize: number }> {
   const url = new URL(`/admin/users`, window.location.origin);
   if (q) url.searchParams.set('q', q);
   url.searchParams.set('page', String(page));
@@ -213,5 +214,29 @@ export async function revokeUserRole(userId: string, roleName: string) {
     body: JSON.stringify({ userId, roleName }),
   });
   if (!res.ok) throw new Error('Failed to revoke role');
+  return res.json();
+}
+
+export async function lockUser(userId: string, reason: string, expiresAt?: string | null, notes?: string) {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/users/lock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify({ userId, reason, expiresAt: expiresAt ?? null, notes }),
+  });
+  if (!res.ok) throw new Error('Failed to lock user');
+  return res.json();
+}
+
+export async function unlockUser(userId: string, unlockReason?: string) {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/users/unlock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify({ userId, unlockReason }),
+  });
+  if (!res.ok) throw new Error('Failed to unlock user');
   return res.json();
 }

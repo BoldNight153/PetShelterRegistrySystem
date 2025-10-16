@@ -156,6 +156,8 @@ model User {
   refreshTokens RefreshToken[]
   roles         UserRole[]
   auditLogs     AuditLog[]
+  locks         UserLock[]
+  passwordHistory PasswordHistory[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -255,6 +257,8 @@ model RolePermission {
   @@index([permissionId])
 }
 
+// Time-series metric points for monitoring charts
+// Persisted account lock state (manual or automatic)
 model AuditLog {
   id        String   @id @default(uuid())
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -266,6 +270,34 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([userId, action, createdAt])
+}
+
+// Persisted account lock state (manual or automatic)
+model UserLock {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  reason     String
+  manual     Boolean  @default(false)
+  lockedAt   DateTime @default(now())
+  expiresAt  DateTime?
+  unlockedAt DateTime?
+  lockedBy   String?
+  unlockedBy String?
+  notes      String?
+
+  @@index([userId])
+}
+
+// Historical password hashes for reuse prevention
+model PasswordHistory {
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // Time-series metric points for monitoring charts

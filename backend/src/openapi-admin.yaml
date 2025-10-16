@@ -109,6 +109,14 @@ components:
         roles:
           type: array
           items: { type: string, description: Role name }
+        lock:
+          type: [
+            'null',
+            object
+          ]
+          properties:
+            reason: { type: string }
+            until: { type: ['string','null'], format: date-time }
       required: [id, email, roles]
     PagedUsers:
       type: object
@@ -574,6 +582,59 @@ paths:
                 $ref: '#/components/schemas/PagedUsers'
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/users/lock:
+    post:
+      summary: Manually lock a user account
+      description: Locks the specified user account. Requires staff_manager or higher. Optional expiresAt can be provided.
+      tags: [User Roles]
+      operationId: lockUser
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string, format: uuid }
+                reason: { type: string }
+                expiresAt: { type: ['string','null'], format: date-time }
+                notes: { type: ['string','null'] }
+              required: [userId, reason]
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/users/unlock:
+    post:
+      summary: Manually unlock a user account
+      description: Unlocks the specified user, revokes active sessions, and sends a password reset email.
+      tags: [User Roles]
+      operationId: unlockUser
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string, format: uuid }
+                unlockReason: { type: ['string','null'] }
+              required: [userId]
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # Monitoring endpoints
   /admin/monitoring/metrics:

@@ -2,9 +2,11 @@ import express from 'express';
 import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 import { requireRole } from '../middleware/auth';
+import { resetPasswordEmailTemplate, sendMail } from '../lib/email';
 
 const router = express.Router();
 const prisma: any = new PrismaClient();
+const ERR = { notFound: 'user not found' } as const;
 
 async function logAudit(userId: string | null, action: string, req: any, metadata?: any) {
   try {
@@ -157,7 +159,7 @@ router.post('/users/revoke-role', adminGuard, async (req, res) => {
 router.get('/users/:userId/roles', adminGuard, async (req, res) => {
   const { userId } = req.params as any;
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return res.status(404).json({ error: 'user not found' });
+  if (!user) return res.status(404).json({ error: ERR.notFound });
   const urs = await prisma.userRole.findMany({ where: { userId }, include: { role: true } });
   type UR = { role: { id: string; name: string; rank: number } | null };
   const roles = (urs as UR[]).map(ur => ur.role).filter((r): r is NonNullable<UR['role']> => Boolean(r)).sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0));
@@ -185,17 +187,58 @@ router.get('/users', adminGuard, async (req, res) => {
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      select: { id: true, email: true, name: true, roles: { include: { role: true } } },
+      select: { id: true, email: true, name: true, roles: { include: { role: true } }, locks: { where: { unlockedAt: null }, orderBy: { lockedAt: 'desc' }, take: 1 } },
     }),
   ]);
-  type IUserRow = { id: string; email: string; name: string | null; roles: { role: { name: string } | null }[] };
+  type IUserRow = { id: string; email: string; name: string | null; roles: { role: { name: string } | null }[]; locks: { reason: string; expiresAt: Date | null }[] };
   const users = (items as IUserRow[]).map(u => ({
     id: u.id,
     email: u.email,
     name: u.name,
     roles: u.roles.map(r => r.role?.name).filter((n): n is string => Boolean(n)),
+    lock: u.locks && u.locks[0] ? { reason: u.locks[0].reason, until: u.locks[0].expiresAt } : null,
   }));
   res.json({ items: users, total, page, pageSize });
+});
+
+// Manual lock a user (staff_manager and higher)
+const staffGuard = requireRole('staff_manager', 'shelter_admin', 'admin', 'system_admin');
+router.post('/users/lock', staffGuard, async (req: any, res) => {
+  const { userId, reason, expiresAt, notes } = req.body || {};
+  if (!userId || !reason) return res.status(400).json({ error: 'userId and reason are required' });
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: ERR.notFound });
+  const data: any = { userId, reason: String(reason), manual: true, lockedAt: new Date(), lockedBy: req.user?.id || null };
+  if (expiresAt) data.expiresAt = new Date(String(expiresAt));
+  if (notes) data.notes = String(notes);
+  const lock = await prisma.userLock.create({ data });
+  await logAudit(String(req.user?.id ?? '' ) || null, 'admin.users.lock', req, { userId, reason, expiresAt: data.expiresAt ?? null });
+  res.json({ ok: true, lock });
+});
+
+// Manual unlock a user — sends password reset email and revokes sessions
+router.post('/users/unlock', staffGuard, async (req: any, res) => {
+  const { userId, unlockReason } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  const now = new Date();
+  await prisma.userLock.updateMany({ where: { userId, unlockedAt: null }, data: { unlockedAt: now, unlockedBy: req.user?.id || null, notes: unlockReason || undefined } });
+  // Send reset email (reuse existing template)
+  try {
+    const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173';
+    const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    const ttl = Number(process.env.PASSWORD_RESET_TTL_MIN || 60);
+    const expiresAt = new Date(Date.now() + ttl * 60 * 1000);
+    await prisma.verificationToken.create({ data: { identifier: user.email, token, type: 'password_reset', expiresAt } });
+    const resetUrl = `${appOrigin}/reset-password?token=${encodeURIComponent(token)}`;
+    const tpl = resetPasswordEmailTemplate({ resetUrl });
+    await sendMail({ to: user.email, subject: 'Reset your password', text: tpl.text, html: tpl.html });
+  } catch {}
+  // Revoke sessions
+  try { await prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } }); } catch {}
+  await logAudit(String(req.user?.id ?? '' ) || null, 'admin.users.unlock', req, { userId });
+  res.json({ ok: true });
 });
 
 export default router;

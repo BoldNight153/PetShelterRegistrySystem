@@ -195,8 +195,9 @@
 
 /* Diagram lightbox button (top-right overlay) */
 .diagram-figure .diagram-open-btn {
-  background: color-mix(in oklab, var(--color-card) 92%, transparent);
-  border: 1px solid color-mix(in oklab, var(--color-border) 85%, transparent);
+  /* Fallback styles to avoid color-mix for older browsers */
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
   color: var(--color-foreground);
 }
 .diagram-figure .diagram-open-btn:hover {
@@ -247,8 +248,8 @@
 
 /* Sidebar container edge: keep the persistent side border very subtle */
 [data-slot="sidebar-container"] {
-  /* Dim the edge line so the rail is the prominent interactive affordance */
-  border-color: color-mix(in oklab, var(--color-sidebar-border) 30%, transparent);
+  /* Fallback border color without color-mix */
+  border-color: var(--color-sidebar-border);
 }
 
 /* End of sidebar-rail tweaks */

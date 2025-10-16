@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { assignUserRole, listRoles, revokeUserRole, searchUsers, type Role, type UserSummary } from '@/lib/api'
+import { assignUserRole, listRoles, revokeUserRole, searchUsers, lockUser, unlockUser, type Role, type UserSummaryWithLock } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 export default function AdminUsersPage() {
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(false)
-  const [users, setUsers] = useState<UserSummary[]>([])
+  const [users, setUsers] = useState<UserSummaryWithLock[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [pageSize] = useState(20)
@@ -63,6 +63,29 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function onLock(userId: string) {
+    const reason = prompt('Lock reason (e.g., admin_action, security_suspicious):', 'admin_action') || 'admin_action'
+    const until = prompt('Optional lock until (ISO timestamp), or leave blank for indefinite:', '')
+    try {
+      await lockUser(userId, reason, until ? until : null)
+      // reflect lock status
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, lock: { reason, until: until || null } } : u))
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to lock user')
+    }
+  }
+
+  async function onUnlock(userId: string) {
+    const unlockReason = prompt('Optional unlock note (will be saved with audit):', '') || undefined
+    try {
+      await unlockUser(userId, unlockReason)
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, lock: null } : u))
+      alert('User unlocked. A password reset email has been sent to the user.')
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to unlock user')
+    }
+  }
+
   const pageInfo = useMemo(() => ({ start: (page - 1) * pageSize + 1, end: Math.min(total, page * pageSize) }), [page, pageSize, total])
 
   return (
@@ -90,6 +113,7 @@ export default function AdminUsersPage() {
               <TableRow>
                 <TableHead>User</TableHead>
                 <TableHead>Roles</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Assign</TableHead>
               </TableRow>
             </TableHeader>
@@ -109,6 +133,15 @@ export default function AdminUsersPage() {
                       )) : <span className="text-xs text-muted-foreground">No roles</span>}
                     </div>
                   </TableCell>
+                  <TableCell>
+                    {u.lock ? (
+                      <span className="text-xs rounded bg-yellow-100 dark:bg-yellow-900/40 border border-yellow-300 dark:border-yellow-800 px-2 py-0.5" title={u.lock.until || ''}>
+                        Locked: {u.lock.reason}{u.lock.until ? ` until ${new Date(u.lock.until).toLocaleString()}` : ''}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Active</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
                       <Select value={assign[u.id] || ''} onValueChange={(v) => setAssign(prev => ({ ...prev, [u.id]: v }))}>
@@ -123,6 +156,11 @@ export default function AdminUsersPage() {
                         </SelectContent>
                       </Select>
                       <Button size="sm" onClick={() => void onAssign(u.id)}>Assign</Button>
+                      {u.lock ? (
+                        <Button size="sm" variant="outline" onClick={() => void onUnlock(u.id)}>Unlock</Button>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => void onLock(u.id)}>Lock</Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
