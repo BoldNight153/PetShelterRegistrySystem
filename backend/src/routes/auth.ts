@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import jwt, { SignOptions, Secret } from 'jsonwebtoken';
 import { resetPasswordEmailTemplate, sendMail, verificationEmailTemplate } from '../lib/email';
+import { getCount, incrementAndCheck, resetWindow } from '../lib/rateLimit';
 
 const prisma: any = new PrismaClient();
 
@@ -144,10 +145,10 @@ router.post('/register', validateCsrf, async (req, res) => {
     const { email, password, name } = req.body || {};
     if (!email || !password || !name) return res.status(400).json({ error: 'name, email and password are required' });
     // Basic server-side password policy: 8+ chars, upper, lower, digit, special
-    const strong = password.length >= 8 
-      && /[A-Z]/.test(password) 
-      && /[a-z]/.test(password) 
-      && /[0-9]/.test(password) 
+    const strong = password.length >= 8
+      && /[A-Z]/.test(password)
+      && /[a-z]/.test(password)
+      && /[0-9]/.test(password)
       && /[^A-Za-z0-9]/.test(password);
     if (!strong) return res.status(400).json({ error: 'password does not meet complexity requirements' });
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -179,17 +180,55 @@ router.post('/login', validateCsrf, async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+    // Rate limiting & lockout
+    const ip = req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
+    const ua = req.get('user-agent') || undefined;
+    const ipWindowMs = Number(process.env.LOGIN_IP_WINDOW_MS || 60_000);
+    const ipLimit = Number(process.env.LOGIN_IP_LIMIT || 20);
+    const userWindowMs = Number(process.env.LOGIN_USER_WINDOW_MS || 60_000);
+    const userLimit = Number(process.env.LOGIN_USER_LIMIT || 10);
+    const lockWindowMs = Number(process.env.LOGIN_LOCK_WINDOW_MS || 15 * 60_000); // 15 min
+    const lockThreshold = Number(process.env.LOGIN_LOCK_THRESHOLD || 5);
+
+    // Throttle raw attempts per IP
+    const ipCheck = await incrementAndCheck({ scope: 'auth_login_ip', key: String(ip), windowMs: ipWindowMs, limit: ipLimit });
+    if (!ipCheck.allowed) {
+      await logAudit(null, 'auth.login.throttled_ip', req, { ip, ua });
+      return res.status(429).json({ error: 'too many attempts, try again later' });
+    }
+
+    // Check recent failures for this email for lockout
+    const userFail = await getCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+    if (userFail.count >= lockThreshold) {
+      await logAudit(null, 'auth.login.locked_user', req, { email });
+      return res.status(429).json({ error: 'account temporarily locked due to failed attempts' });
+    }
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !user.passwordHash) return res.status(401).json({ error: 'invalid credentials' });
+    if (!user || !user.passwordHash) {
+      // Count failed attempt and exit with generic error
+      await incrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER });
+      return res.status(401).json({ error: 'invalid credentials' });
+    }
     // Enforce email verification if enabled via settings
     try {
       const setting = await (prisma as any).setting.findUnique({ where: { category_key: { category: 'security', key: 'requireEmailVerification' } } });
       const required = Boolean(setting?.value ?? true);
-      if (required && !user.emailVerified) return res.status(403).json({ error: 'email verification required' });
+    if (required && !user.emailVerified) return res.status(403).json({ error: 'email verification required' });
     } catch (_) {}
     const ok = await argon2.verify(user.passwordHash, password);
-    if (!ok) return res.status(401).json({ error: 'invalid credentials' });
-    await logAudit(user.id, 'auth.login', req);
+    if (!ok) {
+      await incrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER });
+      // Re-check threshold to decide whether to lock now
+      const after = await getCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+      if (after.count >= lockThreshold) {
+        await logAudit(user.id, 'auth.login.locked_user', req, { email });
+        return res.status(429).json({ error: 'account temporarily locked due to failed attempts' });
+      }
+      return res.status(401).json({ error: 'invalid credentials' });
+    }
+  await logAudit(user.id, 'auth.login', req);
+  // Success: reset failure window
+  await resetWindow('auth_login_user_fail', String(email).toLowerCase(), lockWindowMs);
   const access = signAccessToken(user.id);
   const rt = await createRefreshToken(user.id, req.get('user-agent') || undefined, req.ip);
   setAuthCookies(res, access, rt.token, rt.maxAgeMs);
@@ -349,7 +388,11 @@ router.post('/reset-password', validateCsrf, async (req, res) => {
       ? { type: argon2.argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
       : { type: argon2.argon2id };
     const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
-  await (prisma as any).user.update({ where: { id: user.id }, data: { passwordHash } });
+  const updateData: any = { passwordHash };
+  // If the account wasn't verified yet, password reset via emailed token proves control of inbox.
+  // Mark emailVerified to allow immediate login post-reset.
+  if (!user.emailVerified) updateData.emailVerified = new Date();
+  await (prisma as any).user.update({ where: { id: user.id }, data: updateData });
   await (prisma as any).verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
     await revokeAllRefreshTokens(user.id);
     await logAudit(user.id, 'auth.password_reset.reset', req);
@@ -410,8 +453,8 @@ router.get('/mode', (req: any, res) => {
   // Providers config summary (no secrets)
   // Read provider enable flags from settings synchronously via cached env? We can only check env here; adjust enabled with settings via req.app locals if needed.
   // For now, include settings flag snapshot by querying Prisma (best-effort, non-blocking)
-  let googleEnabled = true;
-  let githubEnabled = true;
+  const googleEnabled = true;
+  const githubEnabled = true;
   try {
     // These reads are async in /mode route, but we'll leave them best-effort using synchronous defaults and override in thenable
   } catch {}

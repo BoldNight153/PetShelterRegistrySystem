@@ -716,7 +716,7 @@ try {
 
   if (process.env.NODE_ENV !== 'production') {
     // Dev: send users to the Vite dev server when they hit the backend with an app route
-    app.get('*', (req, res, next) => {
+    app.get(/.*/, (req, res, next) => {
       if (isHtmlLike(req) && !isApiPath(req.path)) {
         const target = `http://localhost:5173${req.path}${req.url.includes('?') ? '' : ''}`;
         return res.redirect(302, target);
@@ -728,7 +728,7 @@ try {
     const clientDir = path.resolve(__dirname, '../../frontend/dist');
     if (fs.existsSync(clientDir)) {
       app.use(express.static(clientDir));
-      app.get('*', (req, res, next) => {
+      app.get(/.*/, (req, res, next) => {
         if (isHtmlLike(req) && !isApiPath(req.path)) {
           return res.sendFile(path.join(clientDir, 'index.html'));
         }

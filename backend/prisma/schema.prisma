@@ -291,3 +291,16 @@ model Setting {
   @@unique([category, key])
   @@index([category])
 }
+
+// Generic rate limit counters (windowed)
+model RateLimit {
+  id           String   @id @default(cuid())
+  scope        String   // e.g., auth_login_ip, auth_login_user_fail
+  key          String   // e.g., IP or email
+  windowStart  DateTime // start of the window bucket
+  count        Int      @default(0)
+  lastAttemptAt DateTime @default(now())
+
+  @@unique([scope, key, windowStart])
+  @@index([scope, key, windowStart])
+}

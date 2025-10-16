@@ -1,8 +1,10 @@
 import request from 'supertest';
 import app from '../index';
+import { PrismaClient } from '@prisma/client';
 
 const unique = Date.now();
 const testEmail = `testuser+${unique}@example.com`;
+const prisma: any = new PrismaClient();
 
 describe('Auth Phase 1', () => {
   it('issues CSRF token', async () => {
@@ -36,6 +38,9 @@ describe('Auth Phase 1', () => {
     const csrf = await request(app).get('/auth/csrf');
     const csrfCookie = csrf.headers['set-cookie'].find((c: string) => c.startsWith('csrfToken='));
     const csrfToken = csrf.body.csrfToken;
+
+    // Ensure the test account is email-verified to satisfy login policy
+    await prisma.user.update({ where: { email: testEmail }, data: { emailVerified: new Date() } });
 
     const res = await request(app)
       .post('/auth/login')
