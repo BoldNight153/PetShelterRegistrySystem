@@ -29,7 +29,8 @@
       "extra-files": [
         { "type": "yaml", "path": "backend/src/openapi.yaml", "jsonpath": "$.info.version" },
         { "type": "yaml", "path": "backend/src/openapi-auth.yaml", "jsonpath": "$.info.version" },
-        { "type": "yaml", "path": "backend/src/openapi-pets.yaml", "jsonpath": "$.info.version" }
+        { "type": "yaml", "path": "backend/src/openapi-pets.yaml", "jsonpath": "$.info.version" },
+        { "type": "yaml", "path": "backend/src/openapi-admin.yaml", "jsonpath": "$.info.version" }
       ]
     },
     "frontend": {
