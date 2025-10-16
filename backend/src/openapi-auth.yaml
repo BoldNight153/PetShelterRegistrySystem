@@ -9,11 +9,8 @@ info:
     name: MIT
     url: "https://opensource.org/licenses/MIT"
 servers:
-  - url: "http://localhost:{port}"
-    description: Local development server
-    variables:
-      port:
-        default: "4000"
+  - url: "/"
+    description: Same-origin (recommended for deployed environments)
 security: []
 tags:
   - name: Auth
@@ -31,6 +28,78 @@ components:
       name: x-csrf-token
       description: Required for state-changing requests; value must match the csrfToken cookie
   responses:
+    AuthSuccess:
+      description: >-
+        Successful authentication. For browser flows the server typically sets cookies and may
+        redirect; API clients may receive this JSON body directly. The payload shape is shared by
+        email/password login and OAuth callback flows.
+      headers:
+        Set-Cookie:
+          description: >-
+            Sets two HttpOnly cookies on successful authentication:
+            - accessToken: short-lived JWT used for API authorization (HttpOnly, SameSite=Lax, Path=/, Secure in production)
+            - refreshToken: opaque token used to rotate sessions (HttpOnly, SameSite=Lax, Path=/, Secure in production, Max-Age set)
+            Multiple Set-Cookie headers will be present in the response.
+          schema:
+            type: string
+          examples:
+            accessCookie:
+              summary: accessToken cookie
+              value: accessToken=eyJhbGciOi...; Path=/; HttpOnly; SameSite=Lax; Secure
+            refreshCookie:
+              summary: refreshToken cookie
+              value: refreshToken=4f6b0d9e...; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax; Secure
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean, description: Indicates the authentication succeeded }
+              provider:
+                type: string
+                enum: [password, google, github]
+                description: Authentication provider
+              user:
+                type: object
+                description: Authenticated user summary
+                properties:
+                  id: { type: string }
+                  email: { type: string }
+                  name: { type: ["string", "null"] }
+                  emailVerified: { type: ["string", "null"], format: date-time }
+                required: [id, email]
+              roles:
+                type: array
+                items: { type: string }
+                description: Assigned roles for the authenticated user
+              permissions:
+                type: array
+                items: { type: string }
+                description: Effective permissions for the authenticated user
+              redirect:
+                type: ["string", "null"]
+                format: uri
+                description: Optional URL to navigate to after successful login
+              created:
+                type: boolean
+                description: True if a new user account was created during this flow
+              linked:
+                type: boolean
+                description: True if an existing user account was linked to this provider
+            required: [ok, provider, user]
+          example:
+            ok: true
+            provider: password
+            user:
+              id: "7be82153-7c1a-4823-abff-49f2003cfb0b"
+              email: "admin@example.com"
+              name: "Admin"
+              emailVerified: "2025-10-15T10:37:44.000Z"
+            roles: ["user"]
+            permissions: ["pets:read", "owners:read"]
+            redirect: null
+            created: false
+            linked: false
     TooManyRequests:
       description: Too Many Requests
       content:
@@ -89,7 +158,8 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/auth/csrf | jq
+            # Uses same-origin; adjust if calling from outside the app
+            curl -s /auth/csrf | jq
 
   /auth/register:
     post:
@@ -130,8 +200,8 @@ paths:
         - lang: curl
           label: curl
           source: |
-            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
-            curl -i -X POST http://localhost:4000/auth/register \
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -i -X POST /auth/register \
               -H 'Content-Type: application/json' \
               -H "x-csrf-token: $CSRF" \
               --cookie "csrfToken=$CSRF" \
@@ -158,21 +228,7 @@ paths:
               email: "admin@example.com"
               password: "Admin123!@#"
       responses:
-        "200":
-          description: OK
-          headers:
-            Set-Cookie:
-              description: Sets accessToken and refreshToken cookies
-              schema: { type: string }
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id: { type: string }
-                  email: { type: string }
-                  name: { type: string }
-                  emailVerified: { type: ["string", "null"], format: date-time }
+        "200": { $ref: "#/components/responses/AuthSuccess" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -180,8 +236,8 @@ paths:
         - lang: curl
           label: curl
           source: |
-            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
-            curl -i -X POST http://localhost:4000/auth/login \
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -i -X POST /auth/login \
               -H 'Content-Type: application/json' \
               -H "x-csrf-token: $CSRF" \
               --cookie "csrfToken=$CSRF" \
@@ -202,8 +258,8 @@ paths:
         - lang: curl
           label: curl
           source: |
-            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
-            curl -i -X POST http://localhost:4000/auth/logout \
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -i -X POST /auth/logout \
               -H "x-csrf-token: $CSRF" \
               --cookie "csrfToken=$CSRF; refreshToken=<from login>" 
 
@@ -228,8 +284,8 @@ paths:
         - lang: curl
           label: curl
           source: |
-            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
-            curl -i -X POST http://localhost:4000/auth/refresh \
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -i -X POST /auth/refresh \
               -H "x-csrf-token: $CSRF" \
               --cookie "csrfToken=$CSRF; refreshToken=<from login>" 
 
@@ -334,6 +390,33 @@ paths:
         "200": { description: OK }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current authenticated user
+      operationId: getMe
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  email: { type: string }
+                  name: { type: ["string", "null"] }
+                  emailVerified: { type: ["string", "null"], format: date-time }
+                  roles:
+                    type: array
+                    items: { type: string }
+                  permissions:
+                    type: array
+                    items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /auth/mode:
     get:
       tags: [Auth]
@@ -398,7 +481,10 @@ paths:
       summary: OAuth callback handler (code exchange and login)
       operationId: oauthCallback
       responses:
+        "200": { $ref: "#/components/responses/AuthSuccess" }
         "302":
-          description: Redirects to success or failure URL
+          description: >-
+            Redirects to success or failure URL. Note: for some clients the same JSON body shape
+            as "200" (see components.responses.AuthSuccess) may be returned instead of a redirect.
         "400": { $ref: "#/components/responses/BadRequest" }
         "500": { description: Callback error }

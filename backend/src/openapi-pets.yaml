@@ -13,11 +13,8 @@ info:
     name: MIT
     url: "https://opensource.org/licenses/MIT"
 servers:
-  - url: "http://localhost:{port}"
-    description: Local development server
-    variables:
-      port:
-        default: "4000"
+  - url: "/"
+    description: Same-origin (recommended for deployed environments)
 security: []
 tags:
   - name: Pets
@@ -265,11 +262,11 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/pets | jq
+            curl -s /pets | jq
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/pets');
+            const res = await fetch('/pets');
             const pets = await res.json();
             console.log(pets);
       responses:
@@ -328,8 +325,8 @@ paths:
         - lang: curl
           label: curl
           source: |
-            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
-            curl -X POST http://localhost:4000/pets \
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -X POST /pets \
               -H 'Content-Type: application/json' \
               -H "x-csrf-token: $CSRF" \
               --cookie "csrfToken=$CSRF; accessToken=<jwt>" \
@@ -337,7 +334,7 @@ paths:
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/pets', {
+            const res = await fetch('/pets', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-csrf-token': process.env.CSRF },
               body: JSON.stringify({ name: 'Milo', species: 'Dog' }),
@@ -414,7 +411,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/shelters | jq
+            curl -s /shelters | jq
       responses:
         "200":
           description: OK
@@ -447,8 +444,8 @@ paths:
         - lang: curl
           label: curl
           source: |
-            CSRF=$(curl -s http://localhost:4000/auth/csrf | jq -r .csrfToken)
-            curl -X POST http://localhost:4000/shelters \
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -X POST /shelters \
               -H 'Content-Type: application/json' \
               -H "x-csrf-token: $CSRF" \
               --cookie "csrfToken=$CSRF; accessToken=<jwt>" \
@@ -516,7 +513,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/locations | jq
+            curl -s /locations | jq
       responses:
         "200":
           description: OK
@@ -608,7 +605,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/owners | jq
+            curl -s /owners | jq
       responses:
         "200":
           description: OK
@@ -700,7 +697,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/medical | jq
+            curl -s /medical | jq
       responses:
         "200":
           description: OK
@@ -792,7 +789,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/events | jq
+            curl -s /events | jq
       responses:
         "200":
           description: OK
@@ -884,7 +881,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/pet-owners | jq
+            curl -s /pet-owners | jq
       responses:
         "200":
           description: OK

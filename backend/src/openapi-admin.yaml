@@ -10,11 +10,8 @@ info:
     name: MIT
     url: "https://opensource.org/licenses/MIT"
 servers:
-  - url: "http://localhost:{port}"
-    description: Local development server
-    variables:
-      port:
-        default: "4000"
+  - url: "/"
+    description: Same-origin (recommended for deployed environments)
 security: []
 tags:
   - name: Roles
