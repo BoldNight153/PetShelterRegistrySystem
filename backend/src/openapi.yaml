@@ -14,11 +14,16 @@ info:
     name: MIT
     url: "https://opensource.org/licenses/MIT"
 servers:
-  - url: "http://localhost:{port}"
-    description: Local development server
+  - url: "/"
+    description: Same-origin (recommended)
+  - url: "{scheme}://{host}"
+    description: Absolute template for non-same-origin testing
     variables:
-      port:
-        default: "4000"
+      scheme:
+        enum: [http, https]
+        default: http
+      host:
+        default: localhost:4000
 security: []
 tags:
   - name: Pets
@@ -366,11 +371,11 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/pets | jq
+            curl -s /pets | jq
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/pets');
+            const res = await fetch('/pets');
             const pets = await res.json();
             console.log(pets);
       responses:
@@ -433,13 +438,13 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -X POST http://localhost:4000/pets \
+            curl -X POST /pets \
               -H 'Content-Type: application/json' \
               -d '{"name":"Milo","species":"Dog"}'
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/pets', {
+            const res = await fetch('/pets', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name: 'Milo', species: 'Dog' })
@@ -508,7 +513,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/shelters | jq
+            curl -s /shelters | jq
       responses:
         "200":
           description: OK
@@ -539,13 +544,13 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -X POST http://localhost:4000/shelters \
+            curl -X POST /shelters \
               -H 'Content-Type: application/json' \
               -d '{"name":"Central Shelter"}'
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/shelters', {
+            const res = await fetch('/shelters', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name: 'Central Shelter' })
             });
@@ -606,7 +611,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/locations | jq
+            curl -s /locations | jq
       responses:
         "200":
           description: OK
@@ -637,13 +642,13 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -X POST http://localhost:4000/locations \
+            curl -X POST /locations \
               -H 'Content-Type: application/json' \
               -d '{"shelterId":"central-shelter","code":"A-1"}'
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/locations', {
+            const res = await fetch('/locations', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ shelterId: 'central-shelter', code: 'A-1' })
             });
@@ -704,7 +709,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/owners | jq
+            curl -s /owners | jq
       responses:
         "200":
           description: OK
@@ -735,13 +740,13 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -X POST http://localhost:4000/owners \
+            curl -X POST /owners \
               -H 'Content-Type: application/json' \
               -d '{"firstName":"Alice","lastName":"Smith","email":"alice@example.com"}'
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/owners', {
+            const res = await fetch('/owners', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ firstName: 'Alice', lastName: 'Smith', email: 'alice@example.com' })
             });
@@ -802,7 +807,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/medical | jq
+            curl -s /medical | jq
       responses:
         "200":
           description: OK
@@ -833,13 +838,13 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -X POST http://localhost:4000/medical \
+            curl -X POST /medical \
               -H 'Content-Type: application/json' \
               -d '{"petId":"031b7d02-14dc-4542-a9eb-9f23be036e14","eventType":"VACCINATION","notes":"Rabies"}'
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/medical', {
+            const res = await fetch('/medical', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ petId: '031b7d02-14dc-4542-a9eb-9f23be036e14', eventType: 'VACCINATION', notes: 'Rabies' })
             });
@@ -900,7 +905,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/events | jq
+            curl -s /events | jq
       responses:
         "200":
           description: OK
@@ -931,13 +936,13 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -X POST http://localhost:4000/events \
+            curl -X POST /events \
               -H 'Content-Type: application/json' \
               -d '{"type":"CHECKIN","description":"Pet intake"}'
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/events', {
+            const res = await fetch('/events', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ type: 'CHECKIN', description: 'Pet intake' })
             });
@@ -998,7 +1003,7 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -s http://localhost:4000/pet-owners | jq
+            curl -s /pet-owners | jq
       responses:
         "200":
           description: OK
@@ -1029,13 +1034,13 @@ paths:
         - lang: curl
           label: curl
           source: |
-            curl -X POST http://localhost:4000/pet-owners \
+            curl -X POST /pet-owners \
               -H 'Content-Type: application/json' \
               -d '{"petId":"031b7d02-14dc-4542-a9eb-9f23be036e14","ownerId":"36fa99ff-0a81-4451-af12-2d2d5c881a01","role":"OWNER"}'
         - lang: javascript
           label: fetch (node)
           source: |
-            const res = await fetch('http://localhost:4000/pet-owners', {
+            const res = await fetch('/pet-owners', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ petId: '031b7d02-14dc-4542-a9eb-9f23be036e14', ownerId: '36fa99ff-0a81-4451-af12-2d2d5c881a01', role: 'OWNER' })
             });
