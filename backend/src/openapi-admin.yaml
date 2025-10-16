@@ -6,6 +6,10 @@ info:
     Administrative endpoints for roles/permissions, user role assignments, monitoring, and settings.
     Requires an authenticated session and the system_admin role (unless otherwise noted). These endpoints
     power internal operator tools and dashboards and are gated in production.
+    
+    Tips:
+    - Use the servers dropdown to switch between same-origin ("/") and an absolute host.
+    - Code samples use relative URLs so requests target the selected server's base.
   license:
     name: MIT
     url: "https://opensource.org/licenses/MIT"

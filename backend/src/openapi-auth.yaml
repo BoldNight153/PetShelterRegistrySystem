@@ -5,6 +5,10 @@ info:
   description: >-
     Authentication and session endpoints for the Pet Shelter Registry System.
     Uses cookie-based JWT access tokens and rotating refresh tokens with double-submit CSRF protection.
+    
+    Tips:
+    - Use the servers dropdown to switch between same-origin ("/") and an absolute host.
+    - Code samples use relative URLs so requests target the selected server's base.
   license:
     name: MIT
     url: "https://opensource.org/licenses/MIT"
