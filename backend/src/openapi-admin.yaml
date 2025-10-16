@@ -100,6 +100,26 @@ components:
           type: string
           format: uuid
       required: [userId, roleId]
+    UserSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: [string, 'null'] }
+        roles:
+          type: array
+          items: { type: string, description: Role name }
+      required: [id, email, roles]
+    PagedUsers:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/UserSummary' }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+      required: [items, total, page, pageSize]
     UpsertRoleInput:
       type: object
       properties:
@@ -328,6 +348,30 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/roles/{name}/permissions:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: List permissions for a role
+      description: Returns all permissions currently granted to the specified role.
+      tags: [Permissions]
+      operationId: listRolePermissions
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Permission' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /admin/roles/{name}:
     parameters:
       - name: name
@@ -475,6 +519,61 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/users/{userId}/roles:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List roles assigned to a user
+      description: Returns all roles currently assigned to the specified user.
+      tags: [User Roles]
+      operationId: listUserRoles
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Role' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/users:
+    get:
+      summary: Search/list users
+      description: Returns a paginated list of users with their role names. Query by email or name.
+      tags: [User Roles]
+      operationId: searchUsers
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          required: false
+          description: Search text for email or name
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+          required: false
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+          required: false
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedUsers'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   # Monitoring endpoints
   /admin/monitoring/metrics:

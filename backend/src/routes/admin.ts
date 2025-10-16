@@ -17,7 +17,7 @@ async function logAudit(userId: string | null, action: string, req: any, metadat
         metadata,
       },
     });
-  } catch (_) {
+  } catch {
     // ignore
   }
 }
@@ -37,17 +37,17 @@ router.post('/roles/upsert', adminGuard, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
   const { name, rank, description } = parsed.data;
   const role = await prisma.role.upsert({ where: { name }, update: { rank, description }, create: { name, rank, description } });
-  await logAudit((req as any).user?.id ?? null, 'admin.roles.upsert', req, { name, rank });
+  await logAudit(String((req as any).user?.id ?? '' ) || null, 'admin.roles.upsert', req, { name, rank });
   res.json(role);
 });
 
 router.delete('/roles/:name', adminGuard, async (req, res) => {
   const name = req.params.name;
   try {
-    await prisma.role.delete({ where: { name } });
-    await logAudit((req as any).user?.id ?? null, 'admin.roles.delete', req, { name });
+  await prisma.role.delete({ where: { name } });
+  await logAudit(String((req as any).user?.id ?? '' ) || null, 'admin.roles.delete', req, { name });
     res.status(204).end();
-  } catch (err: any) {
+  } catch {
     return res.status(404).json({ error: 'not found' });
   }
 });
@@ -71,7 +71,7 @@ router.post('/permissions/grant', adminGuard, async (req, res) => {
     update: {},
     create: { roleId: role.id, permissionId: perm.id },
   });
-  await logAudit((req as any).user?.id ?? null, 'admin.permissions.grant', req, { roleName, permission });
+  await logAudit(String((req as any).user?.id ?? '' ) || null, 'admin.permissions.grant', req, { roleName, permission });
   res.json({ ok: true });
 });
 
@@ -83,8 +83,19 @@ router.post('/permissions/revoke', adminGuard, async (req, res) => {
   const perm = await prisma.permission.findUnique({ where: { name: permission } });
   if (!role || !perm) return res.status(404).json({ error: 'role or permission not found' });
   await prisma.rolePermission.delete({ where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } as any } });
-  await logAudit((req as any).user?.id ?? null, 'admin.permissions.revoke', req, { roleName, permission });
+  await logAudit(String((req as any).user?.id ?? '' ) || null, 'admin.permissions.revoke', req, { roleName, permission });
   res.json({ ok: true });
+});
+
+// Read: list permissions bound to a specific role
+router.get('/roles/:name/permissions', adminGuard, async (req, res) => {
+  const name = req.params.name;
+  const role = await prisma.role.findUnique({ where: { name } });
+  if (!role) return res.status(404).json({ error: 'role not found' });
+  const rp = await prisma.rolePermission.findMany({ where: { roleId: role.id }, include: { permission: true } });
+  type PermRow = { permission: { id: string; name: string; description: string | null } };
+  const perms = (rp as PermRow[]).map(x => x.permission).sort((a, b) => a.name.localeCompare(b.name));
+  res.json(perms);
 });
 
 // User role assignments
@@ -99,12 +110,13 @@ router.post('/users/assign-role', adminGuard, async (req, res) => {
   // RBAC: only management-level staff and admins can modify roles, and only assign roles lower than their own rank
   const actorId = (req as any).user?.id as string;
   const actorRoles = await prisma.userRole.findMany({ where: { userId: actorId }, include: { role: true } });
-  const isSystemAdmin = actorRoles.some((ur: any) => ur.role?.name === 'system_admin');
-  const actorMaxRank = Math.max(...actorRoles.map((ur: any) => ur.role?.rank ?? 0), 0);
+  type ActorRole = { role: { name: string; rank: number } | null };
+  const isSystemAdmin = (actorRoles as ActorRole[]).some(ur => ur.role?.name === 'system_admin');
+  const actorMaxRank = Math.max(...(actorRoles as ActorRole[]).map(ur => ur.role?.rank ?? 0), 0);
   if (!isSystemAdmin) {
     // management-level staff or higher
     const allowedManagers = ['admin', 'shelter_admin', 'staff_manager'];
-    const hasManagerRole = actorRoles.some((ur: any) => allowedManagers.includes(ur.role?.name));
+    const hasManagerRole = (actorRoles as ActorRole[]).some(ur => ur.role?.name ? allowedManagers.includes(ur.role.name) : false);
     if (!hasManagerRole) return res.status(403).json({ error: 'forbidden' });
     if (role.rank >= actorMaxRank) return res.status(403).json({ error: 'cannot assign same or higher rank' });
   }
@@ -114,7 +126,7 @@ router.post('/users/assign-role', adminGuard, async (req, res) => {
     update: {},
     create: { userId, roleId: role.id },
   });
-  await logAudit((req as any).user?.id ?? null, 'admin.users.assign_role', req, { userId, roleName });
+  await logAudit(String((req as any).user?.id ?? '' ) || null, 'admin.users.assign_role', req, { userId, roleName });
   res.json(ur);
 });
 
@@ -126,18 +138,64 @@ router.post('/users/revoke-role', adminGuard, async (req, res) => {
   if (!role) return res.status(404).json({ error: 'role not found' });
   // Apply same manager/system_admin constraint for revocation
   const actorId = (req as any).user?.id as string;
-  const actorRoles = await prisma.userRole.findMany({ where: { userId: actorId }, include: { role: true } });
-  const isSystemAdmin = actorRoles.some((ur: any) => ur.role?.name === 'system_admin');
-  const actorMaxRank = Math.max(...actorRoles.map((ur: any) => ur.role?.rank ?? 0), 0);
-  if (!isSystemAdmin) {
+  const actorRoles2 = await prisma.userRole.findMany({ where: { userId: actorId }, include: { role: true } });
+  type ActorRole2 = { role: { name: string; rank: number } | null };
+  const isSystemAdmin2 = (actorRoles2 as ActorRole2[]).some(ur => ur.role?.name === 'system_admin');
+  const actorMaxRank2 = Math.max(...(actorRoles2 as ActorRole2[]).map(ur => ur.role?.rank ?? 0), 0);
+  if (!isSystemAdmin2) {
     const allowedManagers = ['admin', 'shelter_admin', 'staff_manager'];
-    const hasManagerRole = actorRoles.some((ur: any) => allowedManagers.includes(ur.role?.name));
+    const hasManagerRole = (actorRoles2 as ActorRole2[]).some(ur => ur.role?.name ? allowedManagers.includes(ur.role.name) : false);
     if (!hasManagerRole) return res.status(403).json({ error: 'forbidden' });
-    if (role.rank >= actorMaxRank) return res.status(403).json({ error: 'cannot revoke same or higher rank' });
+    if (role.rank >= actorMaxRank2) return res.status(403).json({ error: 'cannot revoke same or higher rank' });
   }
   await prisma.userRole.delete({ where: { userId_roleId: { userId, roleId: role.id } as any } });
-  await logAudit((req as any).user?.id ?? null, 'admin.users.revoke_role', req, { userId, roleName });
+  await logAudit(String((req as any).user?.id ?? '' ) || null, 'admin.users.revoke_role', req, { userId, roleName });
   res.json({ ok: true });
+});
+
+// Read: list roles assigned to a user
+router.get('/users/:userId/roles', adminGuard, async (req, res) => {
+  const { userId } = req.params as any;
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  const urs = await prisma.userRole.findMany({ where: { userId }, include: { role: true } });
+  type UR = { role: { id: string; name: string; rank: number } | null };
+  const roles = (urs as UR[]).map(ur => ur.role).filter((r): r is NonNullable<UR['role']> => Boolean(r)).sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0));
+  res.json(roles);
+});
+
+// Read: search/list users (id, email, name, roles)
+router.get('/users', adminGuard, async (req, res) => {
+  const rawQ = (req.query as any).q;
+  const q = typeof rawQ === 'string' ? rawQ.trim() : String(rawQ ?? '').trim();
+  const page = Math.max(1, Number(req.query.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
+  const where: any = q
+    ? {
+        OR: [
+          { email: { contains: q, mode: 'insensitive' } },
+          { name: { contains: q, mode: 'insensitive' } },
+        ],
+      }
+    : {};
+  const [total, items] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: { id: true, email: true, name: true, roles: { include: { role: true } } },
+    }),
+  ]);
+  type IUserRow = { id: string; email: string; name: string | null; roles: { role: { name: string } | null }[] };
+  const users = (items as IUserRow[]).map(u => ({
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    roles: u.roles.map(r => r.role?.name).filter((n): n is string => Boolean(n)),
+  }));
+  res.json({ items: users, total, page, pageSize });
 });
 
 export default router;
@@ -183,7 +241,7 @@ router.put('/settings', settingsGuard, async (req: any, res) => {
     }));
   }
   await prisma.$transaction(writes);
-  await logAudit(actorId, 'admin.settings.upsert', req, { category, keys: entries.map(e => e.key) });
+  await logAudit((typeof actorId === 'string' ? actorId : null), 'admin.settings.upsert', req, { category, keys: entries.map((e: { key: string }) => e.key) });
   res.json({ ok: true });
 });
 
