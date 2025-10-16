@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pets REST API
-  version: 0.0.0
+  version: 0.1.0
   description: >-
     REST API for shelters, locations, pets, owners, medical events, and relationships.
     Uses cookie-based auth and CSRF for state-changing operations. Read endpoints are public by default.

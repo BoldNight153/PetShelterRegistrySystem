@@ -23,6 +23,7 @@ import AuditLogsPage from './pages/admin/audit-logs'
 import AdminUsersPage from './pages/admin/users'
 import AdminRolesPage from './pages/admin/roles'
 import AdminPermissionsPage from './pages/admin/permissions'
+import AdminAboutPage from './pages/admin/about'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -88,6 +89,11 @@ const router = createBrowserRouter([
       { path: 'admin/permissions', element: (
         <ProtectedRoute>
           <AdminPermissionsPage />
+        </ProtectedRoute>
+      ) },
+      { path: 'admin/about', element: (
+        <ProtectedRoute>
+          <AdminAboutPage />
         </ProtectedRoute>
       ) },
       // Legacy alias for Audit Logs

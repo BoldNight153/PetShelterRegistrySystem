@@ -24,6 +24,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { marked } from 'marked';
+import pkg from '../package.json';
 // Load the OpenAPI YAML spec at runtime. We parse it with js-yaml so the
 // source can be hand-edited YAML rather than JSON. If parsing fails we
 // set `openapi` to null so the server still starts.
@@ -34,7 +35,7 @@ try {
   const yamlPath = path.join(__dirname, 'openapi-pets.yaml');
   const raw = fs.readFileSync(yamlPath, 'utf8');
   openapi = yaml.load(raw) as any;
-} catch (err) {
+} catch {
   openapi = null;
 }
 // Load the Admin OpenAPI YAML spec at runtime as a separate artifact.
@@ -44,14 +45,14 @@ try {
   let raw: string | null = null;
   try {
     raw = fs.readFileSync(adminYamlPath, 'utf8');
-  } catch (_) {
+  } catch {
     // Fallback: try project src path when running without copied assets
     const srcFallback = path.resolve(process.cwd(), 'src', 'openapi-admin.yaml');
     raw = fs.readFileSync(srcFallback, 'utf8');
     adminYamlPath = srcFallback;
   }
   openapiAdmin = yaml.load(raw!) as any;
-} catch (err) {
+} catch {
   openapiAdmin = null;
 }
 // Load Auth OpenAPI YAML
@@ -60,17 +61,15 @@ try {
   let raw: string | null = null;
   try {
     raw = fs.readFileSync(authYamlPath, 'utf8');
-  } catch (_) {
+  } catch {
     const srcFallback = path.resolve(process.cwd(), 'src', 'openapi-auth.yaml');
     raw = fs.readFileSync(srcFallback, 'utf8');
     authYamlPath = srcFallback;
   }
   openapiAuth = yaml.load(raw!) as any;
-} catch (err) {
+} catch {
   openapiAuth = null;
 }
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pkg = require('../package.json');
 
 // Avoid setting up the pretty transport in test environments where pino-pretty
 // may not be installed or resolvable. Tests set NODE_ENV=test to skip the
@@ -336,7 +335,7 @@ app.get('/admin/docs/api-changelog', requireRole('system_admin') as any, async (
     const raw = fs.readFileSync(mdPath, 'utf8');
     const html = marked.parse(raw);
     res.type('text/html').send(String(html));
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'changelog not available' });
   }
 });
@@ -388,7 +387,7 @@ app.get('/admin/monitoring/series', requireRole('system_admin') as any, async (r
       select: { value: true, createdAt: true },
     });
     res.json({ metric, minutes: mins, points: rows });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'failed to load series' });
   }
 });
@@ -400,9 +399,9 @@ try {
   if (enableDocs) {
       const version = pkg.version || '0.0.0';
       const docsPath = `/api-docs/v${version}`;
-      const latestPath = `/api-docs/latest`;
+  const latestPath = '/api-docs/latest';
       const authDocsPath = `/auth-docs/v${version}`;
-      const authLatestPath = `/auth-docs/latest`;
+  const authLatestPath = '/auth-docs/latest';
       if (!openapi) {
         logger.warn('OpenAPI spec not found; skipping docs mount');
       } else {
@@ -418,7 +417,7 @@ try {
           try {
             const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi-pets.yaml'), 'utf8');
             res.type('text/yaml').send(yamlRaw);
-          } catch (err) {
+          } catch {
             res.status(500).send('spec not available');
           }
         });
@@ -426,7 +425,7 @@ try {
           try {
             const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi-pets.yaml'), 'utf8');
             res.type('text/yaml').send(yamlRaw);
-          } catch (err) {
+          } catch {
             res.status(500).send('spec not available');
           }
         });
@@ -647,6 +646,23 @@ try {
 } catch (err) {
   logger.warn({ err }, 'Failed to mount Admin Swagger UI');
 }
+
+// Lightweight version info endpoint for Admin UI
+// Exposes backend package version and OpenAPI spec versions. Guarded for admins.
+app.get('/admin/version', requireRole('admin', 'system_admin') as any, async (_req, res) => {
+  try {
+    const version = pkg.version || '0.0.0';
+    const commit = process.env.GIT_COMMIT || process.env.COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null;
+    const specs = {
+      pets: openapi?.info?.version ?? null,
+      auth: openapiAuth?.info?.version ?? null,
+      admin: openapiAdmin?.info?.version ?? null,
+    } as const;
+    res.json({ backend: { version, commit }, openapi: specs, timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: 'failed to read version info' });
+  }
+});
 
 app.use('/pets', petsRouter);
 app.use('/shelters', sheltersRouter);

@@ -212,10 +212,23 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
     // Rate limiting & lockout
     const ip = req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
     const ua = req.get(HEADER_UA) || undefined;
-    const ipWindowMs = Number(process.env.LOGIN_IP_WINDOW_MS || 60_000);
-    const ipLimit = Number(process.env.LOGIN_IP_LIMIT || 20);
-    const lockWindowMs = Number(process.env.LOGIN_LOCK_WINDOW_MS || 15 * 60_000); // 15 min
-    const lockThreshold = Number(process.env.LOGIN_LOCK_THRESHOLD || 5);
+    // Settings overrides (best-effort) with env fallbacks
+    let ipWindowMs = Number(process.env.LOGIN_IP_WINDOW_MS || 60_000);
+    let ipLimit = Number(process.env.LOGIN_IP_LIMIT || 20);
+    let lockWindowMs = Number(process.env.LOGIN_LOCK_WINDOW_MS || 15 * 60_000); // 15 min
+    let lockThreshold = Number(process.env.LOGIN_LOCK_THRESHOLD || 5);
+    try {
+      const rows = await prisma.setting.findMany({ where: { category: 'security', key: { in: ['loginIpWindowSec', 'loginIpLimit', 'loginLockWindowSec', 'loginLockThreshold'] } } as any });
+      const map = new Map(rows.map((r: any) => [r.key, r.value]));
+      const ipWinSec = Number(map.get('loginIpWindowSec'));
+      const ipLim = Number(map.get('loginIpLimit'));
+      const lockWinSec = Number(map.get('loginLockWindowSec'));
+      const lockThr = Number(map.get('loginLockThreshold'));
+      if (Number.isFinite(ipWinSec) && ipWinSec > 0) ipWindowMs = ipWinSec * 1000;
+      if (Number.isFinite(ipLim) && ipLim > 0) ipLimit = ipLim;
+      if (Number.isFinite(lockWinSec) && lockWinSec > 0) lockWindowMs = lockWinSec * 1000;
+      if (Number.isFinite(lockThr) && lockThr > 0) lockThreshold = lockThr;
+    } catch {}
 
     // Throttle raw attempts per IP
     const ipCheck = await incrementAndCheck({ scope: 'auth_login_ip', key: String(ip), windowMs: ipWindowMs, limit: ipLimit });
@@ -250,7 +263,12 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
       if (after.count >= lockThreshold) {
     await logAudit(user.id, AUDIT_LOGIN_LOCKED, { ip: req.ip, get: req.get.bind(req) }, { email });
         // Create persisted auto lock with expiry
-        const durationMs = Number(process.env.LOGIN_LOCK_DURATION_MS || 15 * 60_000);
+        let durationMs = Number(process.env.LOGIN_LOCK_DURATION_MS || 15 * 60_000);
+        try {
+          const s = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'loginLockDurationMin' } } as any });
+          const min = Number(s?.value);
+          if (Number.isFinite(min) && min > 0) durationMs = min * 60_000;
+        } catch {}
   await (prisma as any).userLock.create({ data: { userId: user.id, reason: 'auto_failed_logins', manual: false, lockedAt: new Date(), expiresAt: new Date(Date.now() + durationMs) } });
         return res.status(429).json({ error: 'account temporarily locked due to failed attempts' });
       }
@@ -419,7 +437,13 @@ router.post('/reset-password', validateCsrf, async (req: Request, res: Response)
     const user = await prisma.user.findUnique({ where: { email: vt.identifier } });
   if (!user) return res.status(400).json({ error: INVALID_TOKEN });
     // Enforce password history: not among last N
-    const historyLimit = Number(process.env.PASSWORD_HISTORY_LIMIT || 10);
+    // Password history limit (settings override)
+    let historyLimit = Number(process.env.PASSWORD_HISTORY_LIMIT || 10);
+    try {
+      const s = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'passwordHistoryLimit' } } as any });
+      const lim = Number(s?.value);
+      if (Number.isFinite(lim) && lim >= 0) historyLimit = lim;
+    } catch {}
     if (historyLimit > 0 && user.passwordHash) {
   const history = await (prisma as any).passwordHistory.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: historyLimit });
       for (const h of history) {

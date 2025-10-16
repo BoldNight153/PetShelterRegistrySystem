@@ -12,7 +12,8 @@
     "seed": "ts-node prisma/seed.ts",
     "test": "jest --config jest.config.cjs --runInBand --detectOpenHandles",
     "lint": "eslint -c eslint.config.mjs src --ext .ts",
-    "lint:openapi": "redocly lint src/openapi-pets.yaml src/openapi-admin.yaml src/openapi-auth.yaml"
+    "lint:openapi": "redocly lint src/openapi-pets.yaml src/openapi-admin.yaml src/openapi-auth.yaml",
+    "validate:openapi": "ts-node scripts/validate-openapi-version.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

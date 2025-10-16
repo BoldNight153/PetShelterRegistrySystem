@@ -1,6 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import React from 'react'
 import AdminSettingsPage from './settings'
 
 vi.mock('@/lib/auth-context', () => {
@@ -23,10 +22,26 @@ const loadSettingsMock = vi.fn().mockResolvedValue({
   },
 })
 
+type SettingEntry = { key: string; value: unknown }
+type SecuritySettings = {
+  sessionMaxAgeMin: number
+  requireEmailVerification: boolean
+  loginIpWindowSec: number
+  loginIpLimit: number
+  loginLockWindowSec: number
+  loginLockThreshold: number
+  loginLockDurationMin: number
+  passwordHistoryLimit: number
+}
+
 vi.mock('@/lib/api', async () => {
   return {
-    loadSettings: (...args: any[]) => loadSettingsMock(...args),
-    saveSettings: (...args: any[]) => saveSettingsMock(...args),
+    // loadSettings has no parameters
+    loadSettings: (...args: []) => loadSettingsMock(...args),
+    saveSettings: (category: string, entries: SettingEntry[]) => saveSettingsMock(category, entries),
+  } as {
+    loadSettings: () => Promise<{ security: SecuritySettings }>
+    saveSettings: (category: string, entries: SettingEntry[]) => Promise<{ ok: boolean }>
   }
 })
 

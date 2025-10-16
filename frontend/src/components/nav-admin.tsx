@@ -267,6 +267,16 @@ export default function NavAdmin() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         )}
+        {isSystemAdmin && (
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild>
+              <Link to="/admin/about">
+                <BadgeCheck className="h-4 w-4" />
+                <span>About / Version</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )}
       </SidebarMenu>
     </SidebarGroup>
   )

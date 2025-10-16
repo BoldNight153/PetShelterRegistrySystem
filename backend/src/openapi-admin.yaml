@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Admin REST API
-  version: 0.0.0
+  version: 0.1.0
   description: >-
     Administrative endpoints for roles/permissions, user role assignments, monitoring, and settings.
     Requires an authenticated session and the system_admin role (unless otherwise noted). These endpoints

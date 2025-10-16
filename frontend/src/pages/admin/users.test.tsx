@@ -1,6 +1,5 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import React from 'react'
 import AdminUsersPage from './users'
 
 // Mock auth as system_admin

@@ -3,6 +3,7 @@ import fs from "fs"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
+import pkg from "./package.json" assert { type: "json" }
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -50,6 +51,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version || "0.0.0"),
+    "import.meta.env.VITE_APP_VERSION": JSON.stringify(process.env.VITE_APP_VERSION || pkg.version || "0.0.0"),
+  },
   optimizeDeps: {
     include: ["redoc"],
   },
@@ -80,6 +85,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       "/admin/monitoring": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+      "/admin/version": {
         target: "http://localhost:4000",
         changeOrigin: true,
       },

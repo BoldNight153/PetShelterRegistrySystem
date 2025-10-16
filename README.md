@@ -97,6 +97,16 @@ ReDoc is mounted in `frontend/src/docs/redoc-page.tsx` via dynamic import. The t
 - Admin-only docs: GET `/api-docs/admin/latest` and JSON at `/api-docs/admin/latest/openapi.json`
   - Access requires a user with the `system_admin` role; routes are gated server-side. Enabled in all environments.
 
+### Versions and About panel
+
+- Backend exposes `GET /admin/version` (RBAC: `admin` or `system_admin`) with:
+  - `backend.version` and optional `backend.commit`
+  - OpenAPI versions for `pets`, `auth`, and `admin` specs
+- Frontend adds an Admin page at `/admin/about` that surfaces:
+  - Frontend app version (from `package.json` via `__APP_VERSION__` define)
+  - Backend version/commit and OpenAPI spec versions
+  - Note: In dev, the Vite proxy forwards `/admin/version` to the backend.
+
 ## Security and settings
 
 The backend enforces security using settings loaded from the database with environment-variable fallbacks. Database settings take precedence.
@@ -190,6 +200,13 @@ Notes and tips:
 
 ```bash
 gh workflow run release-please
+
+### OpenAPI version alignment (CI validation)
+
+- A GitHub Action `.github/workflows/validate-openapi.yml` runs on PRs/pushes to `main`.
+- It executes `npm run validate:openapi` under `backend/`, which checks that
+  `src/openapi-*.yaml` each have `info.version` equal to the backend `package.json` version.
+  If there's drift, the job fails with a clear message.
 ```
 
 ## Project management

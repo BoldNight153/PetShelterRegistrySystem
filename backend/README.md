@@ -132,3 +132,10 @@ main()
 - Login failures trigger per-IP throttling and per-user lockout after threshold within window; locked accounts return 423 until unlocked or expired
 - Admin lock/unlock under `/admin/users/*` revokes sessions and sends reset email on unlock
 - Password reset refuses recent passwords (last N), then records the new hash
+
+## Versioning and Docs
+
+- Admins can fetch backend and spec versions at `GET /admin/version`. Response contains:
+  - `backend.version` and optional `backend.commit`
+  - `openapi.pets`, `openapi.auth`, `openapi.admin`
+- CI checks ensure OpenAPI `info.version` matches the backend `package.json` version. The workflow runs `npm run validate:openapi` under `backend/` on PRs and pushes to `main`.
