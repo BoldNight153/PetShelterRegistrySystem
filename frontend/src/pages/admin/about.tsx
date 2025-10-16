@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { MarkdownPreview } from '@/components/docs/markdown-preview'
+import { useAuth } from '@/lib/auth-context'
 
 declare const __APP_VERSION__: string;
 
@@ -14,18 +16,9 @@ export default function AdminAboutPage() {
   const [view, setView] = useState<'none' | 'root-readme' | 'backend-readme' | 'frontend-readme' | 'root-changelog' | 'backend-changelog' | 'frontend-changelog'>('none');
   const viteEnv = (import.meta as unknown as { env?: Record<string, string> }).env;
   const frontendVersion = (viteEnv?.VITE_APP_VERSION as string | undefined) || __APP_VERSION__;
-
-  const docUrl = useMemo(() => {
-    switch (view) {
-      case 'root-readme': return '/admin/docs/readme/root?format=html';
-      case 'backend-readme': return '/admin/docs/readme/backend?format=html';
-      case 'frontend-readme': return '/admin/docs/readme/frontend?format=html';
-      case 'root-changelog': return '/admin/docs/changelog/root?format=html';
-      case 'backend-changelog': return '/admin/docs/changelog/backend?format=html';
-      case 'frontend-changelog': return '/admin/docs/changelog/frontend?format=html';
-      default: return null;
-    }
-  }, [view]);
+  const { user } = useAuth()
+  const roles = user?.roles || []
+  const isSystemAdmin = roles.includes('system_admin')
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +48,6 @@ export default function AdminAboutPage() {
           </dl>
           <div className="mt-3 flex flex-wrap gap-2 text-sm">
             <a className="underline" href="/" target="_self">Open app</a>
-            <a className="underline" href="/docs" target="_self">API Docs (latest)</a>
             <button className="underline" onClick={() => setView('frontend-readme')}>Frontend README</button>
             <button className="underline" onClick={() => setView('frontend-changelog')}>Frontend CHANGELOG</button>
           </div>
@@ -74,9 +66,9 @@ export default function AdminAboutPage() {
             </dl>
           )}
           <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            <a className="underline" href="/api-docs" target="_self">Pets API docs</a>
-            <a className="underline" href="/auth-docs" target="_self">Auth API docs</a>
-            <a className="underline" href="/api-docs/admin" target="_self">Admin API docs</a>
+            {isSystemAdmin && <a className="underline" href="/api-docs" target="_self">Pets API Docs</a>}
+            {isSystemAdmin && <a className="underline" href="/auth-docs" target="_self">Auth API Docs</a>}
+            {isSystemAdmin && <a className="underline" href="/api-docs/admin" target="_self">Admin API Docs</a>}
             <button className="underline" onClick={() => setView('backend-readme')}>Backend README</button>
             <button className="underline" onClick={() => setView('backend-changelog')}>Backend CHANGELOG</button>
           </div>
@@ -104,13 +96,15 @@ export default function AdminAboutPage() {
           <button className={`underline ${view === 'backend-changelog' ? 'font-semibold' : ''}`} onClick={() => setView('backend-changelog')}>Backend CHANGELOG</button>
           <button className={`underline ${view === 'frontend-changelog' ? 'font-semibold' : ''}`} onClick={() => setView('frontend-changelog')}>Frontend CHANGELOG</button>
         </div>
-        {docUrl ? (
-          <div className="border rounded overflow-hidden h-[60vh]">
-            <iframe title="Doc preview" src={docUrl} className="w-full h-full" />
-          </div>
-        ) : (
-          <p className="text-muted-foreground">Select a document to preview it here.</p>
-        )}
+        <div className="border rounded overflow-auto max-h-[70vh] p-4">
+          {view === 'none' && <p className="text-muted-foreground">Select a document to preview it here.</p>}
+          {view === 'root-readme' && <MarkdownPreview className="prose max-w-none" kind="readme" target="root" />}
+          {view === 'backend-readme' && <MarkdownPreview className="prose max-w-none" kind="readme" target="backend" />}
+          {view === 'frontend-readme' && <MarkdownPreview className="prose max-w-none" kind="readme" target="frontend" />}
+          {view === 'root-changelog' && <MarkdownPreview className="prose max-w-none" kind="changelog" target="root" />}
+          {view === 'backend-changelog' && <MarkdownPreview className="prose max-w-none" kind="changelog" target="backend" />}
+          {view === 'frontend-changelog' && <MarkdownPreview className="prose max-w-none" kind="changelog" target="frontend" />}
+        </div>
       </section>
     </div>
   );

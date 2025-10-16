@@ -454,6 +454,8 @@ app.get('/admin/monitoring/series', requireRole('system_admin') as any, async (r
 try {
   const enableDocs = process.env.NODE_ENV !== 'production' || process.env.API_DOCS === 'true';
   if (enableDocs) {
+      // Gate public docs behind system_admin per security policy
+      const publicDocsGuard = requireRole('system_admin');
       const version = pkg.version || '0.0.0';
       const docsPath = `/api-docs/v${version}`;
   const latestPath = '/api-docs/latest';
@@ -467,10 +469,10 @@ try {
         openapi.info = openapi.info || {};
         openapi.info.version = version;
         // raw JSON endpoints
-        app.get(`${docsPath}/openapi.json`, (req, res) => res.json(openapi));
-        app.get(`${latestPath}/openapi.json`, (req, res) => res.json(openapi));
+  app.get(`${docsPath}/openapi.json`, publicDocsGuard as any, (req, res) => res.json(openapi));
+  app.get(`${latestPath}/openapi.json`, publicDocsGuard as any, (req, res) => res.json(openapi));
         // raw YAML endpoints (serve the original YAML file)
-        app.get(`${docsPath}/openapi.yaml`, (_req, res) => {
+        app.get(`${docsPath}/openapi.yaml`, publicDocsGuard as any, (_req, res) => {
           try {
             const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi-pets.yaml'), 'utf8');
             res.type('text/yaml').send(yamlRaw);
@@ -478,7 +480,7 @@ try {
             res.status(500).send('spec not available');
           }
         });
-        app.get(`${latestPath}/openapi.yaml`, (_req, res) => {
+        app.get(`${latestPath}/openapi.yaml`, publicDocsGuard as any, (_req, res) => {
           try {
             const yamlRaw = fs.readFileSync(path.join(__dirname, 'openapi-pets.yaml'), 'utf8');
             res.type('text/yaml').send(yamlRaw);
@@ -526,17 +528,17 @@ try {
           "connect-src 'self'",
         ].join('; ');
 
-        app.get(latestPath, (_req, res) => {
+        app.get(latestPath, publicDocsGuard as any, (_req, res) => {
           res.set('Content-Security-Policy', docsCsp);
           res.type('text/html').send(redocHtml(`${latestPath}/openapi.json`));
         });
 
-        app.get(docsPath, (_req, res) => {
+        app.get(docsPath, publicDocsGuard as any, (_req, res) => {
           res.set('Content-Security-Policy', docsCsp);
           res.type('text/html').send(redocHtml(`${docsPath}/openapi.json`));
         });
-        // Redirect /api-docs to latest for a stable default entrypoint
-        app.get('/api-docs', (_req, res) => res.redirect(302, latestPath));
+        // Redirect /api-docs to latest for a stable default entrypoint (gated)
+        app.get('/api-docs', publicDocsGuard as any, (_req, res) => res.redirect(302, latestPath));
         logger.info({ docsPath, latestPath }, 'Swagger UI available');
       }
 
@@ -544,8 +546,8 @@ try {
       if (openapiAuth) {
         openapiAuth.info = openapiAuth.info || {};
         openapiAuth.info.version = version;
-        app.get(`${authDocsPath}/openapi.json`, (_req, res) => res.json(openapiAuth));
-        app.get(`${authLatestPath}/openapi.json`, (_req, res) => res.json(openapiAuth));
+  app.get(`${authDocsPath}/openapi.json`, publicDocsGuard as any, (_req, res) => res.json(openapiAuth));
+  app.get(`${authLatestPath}/openapi.json`, publicDocsGuard as any, (_req, res) => res.json(openapiAuth));
         const readAuthYamlRaw = () => {
           try {
             return fs.readFileSync(path.join(__dirname, 'openapi-auth.yaml'), 'utf8');
@@ -553,7 +555,7 @@ try {
             return fs.readFileSync(path.resolve(process.cwd(), 'src', 'openapi-auth.yaml'), 'utf8');
           }
         };
-        app.get(`${authDocsPath}/openapi.yaml`, (_req, res) => {
+        app.get(`${authDocsPath}/openapi.yaml`, publicDocsGuard as any, (_req, res) => {
           try {
             const yamlRaw = readAuthYamlRaw();
             res.type('text/yaml').send(yamlRaw);
@@ -561,7 +563,7 @@ try {
             res.status(500).send('spec not available');
           }
         });
-        app.get(`${authLatestPath}/openapi.yaml`, (_req, res) => {
+        app.get(`${authLatestPath}/openapi.yaml`, publicDocsGuard as any, (_req, res) => {
           try {
             const yamlRaw = readAuthYamlRaw();
             res.type('text/yaml').send(yamlRaw);
@@ -596,15 +598,15 @@ try {
           "img-src 'self' data:",
           "connect-src 'self'",
         ].join('; ');
-        app.get(authLatestPath, (_req, res) => {
+        app.get(authLatestPath, publicDocsGuard as any, (_req, res) => {
           res.set('Content-Security-Policy', docsCsp);
           res.type('text/html').send(redocHtml(`${authLatestPath}/openapi.json`));
         });
-        app.get(authDocsPath, (_req, res) => {
+        app.get(authDocsPath, publicDocsGuard as any, (_req, res) => {
           res.set('Content-Security-Policy', docsCsp);
           res.type('text/html').send(redocHtml(`${authDocsPath}/openapi.json`));
         });
-        app.get('/auth-docs', (_req, res) => res.redirect(302, authLatestPath));
+        app.get('/auth-docs', publicDocsGuard as any, (_req, res) => res.redirect(302, authLatestPath));
         logger.info({ authDocsPath, authLatestPath }, 'Auth Swagger UI available');
       }
   }

@@ -61,33 +61,14 @@ export default function AboutPage() {
       <section className="rounded border p-4">
         <h2 className="text-lg font-medium mb-2">Quick Links</h2>
         <ul className="list-disc pl-5 space-y-1">
-          <li><a className="underline" href="/docs" target="_self">API Docs (latest)</a></li>
-          <li><a className="underline" href="/auth-docs" target="_self">Auth API Docs</a></li>
-          <li><a className="underline" href="/api-docs/admin" target="_self">Admin API Docs</a></li>
           <li><a className="underline" href="https://github.com/BoldNight153/PetShelterRegistrySystem" target="_blank" rel="noreferrer noopener">GitHub repo</a></li>
         </ul>
+        <p className="text-xs text-muted-foreground mt-2">API documentation is available to system administrators in the Admin area.</p>
       </section>
-
+      
       <section className="rounded border p-4">
-        <h2 className="text-lg font-medium mb-2">Project READMEs</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          <a className="underline" href="/admin/docs/readme/root?format=html" target="_blank" rel="noreferrer">Root README (HTML)</a>
-          <a className="underline" href="/admin/docs/readme/backend?format=html" target="_blank" rel="noreferrer">Backend README (HTML)</a>
-          <a className="underline" href="/admin/docs/readme/frontend?format=html" target="_blank" rel="noreferrer">Frontend README (HTML)</a>
-          <a className="underline" href="/admin/docs/readme/root?format=raw" target="_blank" rel="noreferrer">Root README (raw)</a>
-          <a className="underline" href="/admin/docs/readme/backend?format=raw" target="_blank" rel="noreferrer">Backend README (raw)</a>
-          <a className="underline" href="/admin/docs/readme/frontend?format=raw" target="_blank" rel="noreferrer">Frontend README (raw)</a>
-        </div>
-        <p className="text-xs text-muted-foreground mt-2">Note: These routes require admin privileges; you may be asked to log in if not already authenticated.</p>
-      </section>
-
-      <section className="rounded border p-4">
-        <h2 className="text-lg font-medium mb-2">Changelogs</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          <a className="underline" href="/admin/docs/changelog/root?format=html" target="_blank" rel="noreferrer">Root CHANGELOG (HTML)</a>
-          <a className="underline" href="/admin/docs/changelog/backend?format=html" target="_blank" rel="noreferrer">Backend CHANGELOG (HTML)</a>
-          <a className="underline" href="/admin/docs/changelog/frontend?format=html" target="_blank" rel="noreferrer">Frontend CHANGELOG (HTML)</a>
-        </div>
+        <h2 className="text-lg font-medium mb-2">Documentation</h2>
+        <p className="text-sm text-muted-foreground">For security, full API docs and project READMEs/CHANGELOGs are available in the Admin About page for authorized users.</p>
       </section>
     </div>
   )
