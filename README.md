@@ -6,6 +6,20 @@ A full-stack TypeScript project for a Pet Shelter Registry system featuring:
 - Frontend: React 19 + Vite 7 + TypeScript + Tailwind CSS v4 + shadcn/Radix UI
 - API Documentation: ReDoc page themed to match the app, backed by the backend's OpenAPI spec and Vite proxy
 
+## What’s new (Security + Admin UI)
+
+- Account lockout and password history
+  - Automatic lockout after N failed logins within a configured window; auto-unlocks after the configured duration
+  - Manual lock/unlock by admins with audit logging and session revocation
+  - Password reset enforces “cannot reuse last N passwords” (includes current)
+- Admin UI
+  - Roles & Permissions: manage roles, assign/revoke permissions; assign/revoke user roles
+  - Users: search users, view lock status, lock/unlock accounts with notes and optional expiration
+  - Settings: configure security thresholds (IP rate limits, lock window/threshold/duration, password history), email verification requirement, session lifetime, and OAuth provider toggles
+  - Admin Docs: admin-only OpenAPI (gated to `system_admin`)
+
+Backend behavior is driven by settings stored in the database, which override environment variables when present. See Settings keys below.
+
 ## Monorepo layout
 
 - `backend/` — Express API, Prisma schema/migrations, seeds, tests
@@ -60,6 +74,19 @@ The app starts at http://localhost:5173 and proxies backend endpoints:
 - ReDoc docs page (route: "/docs") using the backend OpenAPI spec via proxy; search enabled
 - Theming system uses `html.dark` and `html[data-theme]` with localStorage("theme") and system preference tracking
 
+### Admin UI pages
+
+- Permissions: CRUD permissions and grant to roles
+- Roles: Create/update roles (with rank), view permissions, revoke permissions
+- Users: Search list with roles and lock status; assign/revoke roles; lock/unlock accounts
+- Settings: General, Monitoring, Authentication, Documentation, and Security sections
+  - Security includes:
+    - Require email verification before login
+    - Session max age (minutes)
+    - Login IP window (seconds) and limit (attempts)
+    - Lock window (seconds), threshold (failures), duration (minutes)
+    - Password history limit
+
 ## Theming and ReDoc
 
 ReDoc is mounted in `frontend/src/docs/redoc-page.tsx` via dynamic import. The theme adapts to app mode (light/dark) and listens to `themechange` events. Dropdowns and code blocks have contrast tweaks for readability.
@@ -69,6 +96,37 @@ ReDoc is mounted in `frontend/src/docs/redoc-page.tsx` via dynamic import. The t
 - Public docs (OpenAPI + ReDoc): GET `/api-docs/latest` and JSON at `/api-docs/latest/openapi.json`
 - Admin-only docs: GET `/api-docs/admin/latest` and JSON at `/api-docs/admin/latest/openapi.json`
   - Access requires a user with the `system_admin` role; routes are gated server-side. Enabled in all environments.
+
+## Security and settings
+
+The backend enforces security using settings loaded from the database with environment-variable fallbacks. Database settings take precedence.
+
+- Settings category: `security` (Admin UI → Settings → Security)
+  - `requireEmailVerification` (boolean)
+  - `sessionMaxAgeMin` (number, minutes)
+  - `loginIpWindowSec` (number, seconds)
+  - `loginIpLimit` (number, attempts per window)
+  - `loginLockWindowSec` (number, seconds)
+  - `loginLockThreshold` (number, failed attempts)
+  - `loginLockDurationMin` (number, minutes)
+  - `passwordHistoryLimit` (number, previous passwords disallowed)
+- Settings category: `auth` (Admin UI → Settings → Authentication)
+  - `mode` ("session" | "jwt")
+  - `google` (boolean)
+  - `github` (boolean)
+
+Environment fallback (used only when DB settings are absent):
+
+- `LOGIN_IP_WINDOW_MS`, `LOGIN_IP_LIMIT`
+- `LOGIN_LOCK_WINDOW_MS`, `LOGIN_LOCK_THRESHOLD`, `LOGIN_LOCK_DURATION_MS`
+- `PASSWORD_HISTORY_LIMIT`
+- `REFRESH_DAYS`, `EMAIL_VERIFICATION_TTL_MIN`, `PASSWORD_RESET_TTL_MIN`
+
+Behavior overview:
+
+- Login: checks active locks, enforces per-IP throttling and per-user failed-attempt lockouts based on configured windows/thresholds; denies login until email is verified when required.
+- Reset password: denies reuse of the most recent N passwords and records password history; if previously unverified, marks email as verified upon a successful reset.
+- Admin lock/unlock: manual lock creates/updates lock with reason and optional expiration; unlock clears lock, revokes sessions, and dispatches a password reset email.
 
 ## Scripts
 
@@ -81,11 +139,12 @@ Frontend:
 - `npm run dev` — Start Vite dev server
 - `npm run build` — Type-check and build for production
 - `npm run preview` — Preview built frontend
+- `npm test` — Run Vitest unit tests
 
 ## Testing
 
-- API tests live under `backend/src/tests` using Jest + SuperTest
-- Frontend currently has manual testing guidance; feel free to add Vitest or Playwright
+- API tests live under `backend/src/tests` using Jest + SuperTest (auth, lockout, password history, RBAC, rate limits)
+- Frontend uses Vitest + Testing Library with jsdom; see tests in `frontend/src/lib/*.test.tsx` and `frontend/src/pages/admin/*.test.tsx`
 
 ## Troubleshooting
 
@@ -96,8 +155,9 @@ Frontend:
 ## Changelog
 
 See `CHANGELOG.md`. Recent:
-- 0.2.1 (2025-10-04) — Mobile-only Team Switcher in header; documentation updates
-- 0.2.0 (2025-09-28) — Backend foundation, routes, seeds, CI
+- 0.4.0 (2025-10-16) — Security: account lockout and password history; Admin UI for Roles/Permissions/Users; Settings overrides
+- 0.3.1 (2025-10-05) — Readme and Release Please docs
+- 0.3.0 (2025-10-05) — Frontend header improvements and docs
 
 ## V1.0.0 checklist
 

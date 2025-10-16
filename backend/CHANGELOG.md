@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/BoldNight153/PetShelterRegistrySystem/compare/backend-v0.1.0...backend-v0.2.0) (2025-10-16)
+
+### Features
+
+- Auth security: persisted account lockout (auto + manual) and password history enforcement
+- Settings-driven overrides for rate limits and lockouts: `security.loginIpWindowSec`, `security.loginIpLimit`, `security.loginLockWindowSec`, `security.loginLockThreshold`, `security.loginLockDurationMin`, `security.passwordHistoryLimit` with env fallbacks
+- Admin endpoints: `POST /admin/users/lock`, `POST /admin/users/unlock`, `GET/PUT /admin/settings`, roles/permissions CRUD and assignments
+- Admin-only API docs gating
+
+### Tests
+
+- Add Jest suites for lockout, manual lock/unlock, password history, and rate limit edges; fix seed and test helpers to ensure email verification behavior
+
 ## [0.1.0](https://github.com/BoldNight153/PetShelterRegistrySystem/compare/backend-v0.0.1...backend-v0.1.0) (2025-10-05)
 
 
