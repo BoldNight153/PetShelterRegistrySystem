@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prismaClient as prisma } from '../prisma/client';
 
-const prisma: any = new PrismaClient();
+// use centralized prisma client
 
 export type LimitOptions = {
   scope: string; // e.g., 'auth_login_ip' or 'auth_login_user_fail'

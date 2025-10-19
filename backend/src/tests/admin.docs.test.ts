@@ -3,6 +3,11 @@ import app from '../index';
 import { PrismaClient } from '@prisma/client';
 import { ensureRole, assignRoleToUser } from './helpers/rbac';
 
+// Some backend integration tests exercise the running server and can
+// take longer than Jest's default 5s timeout on slower machines.
+// Increase the timeout for this test file to be safe.
+jest.setTimeout(20000);
+
 async function createUser(email: string, password = 'StrongP@ssw0rd!') {
   const agent = request.agent(app);
   const csrfRes = await agent.get('/auth/csrf');

@@ -1,12 +1,15 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import crypto from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import { prismaClient as prisma } from '../prisma/client';
 import argon2 from 'argon2';
 import jwt, { SignOptions, Secret } from 'jsonwebtoken';
 import { resetPasswordEmailTemplate, sendMail, verificationEmailTemplate } from '../lib/email';
-import { getCount, incrementAndCheck, resetWindow } from '../lib/rateLimit';
+import { getCount as libGetCount, incrementAndCheck as libIncrementAndCheck, resetWindow as libResetWindow } from '../lib/rateLimit';
+import type { RateLimitService } from '../services/rateLimitService';
+import type { AuthService } from '../services/authService';
+import type { Prisma } from '@prisma/client';
 
-const prisma = new PrismaClient();
+// uses centralized prisma client from /src/prisma/client.ts
 
 // Deduped constants for lint rules
 const INTERNAL_ERROR = 'internal error';
@@ -15,6 +18,21 @@ const INVALID_TOKEN = 'invalid token';
 const AUDIT_LOGIN_LOCKED = 'auth.login.locked_user';
 
 const router = Router();
+
+function resolveAuthService(req: any): AuthService | null {
+  try { const v = req.container?.resolve('authService'); return v ? (v as AuthService) : null; } catch { return null; }
+}
+
+function resolveRateLimitService(req: any): RateLimitService | null {
+  try {
+    // Try the modern registration name first, then a shorter legacy name if present.
+    const v = req.container?.resolve?.('rateLimitService') ?? req.container?.resolve?.('rateLimit');
+    return v ? (v as RateLimitService) : null;
+  } catch (err) {
+    try { (req as any).log?.warn?.({ err }, 'rateLimit service resolution failed'); } catch {}
+    return null;
+  }
+}
 
 // Simple andi-CSRF implementation using double-submit cookie pattern.
 // GET /auth/csrf - issues a CSRF token and sets a cookie (httpOnly=false) so the browser can send it back via header.
@@ -66,7 +84,8 @@ function cookieBase() {
 function signAccessToken(userId: string) {
   const secret: Secret = (process.env.JWT_ACCESS_SECRET || 'dev-access-secret') as Secret;
   const payload = { sub: userId, typ: 'access' } as Record<string, any>;
-  const opts: SignOptions = { expiresIn: (process.env.ACCESS_TTL as any) || '15m' };
+  const expiresIn = (process.env.ACCESS_TTL ?? '15m') as unknown as SignOptions['expiresIn'];
+  const opts: SignOptions = { expiresIn };
   return jwt.sign(payload, secret, opts);
 }
 
@@ -74,14 +93,15 @@ function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-async function createRefreshToken(userId: string, userAgent?: string, ipAddress?: string): Promise<{ token: string; expiresAt: Date; maxAgeMs: number }>
+async function createRefreshToken(req: Request, userId: string): Promise<{ token: string; expiresAt: Date; maxAgeMs: number }>
 {
+  const svc = resolveAuthService(req) || null;
   const token = crypto.randomBytes(32).toString('hex');
   // Prefer settings.security.sessionMaxAgeMin, fallback to env REFRESH_DAYS (days)
   let expiresAt: Date;
   let maxAgeMs: number;
   try {
-    const s = await (prisma as any).setting.findUnique({ where: { category_key: { category: 'security', key: 'sessionMaxAgeMin' } } });
+  const s = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'sessionMaxAgeMin' } } });
     const minutes = Number(s?.value ?? 0);
     if (Number.isFinite(minutes) && minutes > 0) {
       maxAgeMs = minutes * 60 * 1000;
@@ -96,7 +116,9 @@ async function createRefreshToken(userId: string, userAgent?: string, ipAddress?
     maxAgeMs = days * 24 * 60 * 60 * 1000;
     expiresAt = new Date(Date.now() + maxAgeMs);
   }
-  await prisma.refreshToken.create({
+  const userAgent = req.get(HEADER_UA) || undefined;
+  const ipAddress = req.ip;
+  await (svc ? svc.createRefreshToken(userId, token, expiresAt, userAgent, ipAddress) : prisma.refreshToken.create({
     data: {
       userId,
       token,
@@ -104,7 +126,7 @@ async function createRefreshToken(userId: string, userAgent?: string, ipAddress?
       userAgent,
       ipAddress,
     },
-  });
+  }));
   return { token, expiresAt, maxAgeMs };
 }
 
@@ -166,16 +188,18 @@ router.post('/register', validateCsrf, async (req: Request, res: Response) => {
       && /[0-9]/.test(password)
       && /[^A-Za-z0-9]/.test(password);
     if (!strong) return res.status(400).json({ error: 'password does not meet complexity requirements' });
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) return res.status(409).json({ error: 'account already exists' });
+  const authSvc = resolveAuthService(req);
+  const existing = authSvc ? await authSvc.findUserByEmail(email) : await prisma.user.findUnique({ where: { email } });
+  if (existing) return res.status(409).json({ error: 'account already exists' });
     const hashOpts = process.env.NODE_ENV === 'test'
       ? { type: argon2.argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
       : { type: argon2.argon2id };
-    const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
-    const user = await prisma.user.create({ data: { email, passwordHash, name } });
-  await logAudit(user.id, 'auth.register', { ip: req.ip, get: req.get.bind(req) });
-    const access = signAccessToken(user.id);
-    const rt = await createRefreshToken(user.id, req.get(HEADER_UA) || undefined, req.ip);
+  const passwordHash = await argon2.hash(password, hashOpts);
+  const createPayload: Prisma.UserCreateInput | Prisma.UserUncheckedCreateInput = { email, passwordHash, name };
+  const user = authSvc ? await authSvc.createUser(createPayload) : await prisma.user.create({ data: createPayload });
+  await logAudit(String(user.id), 'auth.register', { ip: req.ip, get: req.get.bind(req) });
+    const access = signAccessToken(String(user.id));
+  const rt = await createRefreshToken(req as Request, String(user.id));
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.status(201).json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
   } catch (err: any) {
@@ -199,14 +223,14 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
     const now = new Date();
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-  const activeLock = await (prisma as any).userLock.findFirst({ where: { userId: existingUser.id, unlockedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, orderBy: { lockedAt: 'desc' } });
+  const activeLock = await prisma.userLock.findFirst({ where: { userId: existingUser.id, unlockedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, orderBy: { lockedAt: 'desc' } });
       if (activeLock) {
         return res.status(429).json({ error: 'account locked', reason: activeLock.reason, until: activeLock.expiresAt ?? null });
       }
       // Auto-cleanup expired locks lazily
-  const expired = await (prisma as any).userLock.findMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } } });
+  const expired = await prisma.userLock.findMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } } });
       if (expired.length) {
-  await (prisma as any).userLock.updateMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } }, data: { unlockedAt: now } });
+  await prisma.userLock.updateMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } }, data: { unlockedAt: now } });
       }
     }
     // Rate limiting & lockout
@@ -218,7 +242,7 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
     let lockWindowMs = Number(process.env.LOGIN_LOCK_WINDOW_MS || 15 * 60_000); // 15 min
     let lockThreshold = Number(process.env.LOGIN_LOCK_THRESHOLD || 5);
     try {
-      const rows = await prisma.setting.findMany({ where: { category: 'security', key: { in: ['loginIpWindowSec', 'loginIpLimit', 'loginLockWindowSec', 'loginLockThreshold'] } } as any });
+  const rows = await prisma.setting.findMany({ where: { category: 'security', key: { in: ['loginIpWindowSec', 'loginIpLimit', 'loginLockWindowSec', 'loginLockThreshold'] } } });
       const map = new Map(rows.map((r: any) => [r.key, r.value]));
       const ipWinSec = Number(map.get('loginIpWindowSec'));
       const ipLim = Number(map.get('loginIpLimit'));
@@ -230,15 +254,36 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
       if (Number.isFinite(lockThr) && lockThr > 0) lockThreshold = lockThr;
     } catch {}
 
-    // Throttle raw attempts per IP
-    const ipCheck = await incrementAndCheck({ scope: 'auth_login_ip', key: String(ip), windowMs: ipWindowMs, limit: ipLimit });
+  // Throttle raw attempts per IP
+  const rateSvc = resolveRateLimitService(req);
+  let ipCheck;
+  if (!rateSvc) {
+    ipCheck = await libIncrementAndCheck({ scope: 'auth_login_ip', key: String(ip), windowMs: ipWindowMs, limit: ipLimit });
+  } else {
+    try {
+      ipCheck = await rateSvc.incrementAndCheck({ scope: 'auth_login_ip', key: String(ip), windowMs: ipWindowMs, limit: ipLimit });
+    } catch (err) {
+      try { (req as any).log?.warn?.({ err }, 'rateLimit.incrementAndCheck failed, falling back'); } catch {}
+      ipCheck = await libIncrementAndCheck({ scope: 'auth_login_ip', key: String(ip), windowMs: ipWindowMs, limit: ipLimit });
+    }
+  }
     if (!ipCheck.allowed) {
   await logAudit(null, 'auth.login.throttled_ip', { ip: req.ip, get: req.get.bind(req) }, { ip, ua });
       return res.status(429).json({ error: 'too many attempts, try again later' });
     }
 
     // Check recent failures for this email for lockout
-    const userFail = await getCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+  let userFail;
+  if (!rateSvc) {
+    userFail = await libGetCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+  } else {
+    try {
+      userFail = await rateSvc.getCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+    } catch (err) {
+      try { (req as any).log?.warn?.({ err }, 'rateLimit.getCount failed, falling back'); } catch {}
+      userFail = await libGetCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+    }
+  }
     if (userFail.count >= lockThreshold) {
   await logAudit(null, AUDIT_LOGIN_LOCKED, { ip: req.ip, get: req.get.bind(req) }, { email });
       return res.status(429).json({ error: 'account temporarily locked due to failed attempts' });
@@ -246,39 +291,67 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !user.passwordHash) {
       // Count failed attempt and exit with generic error
-      await incrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER });
+  if (!rateSvc) {
+    await libIncrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER });
+  } else {
+    try {
+      await rateSvc.incrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER });
+    } catch (err) {
+      try { (req as any).log?.warn?.({ err }, 'rateLimit.incrementAndCheck failed, falling back'); } catch {}
+      await libIncrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER });
+    }
+  }
       return res.status(401).json({ error: 'invalid credentials' });
     }
     // Enforce email verification if enabled via settings
     try {
-      const setting = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'requireEmailVerification' } } as any });
+  const setting = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'requireEmailVerification' } } });
       const required = Boolean(setting?.value ?? true);
       if (required && !user.emailVerified) return res.status(403).json({ error: 'email verification required' });
     } catch {}
     const ok = await argon2.verify(user.passwordHash, password);
     if (!ok) {
-      await incrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER });
+      await (rateSvc ? rateSvc.incrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER }) : libIncrementAndCheck({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs, limit: Number.MAX_SAFE_INTEGER }));
       // Re-check threshold to decide whether to lock now
-      const after = await getCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+  let after;
+  if (!rateSvc) {
+    after = await libGetCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+  } else {
+    try {
+      after = await rateSvc.getCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+    } catch (err) {
+      try { (req as any).log?.warn?.({ err }, 'rateLimit.getCount failed, falling back'); } catch {}
+      after = await libGetCount({ scope: 'auth_login_user_fail', key: String(email).toLowerCase(), windowMs: lockWindowMs });
+    }
+  }
       if (after.count >= lockThreshold) {
     await logAudit(user.id, AUDIT_LOGIN_LOCKED, { ip: req.ip, get: req.get.bind(req) }, { email });
         // Create persisted auto lock with expiry
         let durationMs = Number(process.env.LOGIN_LOCK_DURATION_MS || 15 * 60_000);
         try {
-          const s = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'loginLockDurationMin' } } as any });
+          const s = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'loginLockDurationMin' } } });
           const min = Number(s?.value);
           if (Number.isFinite(min) && min > 0) durationMs = min * 60_000;
         } catch {}
-  await (prisma as any).userLock.create({ data: { userId: user.id, reason: 'auto_failed_logins', manual: false, lockedAt: new Date(), expiresAt: new Date(Date.now() + durationMs) } });
+  await prisma.userLock.create({ data: { userId: user.id, reason: 'auto_failed_logins', manual: false, lockedAt: new Date(), expiresAt: new Date(Date.now() + durationMs) } });
         return res.status(429).json({ error: 'account temporarily locked due to failed attempts' });
       }
       return res.status(401).json({ error: 'invalid credentials' });
     }
     await logAudit(user.id, 'auth.login', { ip: req.ip, get: req.get.bind(req) });
     // Success: reset failure window
-    await resetWindow('auth_login_user_fail', String(email).toLowerCase(), lockWindowMs);
+  if (!rateSvc) {
+    await libResetWindow('auth_login_user_fail', String(email).toLowerCase(), lockWindowMs);
+  } else {
+    try {
+      await rateSvc.resetWindow('auth_login_user_fail', String(email).toLowerCase(), lockWindowMs);
+    } catch (err) {
+      try { (req as any).log?.warn?.({ err }, 'rateLimit.resetWindow failed, falling back'); } catch {}
+      await libResetWindow('auth_login_user_fail', String(email).toLowerCase(), lockWindowMs);
+    }
+  }
     const access = signAccessToken(user.id);
-    const rt = await createRefreshToken(user.id, req.get(HEADER_UA) || undefined, req.ip);
+  const rt = await createRefreshToken(req, user.id);
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
   } catch (err: any) {
@@ -295,10 +368,12 @@ router.post('/logout', validateCsrf, async (req: Request, res: Response) => {
     const rt = req.cookies?.refreshToken as string | undefined;
     if (rt) {
       try {
-        const existing = await prisma.refreshToken.findUnique({ where: { token: rt } });
+        const authSvcLogout = resolveAuthService(req);
+        const existing = authSvcLogout ? await authSvcLogout.findRefreshToken(rt) : await prisma.refreshToken.findUnique({ where: { token: rt } });
         if (existing && !existing.revokedAt) {
-          await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date() } });
-    await logAudit(existing.userId, 'auth.logout', { ip: req.ip, get: req.get.bind(req) }, { reason: 'user initiated' });
+          if (authSvcLogout) await authSvcLogout.revokeRefreshToken(rt);
+          else await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date() } });
+        await logAudit(String(existing.userId), 'auth.logout', { ip: req.ip, get: req.get.bind(req) }, { reason: 'user initiated' });
         }
       } catch {
         // ignore revocation errors on logout
@@ -316,19 +391,25 @@ router.post('/refresh', validateCsrf, async (req: Request, res: Response) => {
   try {
     const rt = req.cookies?.refreshToken as string | undefined;
     if (!rt) return res.status(401).json({ error: 'missing refresh token' });
-    const existing = await prisma.refreshToken.findUnique({ where: { token: rt } });
+    const authSvcRefresh = resolveAuthService(req);
+    const existing = authSvcRefresh ? await authSvcRefresh.findRefreshToken(rt) : await prisma.refreshToken.findUnique({ where: { token: rt } });
     if (!existing) return res.status(401).json({ error: 'invalid refresh token' });
     if (existing.revokedAt) return res.status(401).json({ error: 'refresh token revoked' });
     if (existing.expiresAt <= new Date()) return res.status(401).json({ error: 'refresh token expired' });
 
     // rotate
-    const created = await createRefreshToken(existing.userId, req.get(HEADER_UA) || undefined, req.ip);
-    await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date(), replacedByToken: created.token } });
+  const created = await createRefreshToken(req, String(existing.userId));
+    if (authSvcRefresh) {
+      await authSvcRefresh.revokeRefreshToken(rt);
+      await authSvcRefresh.prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date(), replacedByToken: created.token } });
+    } else {
+      await prisma.refreshToken.update({ where: { token: rt }, data: { revokedAt: new Date(), replacedByToken: created.token } });
+    }
 
-    const access = signAccessToken(existing.userId);
+  const access = signAccessToken(String(existing.userId));
     setAuthCookies(res, access, created.token, created.maxAgeMs);
-    await logAudit(existing.userId, 'auth.refresh', req, { rotatedFrom: rt });
-  await logAudit(existing.userId, 'auth.refresh', { ip: req.ip, get: req.get.bind(req) }, { rotatedFrom: rt });
+    await logAudit(String(existing.userId), 'auth.refresh', req, { rotatedFrom: rt });
+  await logAudit(String(existing.userId), 'auth.refresh', { ip: req.ip, get: req.get.bind(req) }, { rotatedFrom: rt });
     return res.json({ ok: true });
   } catch (err: any) {
     try { (req as any).log?.error({ err }, 'refresh failed'); } catch {}
@@ -347,9 +428,9 @@ router.post('/request-email-verification', validateCsrf, async (req: Request, re
     const token = generateToken();
     const ttlMin = Number(process.env.EMAIL_VERIFICATION_TTL_MIN || 60 * 24); // default 24h
     const expiresAt = new Date(Date.now() + ttlMin * 60 * 1000);
-    await prisma.verificationToken.create({
-      data: { identifier: email, token, type: 'email_verify', expiresAt },
-    });
+    const authSvc2 = resolveAuthService(req);
+    if (authSvc2) await authSvc2.createVerificationToken(email, token, 'email_verify', expiresAt);
+    else await prisma.verificationToken.create({ data: { identifier: email, token, type: 'email_verify', expiresAt } });
     await logAudit(user.id, 'auth.email_verification.request', req);
   await logAudit(user.id, 'auth.email_verification.request', { ip: req.ip, get: req.get.bind(req) });
     try {
@@ -373,20 +454,29 @@ router.post('/verify-email', validateCsrf, async (req: Request, res: Response) =
   try {
     const { token } = (req.body || {}) as { token?: string };
     if (!token) return res.status(400).json({ error: 'token is required' });
-    const vt = await prisma.verificationToken.findUnique({ where: { token } });
+    const authSvc3 = resolveAuthService(req);
+    const vt = authSvc3 ? await authSvc3.findVerificationToken(token) : await prisma.verificationToken.findUnique({ where: { token } });
   if (!vt || vt.type !== 'email_verify') return res.status(400).json({ error: INVALID_TOKEN });
     if (vt.consumedAt) return res.status(400).json({ error: 'token already used' });
     if (vt.expiresAt <= new Date()) return res.status(400).json({ error: 'token expired' });
-    const user = await prisma.user.findUnique({ where: { email: vt.identifier } });
+    const user = authSvc3 ? await authSvc3.findUserByEmail(vt.identifier) : await prisma.user.findUnique({ where: { email: vt.identifier } });
   if (!user) return res.status(400).json({ error: INVALID_TOKEN });
-    const updated = await prisma.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } });
-    await prisma.verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
-    await revokeAllRefreshTokens(user.id);
-    await logAudit(user.id, 'auth.email_verification.verified', req);
-  await logAudit(user.id, 'auth.email_verification.verified', { ip: req.ip, get: req.get.bind(req) });
+    let updated: any = user;
+    if (authSvc3) {
+      const updatePayload: Prisma.UserUpdateInput = { emailVerified: new Date() } as Prisma.UserUpdateInput;
+      updated = await authSvc3.updateUser(user.id, updatePayload);
+      await authSvc3.consumeVerificationToken(vt.id);
+      await authSvc3.revokeAllRefreshTokens(user.id);
+    } else {
+      updated = await prisma.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } });
+      await prisma.verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
+      await revokeAllRefreshTokens(user.id);
+    }
+    await logAudit(String(user.id), 'auth.email_verification.verified', req);
+  await logAudit(String(user.id), 'auth.email_verification.verified', { ip: req.ip, get: req.get.bind(req) });
     // issue fresh session
-    const access = signAccessToken(user.id);
-    const rt = await createRefreshToken(user.id, req.get(HEADER_UA) || undefined, req.ip);
+  const access = signAccessToken(String(user.id));
+  const rt = await createRefreshToken(req, String(user.id));
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ id: updated.id, email: updated.email, emailVerified: updated.emailVerified });
   } catch (err: any) {
@@ -405,11 +495,11 @@ router.post('/request-password-reset', validateCsrf, async (req: Request, res: R
     const token = generateToken();
     const ttl = Number(process.env.PASSWORD_RESET_TTL_MIN || 60); // minutes
     const expiresAt = new Date(Date.now() + ttl * 60 * 1000);
-    await prisma.verificationToken.create({
-      data: { identifier: email, token, type: 'password_reset', expiresAt },
-    });
-    await logAudit(user.id, 'auth.password_reset.request', req);
-  await logAudit(user.id, 'auth.password_reset.request', { ip: req.ip, get: req.get.bind(req) });
+    const authSvc4 = resolveAuthService(req);
+    if (authSvc4) await authSvc4.createVerificationToken(email, token, 'password_reset', expiresAt);
+    else await prisma.verificationToken.create({ data: { identifier: email, token, type: 'password_reset', expiresAt } });
+    await logAudit(String(user.id), 'auth.password_reset.request', req);
+  await logAudit(String(user.id), 'auth.password_reset.request', { ip: req.ip, get: req.get.bind(req) });
     try {
       const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173';
       const resetUrl = `${appOrigin}/reset-password?token=${encodeURIComponent(token)}`;
@@ -430,22 +520,23 @@ router.post('/reset-password', validateCsrf, async (req: Request, res: Response)
   try {
     const { token, password } = (req.body || {}) as { token?: string; password?: string };
     if (!token || !password) return res.status(400).json({ error: 'token and password are required' });
-    const vt = await prisma.verificationToken.findUnique({ where: { token } });
+    const authSvc5 = resolveAuthService(req);
+    const vt = authSvc5 ? await authSvc5.findVerificationToken(token) : await prisma.verificationToken.findUnique({ where: { token } });
   if (!vt || vt.type !== 'password_reset') return res.status(400).json({ error: INVALID_TOKEN });
     if (vt.consumedAt) return res.status(400).json({ error: 'token already used' });
     if (vt.expiresAt <= new Date()) return res.status(400).json({ error: 'token expired' });
-    const user = await prisma.user.findUnique({ where: { email: vt.identifier } });
+    const user = authSvc5 ? await authSvc5.findUserByEmail(vt.identifier) : await prisma.user.findUnique({ where: { email: vt.identifier } });
   if (!user) return res.status(400).json({ error: INVALID_TOKEN });
     // Enforce password history: not among last N
     // Password history limit (settings override)
     let historyLimit = Number(process.env.PASSWORD_HISTORY_LIMIT || 10);
     try {
-      const s = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'passwordHistoryLimit' } } as any });
+  const s = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key: 'passwordHistoryLimit' } } });
       const lim = Number(s?.value);
       if (Number.isFinite(lim) && lim >= 0) historyLimit = lim;
     } catch {}
     if (historyLimit > 0 && user.passwordHash) {
-  const history = await (prisma as any).passwordHistory.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: historyLimit });
+  const history = await prisma.passwordHistory.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: historyLimit });
       for (const h of history) {
         const match = await argon2.verify(String(h.passwordHash), password).catch(() => false);
         if (match) return res.status(400).json({ error: 'new password must not match any of the last 10 passwords' });
@@ -464,24 +555,32 @@ router.post('/reset-password', validateCsrf, async (req: Request, res: Response)
     if (!user.emailVerified) updateData.emailVerified = new Date();
     // Save previous hash into history if it existed
     if (user.passwordHash) {
-  try { await (prisma as any).passwordHistory.create({ data: { userId: user.id, passwordHash: user.passwordHash } }); } catch {}
+  try { if (authSvc5) await authSvc5.prisma.passwordHistory.create({ data: { userId: user.id, passwordHash: user.passwordHash } }); else await prisma.passwordHistory.create({ data: { userId: user.id, passwordHash: user.passwordHash } }); } catch {}
       // Trim to last N
       try {
-        const extra = await (prisma as any).passwordHistory.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, skip: historyLimit, take: 1000 });
+  const extra = await prisma.passwordHistory.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, skip: historyLimit, take: 1000 });
         if (extra.length) {
           const ids: string[] = (extra as Array<{ id: string }>).map(e => String(e.id));
-          await (prisma as any).passwordHistory.deleteMany({ where: { id: { in: ids } } });
+          await prisma.passwordHistory.deleteMany({ where: { id: { in: ids } } });
         }
       } catch {}
     }
-    await prisma.user.update({ where: { id: user.id }, data: updateData });
-    await prisma.verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
-    await revokeAllRefreshTokens(user.id);
-    await logAudit(user.id, 'auth.password_reset.reset', req);
-  await logAudit(user.id, 'auth.password_reset.reset', { ip: req.ip, get: req.get.bind(req) });
+    // Persist the password change and mark token consumed. Also revoke previous refresh tokens.
+    if (authSvc5) {
+      try { await authSvc5.updateUser(user.id, updateData); } catch {}
+      try { await authSvc5.consumeVerificationToken(vt.id); } catch {}
+      try { await authSvc5.revokeAllRefreshTokens(user.id); } catch {}
+    } else {
+      try { await prisma.user.update({ where: { id: user.id }, data: updateData }); } catch {}
+      try { await prisma.verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } }); } catch {}
+      try { await revokeAllRefreshTokens(user.id); } catch {}
+    }
+
+    await logAudit(String(user.id), 'auth.password_reset.reset', req);
+    await logAudit(String(user.id), 'auth.password_reset.reset', { ip: req.ip, get: req.get.bind(req) });
     // issue new session cookies
     const access = signAccessToken(user.id);
-    const rt = await createRefreshToken(user.id, req.get(HEADER_UA) || undefined, req.ip);
+    const rt = await createRefreshToken(req, user.id);
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ ok: true });
   } catch (err: any) {
@@ -521,11 +620,12 @@ router.get('/mode', (req: any, res: Response) => {
     try {
     const decoded = jwt.decode(String(cookies['accessToken']));
       if (decoded && typeof decoded === 'object') {
+        const d = decoded as Record<string, any>;
         accessClaims = {
-          sub: (decoded as any).sub,
-          typ: (decoded as any).typ,
-          iat: (decoded as any).iat,
-          exp: (decoded as any).exp,
+          sub: d.sub,
+          typ: d.typ,
+          iat: d.iat,
+          exp: d.exp,
         };
       }
   } catch {
@@ -816,31 +916,31 @@ router.get('/oauth/:provider/callback', async (req: any, res) => {
 
   if (!providerAccountId) return res.redirect(302, `${failureRedirect}&reason=missing_account_id`);
 
-    // Link or create user
+    // Link or create user using AuthService when available
     let user: any = null;
-    const existingAccount = await prisma.account.findUnique({ where: { provider_providerAccountId: { provider, providerAccountId } } });
+  const authSvcOauth = resolveAuthService(req);
+  const existingAccount = authSvcOauth ? await authSvcOauth.prisma.account.findUnique({ where: { provider_providerAccountId: { provider, providerAccountId } } }) : await prisma.account.findUnique({ where: { provider_providerAccountId: { provider, providerAccountId } } });
     if (existingAccount) {
-      user = await prisma.user.findUnique({ where: { id: existingAccount.userId } });
+      user = authSvcOauth ? await authSvcOauth.prisma.user.findUnique({ where: { id: existingAccount.userId } }) : await prisma.user.findUnique({ where: { id: existingAccount.userId } });
     } else {
       if (email) {
-        const byEmail = await prisma.user.findUnique({ where: { email } });
-        if (byEmail) {
-          user = byEmail;
-        }
+        const byEmail = authSvcOauth ? await authSvcOauth.findUserByEmail(email) : await prisma.user.findUnique({ where: { email } });
+        if (byEmail) user = byEmail;
       }
       if (!user) {
-        user = await prisma.user.create({ data: { email: email || `${provider}:${providerAccountId}@user.local`, name: name || undefined, image: image || undefined, emailVerified: emailVerified ? new Date() : null } });
+        const oauthCreate: Prisma.UserCreateInput | Prisma.UserUncheckedCreateInput = {
+          email: email || `${provider}:${providerAccountId}@user.local`,
+          name: name || undefined,
+          image: image || undefined,
+          emailVerified: emailVerified ? new Date() : null,
+        } as Prisma.UserCreateInput;
+        user = authSvcOauth ? await authSvcOauth.createUser(oauthCreate) : await prisma.user.create({ data: oauthCreate });
       }
-      await prisma.account.create({ data: {
-        userId: user.id,
-        provider,
-        providerAccountId,
-        accessToken: tokens?.access_token,
-        refreshToken: tokens?.refresh_token,
-        tokenType: tokens?.token_type,
-        scope: tokens?.scope,
-        profile,
-      }});
+      if (authSvcOauth) {
+        await authSvcOauth.prisma.account.create({ data: { userId: user.id, provider, providerAccountId, accessToken: tokens?.access_token, refreshToken: tokens?.refresh_token, tokenType: tokens?.token_type, scope: tokens?.scope, profile } });
+      } else {
+        await prisma.account.create({ data: { userId: user.id, provider, providerAccountId, accessToken: tokens?.access_token, refreshToken: tokens?.refresh_token, tokenType: tokens?.token_type, scope: tokens?.scope, profile } });
+      }
     }
 
     // If email just verified by provider and user lacked it, mark verified
@@ -852,9 +952,7 @@ router.get('/oauth/:provider/callback', async (req: any, res) => {
 
     // Issue cookies
     const access = signAccessToken(String(user.id));
-  const ua: string | undefined = typeof req.get === 'function' ? (req.get(HEADER_UA) || undefined) : undefined;
-  const ipAddr: string | undefined = typeof req.ip === 'string' ? req.ip : undefined;
-  const rt = await createRefreshToken(String(user.id), ua, ipAddr);
+  const rt = await createRefreshToken(req, String(user.id));
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
 
     await logAudit(String(user.id), `auth.oauth.${provider}.success`, req as { ip?: string; get: (name: string) => string | undefined }, { providerAccountId });

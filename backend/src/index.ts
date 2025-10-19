@@ -17,6 +17,8 @@ import petOwnersRouter from './routes/petOwners';
 import adminRouter from './routes/admin';
 import authRouter from './routes/auth';
 import { parseAuth, requireRole } from './middleware/auth';
+import { scopePerRequest } from 'awilix-express';
+import { container } from './container';
 
 // We'll serve ReDoc (Redocly) via a small HTML page instead of using the
 // now-unmaintained swagger-ui-express package.
@@ -111,6 +113,9 @@ app.use(pinoHttp({ logger: logger as any }));
 // Parse access token from cookies/Authorization and attach req.user
 app.use(parseAuth as any);
 
+// Attach DI container per request (awilix)
+app.use(scopePerRequest(container as any));
+
 // -----------------------------
 // Request metrics & event loop
 // -----------------------------
@@ -202,7 +207,7 @@ app.get('/admin/monitoring/metrics', requireRole('system_admin') as any, async (
 });
 
 // Persist selected metrics periodically for charting
-const prismaForMetrics = new PrismaClient();
+import { prismaClient as prismaForMetrics } from './prisma/client';
 // Track last retention cleanup information and persist to settings
 let lastCleanupAt: Date | null = null;
 let lastCleanupDeleted: number | null = null;
@@ -764,7 +769,7 @@ try {
 } catch {}
 app.use('/admin', adminRouter);
 
-const prisma = new PrismaClient();
+import { prismaClient as prisma } from './prisma/client';
 const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
 // -------------------------------------------------
