@@ -3,6 +3,20 @@ import { describe, it, vi, expect } from 'vitest'
 import UserDetailsSheet from '../user-details-sheet'
 import { ServicesProvider } from '@/services/provider'
 
+// jsdom in the test environment may not implement scrollIntoView used by Radix UI
+// ensure it's available as a no-op to avoid errors when opening SelectContent.
+;(globalThis as any).HTMLElement ||= (globalThis as any).window?.HTMLElement
+;(globalThis as any).HTMLElement.prototype.scrollIntoView = (function (orig) {
+  return function (this: any, ..._args: any[]) {
+    try {
+      if (orig && typeof orig === 'function') return orig.apply(this, _args)
+    } catch (e) {
+      // ignore
+    }
+    return undefined
+  }
+})(((globalThis as any).HTMLElement && (globalThis as any).HTMLElement.prototype && (globalThis as any).HTMLElement.prototype.scrollIntoView) as any)
+
 const user = { id: 'u1', email: 'user1@example.com', name: 'User One', roles: [], lock: null }
 
 describe('UserDetailsSheet sessions', () => {
@@ -89,9 +103,12 @@ describe('UserDetailsSheet actions', () => {
     )
 
     await waitFor(() => expect(getUserMock).toHaveBeenCalled())
-  // Open the Radix select and click the role item
-  const trigger = await screen.findByRole('button', { name: /select role|select role/i })
-  if (trigger) fireEvent.click(trigger)
+  // Open the Radix select and click the role item.
+  // Radix select trigger renders a span with the placeholder text inside a button (role=combobox).
+  // Find the visible text and click its nearest button parent to open the dropdown.
+  const triggerText = await screen.findByText('Assign role')
+  const triggerBtn = triggerText.closest('button')
+  if (triggerBtn) fireEvent.click(triggerBtn)
   // Click the role item by text
   const roleItem = await screen.findByText('staff')
   fireEvent.click(roleItem)
