@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { assignUserRole, listRoles, revokeUserRole, searchUsers, lockUser, unlockUser, type Role, type UserSummaryWithLock } from '@/lib/api'
+import { useServices } from '@/services/hooks'
+import UserDetailsSheet from '@/components/admin/user-details-sheet'
+import type { Role, UserSummaryWithLock } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -14,11 +16,12 @@ export default function AdminUsersPage() {
   const [pageSize] = useState(20)
   const [roles, setRoles] = useState<Role[]>([])
   const [assign, setAssign] = useState<Record<string, string>>({}) // userId -> roleName
+  const services = useServices()
 
   useEffect(() => {
     async function init() {
       try {
-        const r = await listRoles()
+        const r = await services.roles?.listRoles?.() ?? []
         setRoles(r)
       } catch {
         // ignore roles load error
@@ -32,7 +35,7 @@ export default function AdminUsersPage() {
   async function runSearch() {
     setLoading(true)
     try {
-      const res = await searchUsers(q || undefined, page, pageSize)
+      const res = await services.users?.searchUsers(q || undefined, page, pageSize) ?? { items: [], total: 0 }
       setUsers(res.items)
       setTotal(res.total)
     } catch (e: unknown) {
@@ -46,7 +49,7 @@ export default function AdminUsersPage() {
     const roleName = assign[userId]
     if (!roleName) return
     try {
-      await assignUserRole(userId, roleName)
+      await services.users?.assignUserRole(userId, roleName)
       // optimistic: update list
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, roles: Array.from(new Set([...u.roles, roleName])) } : u))
     } catch (e: unknown) {
@@ -56,7 +59,7 @@ export default function AdminUsersPage() {
 
   async function onRevoke(userId: string, roleName: string) {
     try {
-      await revokeUserRole(userId, roleName)
+      await services.users?.revokeUserRole(userId, roleName)
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, roles: u.roles.filter(r => r !== roleName) } : u))
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to revoke role')
@@ -67,7 +70,7 @@ export default function AdminUsersPage() {
     const reason = prompt('Lock reason (e.g., admin_action, security_suspicious):', 'admin_action') || 'admin_action'
     const until = prompt('Optional lock until (ISO timestamp), or leave blank for indefinite:', '')
     try {
-      await lockUser(userId, reason, until ? until : null)
+      await services.users?.lockUser(userId, reason, until ? until : null)
       // reflect lock status
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, lock: { reason, until: until || null } } : u))
     } catch (e: unknown) {
@@ -78,7 +81,7 @@ export default function AdminUsersPage() {
   async function onUnlock(userId: string) {
     const unlockReason = prompt('Optional unlock note (will be saved with audit):', '') || undefined
     try {
-      await unlockUser(userId, unlockReason)
+      await services.users?.unlockUser(userId, unlockReason)
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, lock: null } : u))
       alert('User unlocked. A password reset email has been sent to the user.')
     } catch (e: unknown) {
@@ -88,11 +91,14 @@ export default function AdminUsersPage() {
 
   const pageInfo = useMemo(() => ({ start: (page - 1) * pageSize + 1, end: Math.min(total, page * pageSize) }), [page, pageSize, total])
 
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
+
   return (
     <div className="p-4 space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">User Roles</h1>
-        <p className="text-sm text-muted-foreground">Search users and assign or revoke roles.</p>
+        <h1 className="text-xl font-semibold">Users</h1>
+        <p className="text-sm text-muted-foreground">Search users and manage accounts.</p>
       </div>
 
       <div className="flex flex-wrap items-end gap-2">
@@ -119,7 +125,17 @@ export default function AdminUsersPage() {
             </TableHeader>
             <TableBody>
               {users.map(u => (
-                <TableRow key={u.id}>
+                <TableRow
+                  key={u.id}
+                  className="cursor-pointer"
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement
+                    // ignore clicks on interactive elements so they work as expected
+                    if (target.closest('button, a, input, select, textarea')) return
+                    setSelectedUserId(u.id)
+                    setSheetOpen(true)
+                  }}
+                >
                   <TableCell>
                     <div className="font-medium">{u.name || '—'}</div>
                     <div className="text-xs text-muted-foreground">{u.email}</div>
@@ -128,7 +144,7 @@ export default function AdminUsersPage() {
                     <div className="flex flex-wrap gap-1">
                       {u.roles.length ? u.roles.map(r => (
                         <span key={r} className="text-xs rounded border px-2 py-0.5">
-                          {r} <button className="ml-1 text-destructive" onClick={() => onRevoke(u.id, r)}>×</button>
+                          {r} <button className="ml-1 text-destructive" onClick={(e) => { e.stopPropagation(); onRevoke(u.id, r) }}>×</button>
                         </span>
                       )) : <span className="text-xs text-muted-foreground">No roles</span>}
                     </div>
@@ -155,11 +171,11 @@ export default function AdminUsersPage() {
                           </SelectGroup>
                         </SelectContent>
                       </Select>
-                      <Button size="sm" onClick={() => void onAssign(u.id)}>Assign</Button>
+                      <Button size="sm" onClick={(e) => { e.stopPropagation(); void onAssign(u.id) }}>Assign</Button>
                       {u.lock ? (
-                        <Button size="sm" variant="outline" onClick={() => void onUnlock(u.id)}>Unlock</Button>
+                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); void onUnlock(u.id) }}>Unlock</Button>
                       ) : (
-                        <Button size="sm" variant="outline" onClick={() => void onLock(u.id)}>Lock</Button>
+                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); void onLock(u.id) }}>Lock</Button>
                       )}
                     </div>
                   </TableCell>
@@ -176,6 +192,7 @@ export default function AdminUsersPage() {
           )}
         </>
       )}
+      <UserDetailsSheet userId={selectedUserId} open={sheetOpen} onOpenChange={(v) => { setSheetOpen(v); if (!v) setSelectedUserId(null) }} />
     </div>
   )
 }

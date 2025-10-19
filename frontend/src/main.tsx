@@ -8,6 +8,7 @@ import RedocPage from './docs/redoc-page'
 import LoginPage from './pages/login'
 import RegisterPage from './pages/register'
 import { AuthProvider } from './lib/auth-context'
+import { ServicesProvider } from './services/provider'
 import { ProtectedRoute } from './lib/auth-context'
 import ServerInfoCharts from './pages/admin/server-info-charts'
 import ServerDashboard from './pages/admin/server-dashboard'
@@ -119,7 +120,9 @@ const router = createBrowserRouter([
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
-  <RouterProvider router={router} />
+      <ServicesProvider>
+        <RouterProvider router={router} />
+      </ServicesProvider>
     </AuthProvider>
   </StrictMode>,
 )

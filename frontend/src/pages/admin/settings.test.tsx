@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import AdminSettingsPage from './settings'
+import { ServicesProvider } from '@/services/provider'
 
 vi.mock('@/lib/auth-context', () => {
   return {
@@ -22,29 +23,6 @@ const loadSettingsMock = vi.fn().mockResolvedValue({
   },
 })
 
-type SettingEntry = { key: string; value: unknown }
-type SecuritySettings = {
-  sessionMaxAgeMin: number
-  requireEmailVerification: boolean
-  loginIpWindowSec: number
-  loginIpLimit: number
-  loginLockWindowSec: number
-  loginLockThreshold: number
-  loginLockDurationMin: number
-  passwordHistoryLimit: number
-}
-
-vi.mock('@/lib/api', async () => {
-  return {
-    // loadSettings has no parameters
-    loadSettings: (...args: []) => loadSettingsMock(...args),
-    saveSettings: (category: string, entries: SettingEntry[]) => saveSettingsMock(category, entries),
-  } as {
-    loadSettings: () => Promise<{ security: SecuritySettings }>
-    saveSettings: (category: string, entries: SettingEntry[]) => Promise<{ ok: boolean }>
-  }
-})
-
 describe('AdminSettingsPage (Security)', () => {
   beforeEach(() => {
     saveSettingsMock.mockClear()
@@ -52,7 +30,11 @@ describe('AdminSettingsPage (Security)', () => {
   })
 
   it('saves security settings including new thresholds', async () => {
-    render(<AdminSettingsPage />)
+    render(
+      <ServicesProvider services={{ admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }}>
+        <AdminSettingsPage />
+      </ServicesProvider>
+    )
 
     // Wait for settings to load
     await waitFor(() => expect(loadSettingsMock).toHaveBeenCalledTimes(1))
@@ -86,7 +68,13 @@ describe('AdminSettingsPage (Access control)', () => {
     vi.resetModules()
     vi.doMock('@/lib/auth-context', () => ({ useAuth: () => ({ user: { email: 'user@example.com', roles: [] } }) }))
     const { default: NonAdminSettings } = await import('./settings')
-    render(<NonAdminSettings />)
+    // Import a fresh ServicesProvider from the reset module registry so the component uses the same context instance
+    const { ServicesProvider: FreshServicesProvider } = await import('@/services/provider')
+    render(
+      <FreshServicesProvider services={{ admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }}>
+        <NonAdminSettings />
+      </FreshServicesProvider>
+    )
     expect(await screen.findByText(/access denied/i)).toBeInTheDocument()
   })
 })

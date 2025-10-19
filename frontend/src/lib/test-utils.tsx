@@ -1,15 +1,15 @@
-import React, { PropsWithChildren } from 'react'
-import { afterEach } from 'vitest'
+import type { ReactElement } from 'react'
+import { afterEach, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 
 // Clean up DOM between tests
 afterEach(() => cleanup())
 
-export function renderSimple(ui: React.ReactElement) {
+export function renderSimple(ui: ReactElement) {
   return render(ui)
 }
 
-export function mockFetchOnce(response: Partial<Response> & { body?: string } | Error) {
+export function mockFetchOnce(response: { status?: number; ok?: boolean; body?: string; headers?: HeadersInit } | Error) {
   const original = global.fetch
   const restore = () => { (global as any).fetch = original }
   if (response instanceof Error) {

@@ -42,7 +42,7 @@ export default function NavAdmin() {
         </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
-            <Link to="/admin/users"><Users className="h-4 w-4" /><span>User Roles</span></Link>
+            <Link to="/admin/users"><Users className="h-4 w-4" /><span>Users</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
         {isAdmin && (

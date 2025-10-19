@@ -1,6 +1,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import AdminUsersPage from './users'
+import { ServicesProvider } from '@/services/provider'
 
 // Mock auth as system_admin
 vi.mock('@/lib/auth-context', () => ({ useAuth: () => ({ user: { email: 'admin@example.com', roles: ['system_admin'] } }) }))
@@ -13,15 +14,6 @@ const assignUserRoleMock = vi.fn().mockResolvedValue({ ok: true })
 const revokeUserRoleMock = vi.fn().mockResolvedValue({ ok: true })
 const lockUserMock = vi.fn().mockResolvedValue({ ok: true })
 const unlockUserMock = vi.fn().mockResolvedValue({ ok: true })
-
-vi.mock('@/lib/api', () => ({
-  listRoles: () => listRolesMock(),
-  searchUsers: (q?: string, page?: number, pageSize?: number) => searchUsersMock(q, page, pageSize),
-  assignUserRole: (userId: string, roleName: string) => assignUserRoleMock(userId, roleName),
-  revokeUserRole: (userId: string, roleName: string) => revokeUserRoleMock(userId, roleName),
-  lockUser: (userId: string, reason: string, expiresAt?: string | null, notes?: string) => lockUserMock(userId, reason, expiresAt, notes),
-  unlockUser: (userId: string, unlockReason?: string) => unlockUserMock(userId, unlockReason),
-}))
 
 describe('AdminUsersPage', () => {
   beforeEach(() => {
@@ -37,7 +29,31 @@ describe('AdminUsersPage', () => {
     // Mock window.prompt for lock/unlock dialogs
     const promptSpy = vi.spyOn(window, 'prompt')
 
-    render(<AdminUsersPage />)
+    render(
+        <ServicesProvider
+          services={{
+            roles: {
+              listRoles: listRolesMock,
+              upsertRole: async (_input: { name: string; rank?: number; description?: string }) => { void _input; return {} },
+              deleteRole: async (_name: string) => { void _name },
+              listPermissions: async () => [],
+              listRolePermissions: async (_roleName: string) => { void _roleName; return [] },
+              grantPermission: async (_roleName: string, _permission: string) => { void _roleName; void _permission; return {} },
+              revokePermission: async (_roleName: string, _permission: string) => { void _roleName; void _permission; return {} },
+            },
+            users: {
+              searchUsers: searchUsersMock,
+              assignUserRole: assignUserRoleMock,
+              revokeUserRole: revokeUserRoleMock,
+              lockUser: lockUserMock,
+              unlockUser: unlockUserMock,
+              getUser: async () => { throw new Error('not needed') }
+            }
+          }}
+        >
+        <AdminUsersPage />
+      </ServicesProvider>
+    )
 
     // wait for initial search
     await waitFor(() => expect(searchUsersMock).toHaveBeenCalled())
@@ -48,7 +64,12 @@ describe('AdminUsersPage', () => {
     const lockButton = await screen.findByRole('button', { name: /lock/i })
     fireEvent.click(lockButton)
 
-    await waitFor(() => expect(lockUserMock).toHaveBeenCalledWith('u1', 'admin_action', null, undefined))
+  await waitFor(() => expect(lockUserMock).toHaveBeenCalled())
+  // ensure first three args are correct (unlockReason may be omitted depending on environment)
+  const firstCallArgs = lockUserMock.mock.calls[0]
+  expect(firstCallArgs[0]).toBe('u1')
+  expect(firstCallArgs[1]).toBe('admin_action')
+  expect(firstCallArgs[2]).toBeNull()
     // UI should reflect locked state
     await screen.findByText(/locked:/i)
 

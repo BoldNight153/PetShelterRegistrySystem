@@ -4,27 +4,27 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from '@/lib/auth-context'
 import RootLayout from '@/layout/root-layout'
 import LoginPage from '@/pages/login'
+import { ServicesProvider } from '@/services/provider'
 
-// Mock the API layer used by auth-context
-vi.mock('@/lib/api', () => ({
-  login: vi.fn(async () => ({ email: 'user@example.com', name: 'User' })),
-  refresh: vi.fn(async () => ({ ok: true })),
-  logout: vi.fn(async () => ({})),
-  register: vi.fn(async () => ({ email: 'user@example.com', name: 'User' })),
-}))
+const loginMock = vi.fn(async (input: { email: string; password: string }) => ({ email: input.email, name: 'User' }))
+const refreshMock = vi.fn(async () => ({ ok: true }))
+const logoutMock = vi.fn(async () => { /* void */ })
+const registerMock = vi.fn(async (input: { email: string; password: string; name?: string }) => ({ email: input.email, name: input.name ?? 'User' }))
 
 describe('Header switches after login', () => {
   it('shows NavUser after successful login submission', async () => {
     render(
       <MemoryRouter initialEntries={["/login"]}>
-        <AuthProvider>
-          <Routes>
-            <Route element={<RootLayout />}> 
-              <Route path="/" element={<div />} />
-              <Route path="/login" element={<LoginPage />} />
-            </Route>
-          </Routes>
-        </AuthProvider>
+        <ServicesProvider services={{ auth: { login: loginMock, refresh: refreshMock, logout: logoutMock, register: registerMock } }}>
+          <AuthProvider>
+            <Routes>
+              <Route element={<RootLayout />}> 
+                <Route path="/" element={<div />} />
+                <Route path="/login" element={<LoginPage />} />
+              </Route>
+            </Routes>
+          </AuthProvider>
+        </ServicesProvider>
       </MemoryRouter>
     )
 

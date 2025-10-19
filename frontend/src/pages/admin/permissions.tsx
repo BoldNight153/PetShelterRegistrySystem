@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { listPermissions, listRoles, listRolePermissions, grantPermission, revokePermission, type Permission, type Role } from '@/lib/api'
+import { useServices } from '@/services/hooks'
+import { type Permission, type Role } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -14,11 +15,14 @@ export default function AdminPermissionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const services = useServices()
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [perms, r] = await Promise.all([listPermissions(), listRoles()])
+      // listPermissions is exposed by the roles service implementation
+      const [perms, r] = await Promise.all([services.roles?.listPermissions?.() ?? [], services.roles?.listRoles?.() ?? []])
       setPermissions(perms)
       setRoles(r)
       if (!selectedRole && r.length) setSelectedRole(r[0].name)
@@ -27,7 +31,7 @@ export default function AdminPermissionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [selectedRole])
+  }, [selectedRole, services.roles])
 
   useEffect(() => { void load() }, [load])
 
@@ -35,7 +39,7 @@ export default function AdminPermissionsPage() {
     async function loadRolePerms(name: string) {
       if (!name) return
       try {
-        const rp = await listRolePermissions(name)
+        const rp = await services.roles?.listRolePermissions?.(name) ?? []
         const map: Record<string, boolean> = {}
         for (const p of rp) map[p.name] = true
         setRolePerms(map)
@@ -44,7 +48,7 @@ export default function AdminPermissionsPage() {
       }
     }
     if (selectedRole) loadRolePerms(selectedRole)
-  }, [selectedRole])
+  }, [selectedRole, services.roles])
 
   const filtered = useMemo(() => (
     permissions.filter(p => !q || p.name.toLowerCase().includes(q.toLowerCase()))
@@ -53,8 +57,8 @@ export default function AdminPermissionsPage() {
   async function onToggle(p: string, enabled: boolean) {
     try {
       if (!selectedRole) return
-      if (enabled) await grantPermission(selectedRole, p)
-      else await revokePermission(selectedRole, p)
+      if (enabled) await services.roles?.grantPermission?.(selectedRole, p)
+      else await services.roles?.revokePermission?.(selectedRole, p)
       setRolePerms(prev => ({ ...prev, [p]: enabled }))
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to update')

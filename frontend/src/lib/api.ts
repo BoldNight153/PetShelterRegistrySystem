@@ -193,6 +193,18 @@ export async function getUserRoles(userId: string): Promise<string[]> {
   return roles.map(r => r.name);
 }
 
+export type UserDetail = UserSummaryWithLock & {
+  createdAt?: string | null;
+  lastLoginAt?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export async function getUser(userId: string): Promise<UserDetail> {
+  const res = await fetch(`/admin/users/${encodeURIComponent(userId)}`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load user');
+  return res.json();
+}
+
 export async function assignUserRole(userId: string, roleName: string) {
   const csrf = await getCsrfToken();
   const res = await fetch(`/admin/users/assign-role`, {
@@ -238,5 +250,13 @@ export async function unlockUser(userId: string, unlockReason?: string) {
     body: JSON.stringify({ userId, unlockReason }),
   });
   if (!res.ok) throw new Error('Failed to unlock user');
+  return res.json();
+}
+
+// List sessions for a user. Throws { status: 404 } if endpoint not available
+export async function listUserSessions(userId: string) {
+  const res = await fetch(`/admin/users/${encodeURIComponent(userId)}/sessions`, { credentials: 'include' });
+  if (res.status === 404) throw { status: 404 };
+  if (!res.ok) throw new Error('Failed to load user sessions');
   return res.json();
 }

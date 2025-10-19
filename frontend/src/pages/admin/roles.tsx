@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { listRoles, upsertRole, deleteRole, type Role } from '@/lib/api'
+import { useEffect, useState, useCallback } from 'react'
+import { useServices } from '@/services/hooks'
+import { type Role } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -10,11 +11,13 @@ export default function AdminRolesPage() {
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<{ name: string; rank: number; description: string }>({ name: '', rank: 0, description: '' })
 
-  async function load() {
+  const services = useServices()
+
+  const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await listRoles()
+      const data = await services.roles?.listRoles?.() ?? []
       setRoles(data)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to load roles'
@@ -22,15 +25,15 @@ export default function AdminRolesPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [services.roles])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [load])
 
   async function onUpsert(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) return
     try {
-      await upsertRole({ name: form.name.trim(), rank: Number(form.rank) || 0, description: form.description || undefined })
+      await services.roles?.upsertRole?.({ name: form.name.trim(), rank: Number(form.rank) || 0, description: form.description || undefined })
       setForm({ name: '', rank: 0, description: '' })
       await load()
     } catch (e: unknown) {
@@ -41,7 +44,7 @@ export default function AdminRolesPage() {
   async function onDelete(name: string) {
     if (!confirm(`Delete role "${name}"?`)) return
     try {
-      await deleteRole(name)
+      await services.roles?.deleteRole?.(name)
       await load()
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to delete role')

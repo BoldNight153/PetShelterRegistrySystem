@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { login as apiLogin, logout as apiLogout, refresh as apiRefresh, register as apiRegister } from "./api";
+import { useServices } from '@/services/hooks'
+import { refresh as apiRefresh } from './api'
 
 type User = { id?: string; email?: string; name?: string; emailVerified?: string | null; roles?: string[]; permissions?: string[] } | null;
 
@@ -18,11 +19,12 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User>(null);
   const [initializing, setInitializing] = useState<boolean>(true);
+  const services = useServices()
 
   const authenticated = !!user;
 
   const login = useCallback(async (email: string, password: string) => {
-    const data = await apiLogin({ email, password });
+    const data = await services.auth.login({ email, password });
     // Set immediately so UI can reflect basic identity
     setUser(data);
     // Hydrate roles/permissions and any server-side fields
@@ -32,11 +34,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const me = await res.json();
         setUser(me);
       }
-    } catch (_) { /* ignore */ }
-  }, []);
+  } catch { /* ignore */ }
+  }, [services]);
 
   const register = useCallback(async (email: string, password: string, name: string) => {
-    const data = await apiRegister({ email, password, name });
+    const data = await services.auth.register({ email, password, name });
     setUser(data);
     try {
       const res = await fetch('/auth/me', { credentials: 'include' });
@@ -44,30 +46,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const me = await res.json();
         setUser(me);
       }
-    } catch (_) { /* ignore */ }
-  }, []);
+  } catch { /* ignore */ }
+  }, [services]);
 
   const logout = useCallback(async () => {
-    try { await apiLogout(); } finally { setUser(null); }
-  }, []);
+    try { await services.auth.logout(); } finally { setUser(null); }
+  }, [services]);
 
   // Auto-refresh access token periodically; also attempt on mount
   useEffect(() => {
-    let timer: number | undefined;
     const attempt = async () => {
       try {
-        const res = await apiRefresh();
+        const res = await services.auth.refresh();
         if (res && authenticated) {
           // refresh success – keep user; server sets cookies
         }
-      } catch (_) {
+      } catch {
         // ignore
       }
     };
     attempt();
-    timer = window.setInterval(attempt, 12 * 60 * 1000); // every 12 minutes
-    return () => { if (timer) window.clearInterval(timer); };
-  }, [authenticated]);
+    const timer = window.setInterval(attempt, 12 * 60 * 1000); // every 12 minutes
+    return () => { window.clearInterval(timer); };
+  }, [authenticated, services]);
 
   const value = useMemo(() => ({ user, authenticated, login, register, logout, setUser, initializing }), [user, authenticated, login, register, logout, initializing]);
   // Hydrate from /auth/me on mount
@@ -79,7 +80,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const data = await res.json();
           if (data?.email) setUser(data);
         }
-      } catch (_) {}
+      } catch {
+        // ignore
+      }
       finally {
         setInitializing(false);
       }
@@ -96,10 +99,10 @@ export function useAuth() {
 }
 
 // Helper: wrap an API call to auto-refresh on 401 once
-export async function withAutoRefresh(fn: () => Promise<Response>): Promise<Response> {
+export async function withAutoRefresh(fn: () => Promise<Response>, refreshFn?: () => Promise<unknown>): Promise<Response> {
   let res = await fn();
   if (res.status === 401) {
-    await apiRefresh();
+    if (refreshFn) await refreshFn(); else await apiRefresh();
     res = await fn();
   }
   return res;

@@ -1,10 +1,12 @@
 import { useAuth } from '@/lib/auth-context'
 import { useEffect, useState } from 'react'
-import { loadSettings, saveSettings } from '@/lib/api'
+import { useServices } from '@/services/hooks'
 import { ShieldAlert } from 'lucide-react'
 
 export default function AdminSettingsPage() {
   const { user } = useAuth()
+  const services = useServices()
+  const settingsService = services.admin.settings
   const isSystemAdmin = !!user?.roles?.includes('system_admin')
   const sections = [
     { id: 'general', label: 'General' },
@@ -36,7 +38,7 @@ export default function AdminSettingsPage() {
     let cancel = false
     ;(async () => {
       try {
-        const s = await loadSettings()
+  const s = await settingsService.loadSettings()
         if (cancel) return
         if (s.general) setGeneral({
           appName: String(s.general.appName ?? 'Pet Shelter Registry'),
@@ -67,7 +69,7 @@ export default function AdminSettingsPage() {
       }
     })()
     return () => { cancel = true }
-  }, [])
+  }, [settingsService])
 
   if (!isSystemAdmin) {
     return (
@@ -81,23 +83,24 @@ export default function AdminSettingsPage() {
   async function saveCategory(id: string) {
     try {
       setSaving(id)
-      if (id === 'general') await saveSettings('general', [
+      const { admin } = services
+      if (id === 'general') await admin.settings.saveSettings('general', [
         { key: 'appName', value: general.appName },
         { key: 'supportEmail', value: general.supportEmail },
       ])
-      if (id === 'monitoring') await saveSettings('monitoring', [
+      if (id === 'monitoring') await admin.settings.saveSettings('monitoring', [
         { key: 'chartsRefreshSec', value: Number(monitoring.chartsRefreshSec) },
         { key: 'retentionDays', value: Number(monitoring.retentionDays) },
       ])
-      if (id === 'auth') await saveSettings('auth', [
+      if (id === 'auth') await admin.settings.saveSettings('auth', [
         { key: 'mode', value: auth.mode },
         { key: 'google', value: auth.google },
         { key: 'github', value: auth.github },
       ])
-      if (id === 'docs') await saveSettings('docs', [
+      if (id === 'docs') await admin.settings.saveSettings('docs', [
         { key: 'showPublicDocsLink', value: docs.showPublicDocsLink },
       ])
-      if (id === 'security') await saveSettings('security', [
+      if (id === 'security') await admin.settings.saveSettings('security', [
         { key: 'sessionMaxAgeMin', value: Number(security.sessionMaxAgeMin) },
         { key: 'requireEmailVerification', value: Boolean(security.requireEmailVerification) },
         { key: 'loginIpWindowSec', value: Number(security.loginIpWindowSec) },
