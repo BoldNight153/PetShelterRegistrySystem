@@ -1,3 +1,6 @@
+// Runtime adapter: this file is the runtime boundary and may import runtime-only helpers
+// from `frontend/src/lib/api`. UI code should not import types from that module —
+// instead use the service interfaces under `services/interfaces`.
 import * as api from '../../lib/api';
 import type { IUserService } from '../interfaces/user.interface';
 

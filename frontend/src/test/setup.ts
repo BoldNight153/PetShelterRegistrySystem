@@ -17,3 +17,11 @@ if (!window.matchMedia) {
 		dispatchEvent: vi.fn(),
 	}))
 }
+
+// Safe no-op scrollIntoView for jsdom environment to avoid errors from UI libraries
+if (typeof window !== 'undefined' && typeof window.HTMLElement !== 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window.HTMLElement.prototype as any).scrollIntoView = function scrollIntoView() {
+    // intentionally empty for test environment
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useServices } from '@/services/hooks'
-import { type Role } from '@/lib/api'
+import type { Role } from '@/services/interfaces/role.interface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'

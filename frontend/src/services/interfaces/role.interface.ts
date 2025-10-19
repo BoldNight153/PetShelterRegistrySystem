@@ -1,4 +1,5 @@
-import type { Role, Permission } from '../../lib/api';
+import type { Role, Permission } from './types';
+export type { Role, Permission };
 
 export interface IRoleService {
   listRoles(): Promise<Role[]>;

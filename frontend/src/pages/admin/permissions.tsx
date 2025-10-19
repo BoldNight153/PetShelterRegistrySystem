@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useServices } from '@/services/hooks'
-import { type Permission, type Role } from '@/lib/api'
+import type { Permission } from '@/services/interfaces/role.interface'
+import type { Role } from '@/services/interfaces/role.interface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'

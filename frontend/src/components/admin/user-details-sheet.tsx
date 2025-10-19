@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet'
 import { useServices } from '@/services/hooks'
-import type { UserDetail, Role } from '@/lib/api'
+import type { UserDetail } from '@/services/interfaces/user.interface'
+import type { Role } from '@/services/interfaces/role.interface'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 type Props = {

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
+import { useServices } from '@/services/hooks'
 import { ShieldAlert } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, Legend } from 'recharts'
-import { loadSettings } from '@/lib/api'
 
 function useJson<T>(url: string | null, intervalMs = 15000) {
   const [data, setData] = useState<T | null>(null)
@@ -34,28 +34,23 @@ function useJson<T>(url: string | null, intervalMs = 15000) {
 
 export default function ServerInfoCharts() {
   const { user } = useAuth()
-  const isSystemAdmin = !!user?.roles?.includes('system_admin')
-  if (!isSystemAdmin) {
-    return (
-      <div className="p-6">
-        <div className="flex items-center gap-2 text-red-600 dark:text-red-400"><ShieldAlert className="h-5 w-5" /> Access denied</div>
-        <p className="text-sm text-muted-foreground mt-2">This page is restricted to system administrators.</p>
-      </div>
-    )
-  }
+  const services = useServices()
 
-  const [refreshMs, setRefreshMs] = useState(15000)
+  // hooks must run unconditionally at the top of the component
+  const [refreshMs, setRefreshMs] = useState<number>(15000)
   useEffect(() => {
     let cancel = false
     ;(async () => {
       try {
-        const s = await loadSettings('monitoring')
+        const s = await services.admin.settings.loadSettings('monitoring')
         const val = Number(s?.monitoring?.chartsRefreshSec ?? 15)
         if (!cancel && Number.isFinite(val) && val > 0) setRefreshMs(val * 1000)
-      } catch {}
+      } catch (err) {
+        void err
+      }
     })()
     return () => { cancel = true }
-  }, [])
+  }, [services])
 
   const { data: metrics, loading: loadingSnap } = useJson<any>('/admin/monitoring/metrics', refreshMs)
   const { data: p99Series } = useJson<any>('/admin/monitoring/series?metric=http.p99&minutes=120', refreshMs)
@@ -65,6 +60,16 @@ export default function ServerInfoCharts() {
   const p99 = useMemo(() => (p99Series?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [p99Series])
   const err = useMemo(() => (errSeries?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [errSeries])
   const lag = useMemo(() => (lagSeries?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [lagSeries])
+
+  const isSystemAdmin = !!user?.roles?.includes('system_admin')
+  if (!isSystemAdmin) {
+    return (
+      <div className="p-6">
+        <div className="flex items-center gap-2 text-red-600 dark:text-red-400"><ShieldAlert className="h-5 w-5" /> Access denied</div>
+        <p className="text-sm text-muted-foreground mt-2">This page is restricted to system administrators.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 space-y-8">

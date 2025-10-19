@@ -1,4 +1,5 @@
-import type { UserSummaryWithLock, UserDetail } from '../../lib/api';
+import type { UserSummaryWithLock, UserDetail } from './types';
+export type { UserSummaryWithLock, UserDetail };
 
 export interface IUserService {
   searchUsers(q?: string, page?: number, pageSize?: number): Promise<{ items: UserSummaryWithLock[]; total: number; page: number; pageSize: number }>;

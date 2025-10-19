@@ -2,6 +2,8 @@ import request from 'supertest';
 import app from '../index';
 import { PrismaClient } from '@prisma/client';
 import { ensureRoleWithPermissionsForUser } from './helpers/rbac';
+// Increase default timeout for this file (integration hooks may take longer)
+jest.setTimeout(30000);
 
 describe('More routes integration tests', () => {
   let petId: string | undefined;

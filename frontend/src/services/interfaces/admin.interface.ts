@@ -1,4 +1,5 @@
-import type { SettingsMap, JsonValue } from '../../lib/api';
+import type { SettingsMap, JsonValue } from './types';
+export type { SettingsMap, JsonValue };
 
 export interface ISettingsService {
   loadSettings(category?: string): Promise<SettingsMap>;

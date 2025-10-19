@@ -46,6 +46,17 @@ npm run seed
 npm run dev
 ```
 
+## Migration notes
+
+Recent frontend refactor (services DI)
+
+- The frontend now uses a typed ServicesProvider + useServices() hook pattern for dependency injection.
+- UI components and pages should import service interface types from `frontend/src/services/interfaces/*` and consume services via `useServices()`.
+- The runtime fetch helpers in `frontend/src/lib/api.ts` are the runtime boundary and should only be imported by adapter implementations in `frontend/src/services/impl/*`.
+- To avoid accidental coupling, lib/api no longer exports shared UI types; shared types are in `frontend/src/services/interfaces/types`.
+
+This keeps UI code decoupled from runtime helpers and makes testing easier by allowing tests to inject small service overrides via `ServicesProvider`.
+
 The API starts at http://localhost:4000 with:
 - Health: GET /health
 - OpenAPI JSON: GET /api-docs/latest/openapi.json

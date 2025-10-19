@@ -1,6 +1,6 @@
 // Minimal API client for auth with CSRF double-submit and cookie-based session
-export type LoginInput = { email: string; password: string };
-export type RegisterInput = { email: string; password: string; name?: string };
+type LoginInput = { email: string; password: string };
+type RegisterInput = { email: string; password: string; name?: string };
 
 const API_BASE = "/"; // Vite proxy should send /auth to backend
 
@@ -79,9 +79,9 @@ export async function refresh() {
 // ----------------------
 
 // Minimal JSON value type for settings
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-export type SettingsMap = Record<string, Record<string, JsonValue>>;
+type SettingsMap = Record<string, Record<string, JsonValue>>;
 
 export async function loadSettings(category?: string): Promise<SettingsMap> {
   const url = category ? `/admin/settings?category=${encodeURIComponent(category)}` : `/admin/settings`;
@@ -107,10 +107,10 @@ export async function saveSettings(category: string, entries: { key: string; val
 // Admin RBAC API
 // ----------------------
 
-export type Role = { id: string; name: string; rank: number; description?: string | null };
-export type Permission = { id: string; name: string; description?: string | null };
-export type UserSummary = { id: string; email: string; name?: string | null; roles: string[] };
-export type UserSummaryWithLock = UserSummary & { lock: { reason: string; until: string | null } | null };
+type Role = { id: string; name: string; rank: number; description?: string | null };
+type Permission = { id: string; name: string; description?: string | null };
+type UserSummary = { id: string; email: string; name?: string | null; roles: string[] };
+type UserSummaryWithLock = UserSummary & { lock: { reason: string; until: string | null } | null };
 
 export async function listRoles(): Promise<Role[]> {
   const res = await fetch(`/admin/roles`, { credentials: 'include' });
@@ -193,7 +193,7 @@ export async function getUserRoles(userId: string): Promise<string[]> {
   return roles.map(r => r.name);
 }
 
-export type UserDetail = UserSummaryWithLock & {
+type UserDetail = UserSummaryWithLock & {
   createdAt?: string | null;
   lastLoginAt?: string | null;
   metadata?: Record<string, unknown> | null;
