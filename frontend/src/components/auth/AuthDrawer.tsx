@@ -52,7 +52,7 @@ export default function AuthDrawer({ open, onOpenChange, initialView = "login", 
           const github = !!data?.providers?.github?.configured
           setProviders({ google, github })
         }
-      } catch (_) { /* ignore */ }
+  } catch { /* ignore */ }
     })()
     return () => { cancelled = true }
   }, [])
