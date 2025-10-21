@@ -9,7 +9,7 @@ type DrawerRootProps = React.ComponentProps<typeof DrawerPrimitive.Root> & {
   container?: HTMLElement | null
 }
 
-function Drawer({ container, ...props }: DrawerRootProps) {
+function Drawer(props: DrawerRootProps) {
   return <DrawerPrimitive.Root data-slot="drawer" {...props} />
 }
 
@@ -38,7 +38,9 @@ function DrawerOverlay({
     <DrawerPrimitive.Overlay
       data-slot="drawer-overlay"
       className={cn(
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50 pointer-events-auto",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 z-50 bg-black/50 pointer-events-auto",
+        // If rendered inside a container, avoid fixed positioning to keep overlay within container bounds
+        insideContainer ? 'absolute inset-0' : 'fixed inset-0',
         className
       )}
       {...props}
