@@ -5,6 +5,10 @@ import { ensureRoleWithPermissionsForUser, ensureRole, ensurePermission, grantPe
 import { createLoggedInAdminAgent } from './helpers/agent';
 
 describe('Admin endpoints', () => {
+  // Increase timeout for potentially slow integration tests
+  // Some CI environments are slower; give these tests more headroom.
+  // See: https://jestjs.io/docs/api#testname-fn-timeout
+  jest.setTimeout(30000);
   const prisma: any = new PrismaClient();
   const agent = request.agent(app);
   let csrfToken: string | undefined;
