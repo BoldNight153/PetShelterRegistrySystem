@@ -1,3 +1,4 @@
+ # yaml-language-server: $schema=https://json.schemastore.org/github-workflow
 name: release-please
 
 on:
@@ -13,6 +14,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
     steps:
       - name: Release Please
         # Use the recommended action (the google-github-actions variant is deprecated)
@@ -22,4 +25,4 @@ jobs:
           manifest-file: .release-please-manifest.json
           # Use a classic PAT with repo scope so PR creation works even if GITHUB_TOKEN
           # is restricted from creating/approving pull requests in repo settings.
-          token: ${{ secrets.PROJECTS_TOKEN }}
+          token: "${{ env.PROJECTS_TOKEN }}"
