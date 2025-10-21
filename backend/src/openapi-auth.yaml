@@ -2,6 +2,7 @@ openapi: 3.1.0
 info:
   title: Auth REST API
   version: 0.1.0
+  x-ci-updated: "2025-10-21T00:00:00Z"
   description: >-
     Authentication and session endpoints for the Pet Shelter Registry System.
     Uses cookie-based JWT access tokens and rotating refresh tokens with double-submit CSRF protection.
