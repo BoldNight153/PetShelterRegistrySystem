@@ -2,6 +2,7 @@ openapi: 3.1.0
 info:
   title: Pets REST API
   version: 0.1.0
+  x-ci-updated: "2025-10-21T00:00:00Z"
   description: >-
     REST API for shelters, locations, pets, owners, medical events, and relationships.
     Uses cookie-based auth and CSRF for state-changing operations. Read endpoints are public by default.
@@ -226,7 +227,7 @@ components:
         createdAt: { type: string, format: date-time }
       required: [id, petId, eventType, occurredAt, createdAt]
       example:
-        id: "mrec-1"
+        id: "8b1d6a4e-3f4a-4c2b-9f8e-1a2b3c4d5e6f"
         petId: "031b7d02-14dc-4542-a9eb-9f23be036e14"
         eventType: "VACCINATION"
         notes: "Rabies"
@@ -242,7 +243,7 @@ components:
         createdAt: { type: string, format: date-time }
       required: [id, type, occurredAt, createdAt]
       example:
-        id: "evt-1"
+        id: "a7c9e1d2-6b4f-4a88-9d3c-0f1e2d3c4b5a"
         type: "CHECKIN"
         description: "Pet intake"
         occurredAt: "2025-09-28T13:20:58Z"
@@ -257,7 +258,7 @@ components:
         createdAt: { type: string, format: date-time }
       required: [id, petId, ownerId, role, createdAt]
       example:
-        id: "po-1"
+        id: "d4f7c2b1-9a8e-4f6b-8c3d-7e6f5a4b3c2d"
         petId: "031b7d02-14dc-4542-a9eb-9f23be036e14"
         ownerId: "36fa99ff-0a81-4451-af12-2d2d5c881a01"
         role: "OWNER"
@@ -269,7 +270,25 @@ paths:
       tags: [Pets]
       operationId: listPets
       summary: List pets
-      description: Returns a list of pets (paginated top 100).
+      description: |
+        Retrieve a paginated list of pets visible to the requesting client. This endpoint returns
+        an ordered collection of pet objects, each containing canonical attributes such as
+        identifier, name, species, status, shelter association, and timestamps. The result is
+        primarily intended for read-only display in administrative or public listings.
+
+        Behavior and considerations:
+        - Pagination: The server will return a bounded page of results (up to 100 items by
+          default) to prevent large payloads. Clients should use standard pagination query
+          parameters (e.g., `limit`, `offset`, or cursor-based tokens) where supported.
+        - Filtering and sorting: Implementations may allow filtering by shelter, status,
+          or other attributes; consult query parameters for available filters. If not
+          provided, the endpoint returns a reasonable default ordering (usually by
+          `createdAt` descending).
+        - Permissions: This is a public read endpoint by default. When running in a
+          restricted mode, results may be scoped to the authenticated user's permitted
+          shelters or roles.
+        - Response format: A JSON array of `Pet` objects; each item follows the
+          `#/components/schemas/Pet` contract. Empty array returned when no pets match.
       x-codeSamples:
         - lang: curl
           label: curl
@@ -299,6 +318,25 @@ paths:
       security:
         - cookieAuth: []
         - csrfHeader: []
+      description: |
+        Create a new pet record in the system. This operation accepts a JSON object
+        representing the pet and returns the created resource.
+
+        Important details:
+        - Authentication & CSRF: This is a protected operation and requires a valid
+          session cookie and CSRF header. Requests without both credentials will be
+          rejected with a 401 or 403 response as appropriate.
+        - Authorization: The caller must have one of the roles listed in `x-rbac` to
+          create pets (staff or admin roles). Requests from insufficiently privileged
+          clients will receive 403 Forbidden.
+        - Input validation: The request body must conform to the `Pet` input shape. The
+          server will validate required fields and types; validation failures return
+          400 Bad Request with a machine-readable error envelope.
+        - Side effects: Creating a pet may trigger domain events (audit log, notifications)
+          or resource allocation in shelters/locations depending on configuration.
+        - Idempotency: Clients should avoid sending duplicate create requests; the
+          server does not provide implicit de-duplication unless an idempotency key
+          mechanism is implemented externally.
       x-rbac:
         roles: [staff, shelter_admin, admin, system_admin]
       requestBody:
@@ -366,6 +404,16 @@ paths:
       tags: [Pets]
       operationId: getPet
       summary: Get pet by id
+      description: |
+        Retrieve a single pet resource by its canonical identifier. The response contains
+        the full `Pet` object as recorded by the system and is suitable for display or
+        further editing by privileged clients.
+
+        Notes:
+        - If the pet does not exist, the server returns 404 Not Found.
+        - This endpoint is safe (read-only) and does not modify server state.
+        - Clients should include authentication cookies when requesting non-public
+          details; some fields may be redacted for unauthenticated callers.
       responses:
         "200":
           description: OK
@@ -378,6 +426,21 @@ paths:
       tags: [Pets]
       operationId: updatePet
       summary: Update pet
+      description: |
+        Update an existing pet resource. The client must supply a complete or partial
+        `Pet` representation depending on the server's supported merge semantics; the
+        server will validate the payload and apply permitted changes.
+
+        Behavior:
+        - Authentication & authorization: Requires an authenticated session and a
+          role that allows updates (see `x-rbac`). Unauthorized requests yield 401/403.
+        - Validation: The server validates required properties and types. Invalid
+          payloads return 400 with details.
+        - Concurrency: Implementations may use optimistic concurrency controls
+          (e.g., ETags or version fields). Clients should handle conflict responses
+          (409) if concurrent updates occur.
+        - Response: Returns the updated `Pet` object on success (200), or appropriate
+          error responses for validation, authorization, or not found.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -405,6 +468,17 @@ paths:
       tags: [Pets]
       operationId: deletePet
       summary: Delete pet
+      description: |
+        Remove a pet record from the system. This operation performs a soft or hard
+        delete depending on server configuration and may cascade to related entities
+        (e.g., pet-owner links or scheduled events).
+
+        Considerations:
+        - Authorization: Deletion requires elevated privileges (see `x-rbac`).
+        - Idempotency: Deleting an already-deleted or non-existent resource returns
+          204 No Content or 404 Not Found depending on server policy.
+        - Auditing: Deletions are recorded in the audit trail to preserve an action
+          history for administrative review.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -422,6 +496,16 @@ paths:
       tags: [Shelters]
       operationId: listShelters
       summary: List shelters
+      description: |
+        Return a list of shelter entities available to the caller. Each shelter
+        contains identification, contact information, capacity, and other metadata
+        used by administrative interfaces and integrations.
+
+        Additional details:
+        - Pagination and filtering may be supported; consult query parameters.
+        - The endpoint is read-only and safe for unauthenticated clients in
+          public deployments, but results may be scoped for authenticated users
+          to their allowed shelters.
       x-codeSamples:
         - lang: curl
           label: curl
@@ -440,6 +524,17 @@ paths:
       tags: [Shelters]
       operationId: createShelter
       summary: Create shelter
+      description: |
+        Create a new shelter entity used to group pets and locations. The shelter
+        resource includes metadata such as name, address, contact details, and
+        capacity planning attributes.
+
+        Key points:
+        - Requires authentication and an RBAC role permitting shelter management.
+        - Input must match the `Shelter` schema; partial or malformed input will
+          return 400 Bad Request.
+        - Side effects: provisioning a shelter may reserve internal resources,
+          update reporting metrics, and emit events for downstream systems.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -478,6 +573,10 @@ paths:
       tags: [Shelters]
       operationId: getShelter
       summary: Get shelter
+      description: |
+        Retrieve a single shelter resource by its identifier. The returned object
+        includes full shelter metadata and is suitable for management or detail
+        views in administrative UIs.
       responses:
         "200":
           description: OK
@@ -489,6 +588,11 @@ paths:
       tags: [Shelters]
       operationId: updateShelter
       summary: Update shelter
+      description: |
+        Update an existing shelter's properties. This endpoint accepts a shelter
+        representation and applies validated changes such as name, address or
+        capacity. The server enforces authorization checks and may reject updates
+        that violate capacity constraints or business rules.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -510,6 +614,13 @@ paths:
       tags: [Shelters]
       operationId: deleteShelter
       summary: Delete shelter
+      description: |
+        Delete a shelter from the system. Depending on configuration, this may be a
+        soft delete (marking as inactive) or a hard delete removing the record.
+
+        Important: Deleting a shelter can have cascading effects (locations, pets,
+        assignments) — callers should ensure they understand implications before
+        issuing the request. The operation requires elevated RBAC privileges.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -527,6 +638,10 @@ paths:
       tags: [Locations]
       operationId: listLocations
       summary: List locations
+      description: |
+        List locations (such as kennels or rooms) across shelters, or scoped to a
+        particular shelter when a query parameter or filter is applied. Locations
+        are used to place pets and manage capacity.
       x-codeSamples:
         - lang: curl
           label: curl
@@ -545,6 +660,14 @@ paths:
       tags: [Locations]
       operationId: createLocation
       summary: Create location
+      description: |
+        Create a new location (e.g., kennel or room) within a shelter. Locations are
+        used to organize pet placements and capacity tracking.
+
+        Requirements:
+        - The `shelterId` must reference an existing shelter.
+        - Authorization checks ensure the caller may manage locations for the
+          specified shelter.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -573,6 +696,10 @@ paths:
       tags: [Locations]
       operationId: getLocation
       summary: Get location
+      description: |
+        Retrieve the details of a single location by id. The response includes the
+        location's code, capacity, and optionally notes and metadata about its
+        association to a shelter.
       responses:
         "200":
           description: OK
@@ -584,6 +711,10 @@ paths:
       tags: [Locations]
       operationId: updateLocation
       summary: Update location
+      description: |
+        Update properties of an existing location, such as description, capacity,
+        or notes. The caller must be authorized to manage locations for the
+        associated shelter. Validation is performed against the `Location` schema.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -605,6 +736,10 @@ paths:
       tags: [Locations]
       operationId: deleteLocation
       summary: Delete location
+      description: |
+        Delete a location. Deletion semantics may be soft (mark inactive) or hard
+        depending on server settings. Deleting a location that contains assigned
+        pets may be disallowed or may require prior reassignment.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -622,6 +757,10 @@ paths:
       tags: [Owners]
       operationId: listOwners
       summary: List owners
+      description: |
+        Return a list of owner/contact records. This endpoint supports searching
+        and filtering to help administrators locate contacts associated with pets
+        and shelters.
       x-codeSamples:
         - lang: curl
           label: curl
@@ -640,6 +779,16 @@ paths:
       tags: [Owners]
       operationId: createOwner
       summary: Create owner
+      description: |
+        Register a contact or owner person in the system. Owner records capture
+        contact information and role classification (owner/contact/staff) and are
+        referenced from pet-owner relationship records.
+
+        Behavior:
+        - Validation: Required fields must be present and valid; email addresses
+          are checked for correct format but not necessarily verified.
+        - Idempotency: Clients should avoid duplicate creates; the server may return
+          conflicts when unique constraints (email) are violated.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -668,6 +817,10 @@ paths:
       tags: [Owners]
       operationId: getOwner
       summary: Get owner
+      description: |
+        Retrieve an owner/contact record by id. The returned object includes
+        contact details and metadata used for outreach and relationship
+        management.
       responses:
         "200":
           description: OK
@@ -679,6 +832,10 @@ paths:
       tags: [Owners]
       operationId: updateOwner
       summary: Update owner
+      description: |
+        Update an owner's contact information or role. Validation is applied to
+        ensure consistent contact fields and to preserve required properties such
+        as firstName and lastName.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -700,6 +857,10 @@ paths:
       tags: [Owners]
       operationId: deleteOwner
       summary: Delete owner
+      description: |
+        Remove an owner record. Deleting an owner may remove links to pets or
+        require prior reassignment of pet-owner relationships. Typically requires
+        elevated privileges to perform.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -717,6 +878,10 @@ paths:
       tags: [Medical]
       operationId: listMedicalRecords
       summary: List medical records
+      description: |
+        Return recent medical records for pets. This endpoint is useful for
+        clinical overviews, reporting, and export. Records include event type,
+        timestamps, and optional notes.
       x-codeSamples:
         - lang: curl
           label: curl
@@ -735,6 +900,16 @@ paths:
       tags: [Medical]
       operationId: createMedicalRecord
       summary: Create medical record
+      description: |
+        Create a medical record entry for a pet. Medical records document medical
+        events such as vaccinations, procedures, and observations. Each record
+        references a pet and includes an event type, timestamp, and notes.
+
+        Details:
+        - Requires permission to write medical data; such operations are typically
+          restricted to staff roles.
+        - Input is validated against the `MedicalRecord` schema; strongly-typed
+          fields are enforced by the server.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -763,6 +938,10 @@ paths:
       tags: [Medical]
       operationId: getMedicalRecord
       summary: Get medical record
+      description: |
+        Retrieve a single medical record by id. The response contains full event
+        details, associated pet references, and timestamps necessary for clinical
+        review.
       responses:
         "200":
           description: OK
@@ -774,6 +953,9 @@ paths:
       tags: [Medical]
       operationId: updateMedicalRecord
       summary: Update medical record
+      description: |
+        Update an existing medical record. This operation allows correction of
+        notes or event types and requires permission to modify medical data.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -795,6 +977,9 @@ paths:
       tags: [Medical]
       operationId: deleteMedicalRecord
       summary: Delete medical record
+      description: |
+        Delete a medical record. Medical data deletions are sensitive and typically
+        restricted; the operation may be soft or hard delete depending on policy.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -812,6 +997,9 @@ paths:
       tags: [Events]
       operationId: listEvents
       summary: List events
+      description: |
+        List system and domain events such as check-ins, transfers, and audits.
+        Events are primarily used for reporting, timeline views, and troubleshooting.
       x-codeSamples:
         - lang: curl
           label: curl
@@ -830,6 +1018,14 @@ paths:
       tags: [Events]
       operationId: createEvent
       summary: Create event
+      description: |
+        Create a general event in the system used for audit, logging, or business
+        workflows. Events are free-form but should include a well-known `type`
+        value such as CHECKIN, CHECKOUT, TRANSFER, etc.
+
+        Notes:
+        - Events may be produced by automated processes or by user actions.
+        - Event creation may trigger notifications or downstream processing.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -858,6 +1054,10 @@ paths:
       tags: [Events]
       operationId: getEvent
       summary: Get event
+      description: |
+        Retrieve an individual event by id. Events include metadata such as type,
+        description, and timestamps. They are useful for building an activity log
+        for pets and system actions.
       responses:
         "200":
           description: OK
@@ -869,6 +1069,10 @@ paths:
       tags: [Events]
       operationId: updateEvent
       summary: Update event
+      description: |
+        Update event details. This may be used to correct descriptions or add
+        contextual notes. Event updates are recorded in audit logs as a best
+        practice.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -890,6 +1094,9 @@ paths:
       tags: [Events]
       operationId: deleteEvent
       summary: Delete event
+      description: |
+        Delete an event record. This operation should be used sparingly and may
+        be restricted due to audit requirements.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -907,6 +1114,10 @@ paths:
       tags: [PetOwners]
       operationId: listPetOwners
       summary: List pet-owner links
+      description: |
+        List associations between pets and owners. Useful for seeing which owners
+        are linked to which pets and for bulk management tasks such as reassigning
+        ownership.
       x-codeSamples:
         - lang: curl
           label: curl
@@ -925,6 +1136,15 @@ paths:
       tags: [PetOwners]
       operationId: createPetOwner
       summary: Create pet-owner link
+      description: |
+        Establish a relationship between a pet and an owner (or contact). This
+        link associates the pet with a person and a role (OWNER, CONTACT, STAFF),
+        enabling contact and ownership workflows.
+
+        Considerations:
+        - The referenced `petId` and `ownerId` must exist.
+        - Authorization: callers must have permission to modify owner links for the
+          involved resources.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -952,6 +1172,10 @@ paths:
       tags: [PetOwners]
       operationId: getPetOwner
       summary: Get pet-owner link
+      description: |
+        Retrieve a specific pet-owner association by id. The response includes
+        the role of the owner (OWNER, CONTACT, or STAFF) and timestamps for when
+        the link was created.
       responses:
         "200":
           description: OK
@@ -963,6 +1187,10 @@ paths:
       tags: [PetOwners]
       operationId: updatePetOwner
       summary: Update pet-owner link
+      description: |
+        Update an existing pet-owner relationship, for example to change the
+        owner's role or to transfer primary ownership. The operation enforces
+        validation of referenced ids and role enums.
       security:
         - cookieAuth: []
         - csrfHeader: []
@@ -983,6 +1211,10 @@ paths:
       tags: [PetOwners]
       operationId: deletePetOwner
       summary: Delete pet-owner link
+      description: |
+        Remove a pet-owner relationship. This is often used when ownership changes
+        or contact information is stale. Deleting a link does not delete the owner
+        or pet resources themselves.
       security:
         - cookieAuth: []
         - csrfHeader: []

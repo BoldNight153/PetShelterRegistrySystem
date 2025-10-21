@@ -177,6 +177,20 @@ paths:
     post:
       tags: [Auth]
       summary: Register a new user
+      description: |
+        Register a new user account. This endpoint accepts the user's name, email,
+        and a password and creates a new identity in the system. It is intended for
+        interactive client use (web or mobile) and performs server-side validation
+        of inputs to ensure password strength and email format.
+
+        Behavior and constraints:
+        - The server will return 201 Created on success along with a minimal
+          representation of the new user. Additional post-registration steps such
+          as sending verification emails or creating onboarding tasks may occur.
+        - The operation is protected by CSRF; callers must include the `x-csrf-token`
+          header obtained from `/auth/csrf` when making browser-originated requests.
+        - The endpoint avoids leaking account existence via its responses; when in
+          doubt, callers should treat 400 responses as generic validation failures.
       operationId: register
       security:
         - csrfHeader: []
@@ -223,6 +237,19 @@ paths:
     post:
       tags: [Auth]
       summary: Login with email/password
+      description: |
+        Authenticate a user using email and password. On successful authentication,
+        the server establishes a session and issues authentication cookies (access
+        and refresh tokens) while returning a JSON `AuthSuccess` payload to the
+        client.
+
+        Important notes:
+        - The endpoint is CSRF-protected; include the `x-csrf-token` header for
+          browser-based flows. API clients using non-browser clients should follow
+          the same CSRF contract or use the OAuth endpoints instead.
+        - Failed authentication attempts return 401 Unauthorized. Login attempts are
+          rate-limited and may contribute to account lockout policies if repeated
+          failures are detected.
       operationId: login
       security:
         - csrfHeader: []
@@ -259,6 +286,15 @@ paths:
     post:
       tags: [Auth]
       summary: Logout and revoke refresh token
+      description: |
+        Terminate the current authenticated session and revoke the refresh token
+        associated with the session. This endpoint clears authentication cookies and
+        ensures the session cannot be renewed without re-authentication.
+
+        Implementation details:
+        - The endpoint is idempotent: calling it for an already-signed-out session
+          will generally return success (204 No Content).
+        - A valid CSRF token is required when called from a browser context.
       operationId: logout
       security:
         - csrfHeader: []
@@ -279,6 +315,18 @@ paths:
     post:
       tags: [Auth]
       summary: Rotate refresh token and issue new access token
+      description: |
+        Exchange a valid refresh token for a new short-lived access token and
+        optionally rotate the refresh token to a new value. This improves long-
+        lived session security by limiting the lifetime of access tokens while
+        providing seamless re-authentication.
+
+        Security and failure modes:
+        - If the refresh token is missing, expired, or revoked, the server
+          responds with 401 Unauthorized and the client must prompt the user to
+          re-authenticate.
+        - Clients must present a valid CSRF header for this state-changing
+          operation when executed from a browser.
       operationId: refresh
       security:
         - csrfHeader: []
@@ -305,6 +353,11 @@ paths:
     post:
       tags: [Auth]
       summary: Request email verification
+      description: |
+        Request that the system send a verification email to the supplied address
+        with a short-lived token or link to confirm ownership. To reduce the
+        ability to enumerate accounts, the endpoint intentionally returns a generic
+        success response even when the email is not associated with an account.
       operationId: requestEmailVerification
       security:
         - csrfHeader: []
@@ -336,6 +389,14 @@ paths:
     post:
       tags: [Auth]
       summary: Verify email using token
+      description: |
+        Complete the email verification flow by validating a previously issued
+        verification token. Successful verification marks the user's email as
+        verified and may enable account features gated behind verified emails.
+
+        Notes:
+        - Tokens are time-limited and single-use; attempting to reuse an expired
+          or consumed token will return a 400 Bad Request.
       operationId: verifyEmail
       security:
         - csrfHeader: []
@@ -356,6 +417,13 @@ paths:
     post:
       tags: [Auth]
       summary: Request password reset email
+      description: |
+        Initiate a password reset by asking the system to send a secure reset
+        token to the user's verified email address. The endpoint avoids leaking
+        whether an account exists by returning a generic success response.
+
+        Security:
+        - Rate limiting is applied to mitigate abuse.
       operationId: requestPasswordReset
       security:
         - csrfHeader: []
@@ -385,6 +453,14 @@ paths:
     post:
       tags: [Auth]
       summary: Reset password using token
+      description: |
+        Reset a user's password by presenting a valid reset token along with the
+        new password. The server enforces password policies and invalidates the
+        reset token upon successful reset.
+
+        Important:
+        - This is a state-changing operation protected by CSRF when invoked from
+          browser contexts.
       operationId: resetPassword
       security:
         - csrfHeader: []
@@ -406,6 +482,14 @@ paths:
     get:
       tags: [Auth]
       summary: Get current authenticated user
+      description: |
+        Return the authenticated user's profile and permission context. This
+        endpoint is intended for client applications that need to adapt UI
+        behavior based on roles, permissions, or user metadata.
+
+        Behavior:
+        - Requires a valid session cookie; responds with 401 if unauthenticated.
+        - The returned payload intentionally omits sensitive secrets and tokens.
       operationId: getMe
       security:
         - cookieAuth: []
@@ -433,6 +517,11 @@ paths:
     get:
       tags: [Auth]
       summary: Diagnostics for current authentication mode
+      description: |
+        Return a diagnostics object describing runtime authentication configuration
+        (enabled OAuth providers, whether email verification is required, session
+        lifetimes, etc.). This endpoint helps clients adapt UI flows (show/hide
+        registration or OAuth buttons) and is safe for unauthenticated access.
       operationId: authMode
       responses:
         "200":
@@ -462,6 +551,16 @@ paths:
     get:
       tags: [Auth]
       summary: Start OAuth flow for provider
+      description: |
+        Start an OAuth 2.0 authorization flow with the chosen provider. This
+        endpoint prepares any required server-side state (PKCE, state token) and
+        redirects the user agent to the external provider's authorization URL.
+
+        Implementation notes:
+        - The endpoint may return 302 to redirect the browser or 200 with helper
+          data for non-browser clients.
+        - The server sets a transient correlation cookie to validate the
+          subsequent callback from the provider.
       operationId: oauthStart
       responses:
         "200":
@@ -491,6 +590,17 @@ paths:
     get:
       tags: [Auth]
       summary: OAuth callback handler (code exchange and login)
+      description: |
+        Complete the OAuth flow after the provider redirects back with an
+        authorization code. The server validates returned parameters, exchanges
+        the code for provider tokens, optionally provisions or links a local
+        user account, and establishes a session.
+
+        Security:
+        - The server validates the `state` parameter and any PKCE exchange to
+          mitigate CSRF and code injection attacks.
+        - Provisioning behavior (auto-creating accounts) depends on server config
+          and may require additional verification in some deployments.
       operationId: oauthCallback
       responses:
         "200": { $ref: "#/components/responses/AuthSuccess" }
