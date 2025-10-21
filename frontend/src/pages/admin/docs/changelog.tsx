@@ -5,6 +5,35 @@ import * as React from 'react'
 export default function AdminDocsChangelog() {
   const { user } = useAuth()
   const canSeeAdmin = !!user?.roles?.includes('system_admin')
+
+  // hooks must be called unconditionally (rules-of-hooks). We declare state
+  // and the effect here; the effect itself will early-return when the user
+  // isn't allowed to see the admin docs.
+  const [html, setHtml] = React.useState<string>('')
+  const [error, setError] = React.useState<string | null>(null)
+  function stringifyError(err: unknown) {
+    if (!err) return String(err)
+    if (err instanceof Error) return err.message
+    try {
+      return JSON.stringify(err)
+    } catch {
+      return String(err)
+    }
+  }
+
+  React.useEffect(() => {
+    if (!canSeeAdmin) return
+    let mounted = true
+    fetch('/admin/docs/api-changelog', { credentials: 'include' })
+      .then(async (r) => {
+        if (!r.ok) throw new Error('failed to load changelog')
+        const text = await r.text()
+        if (mounted) setHtml(text)
+      })
+      .catch((e) => { if (mounted) setError(stringifyError(e)) })
+    return () => { mounted = false }
+  }, [canSeeAdmin])
+
   if (!canSeeAdmin) {
     return (
       <div className="p-6">
@@ -13,19 +42,6 @@ export default function AdminDocsChangelog() {
       </div>
     )
   }
-  const [html, setHtml] = React.useState<string>('')
-  const [error, setError] = React.useState<string | null>(null)
-  React.useEffect(() => {
-    let mounted = true
-    fetch('/admin/docs/api-changelog', { credentials: 'include' })
-      .then(async (r) => {
-        if (!r.ok) throw new Error('failed to load changelog')
-        const text = await r.text()
-        if (mounted) setHtml(text)
-      })
-      .catch((e) => { if (mounted) setError(String(e?.message || e)) })
-    return () => { mounted = false }
-  }, [])
 
   return (
     <div className="p-6 space-y-6">
