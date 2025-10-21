@@ -131,12 +131,12 @@ export default function AdminSettingsPage() {
             <h2 className="text-lg font-medium">General</h2>
             <div className="rounded border p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium">App display name</label>
-                <input className="mt-1 w-full rounded-md border px-3 py-2 bg-background" placeholder="Pet Shelter Registry" value={general.appName} onChange={e => setGeneral({ ...general, appName: e.target.value })} />
+                <label htmlFor="general-appName" className="block text-sm font-medium">App display name</label>
+                <input id="general-appName" className="mt-1 w-full rounded-md border px-3 py-2 bg-background" placeholder="Pet Shelter Registry" value={general.appName} onChange={e => setGeneral({ ...general, appName: e.target.value })} />
               </div>
               <div>
-                <label className="block text-sm font-medium">Support email</label>
-                <input className="mt-1 w-full rounded-md border px-3 py-2 bg-background" placeholder="support@example.com" value={general.supportEmail} onChange={e => setGeneral({ ...general, supportEmail: e.target.value })} />
+                <label htmlFor="general-supportEmail" className="block text-sm font-medium">Support email</label>
+                <input id="general-supportEmail" className="mt-1 w-full rounded-md border px-3 py-2 bg-background" placeholder="support@example.com" value={general.supportEmail} onChange={e => setGeneral({ ...general, supportEmail: e.target.value })} />
               </div>
               <div className="pt-2"><button disabled={saving==='general'} onClick={() => saveCategory('general')} className="px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm">{saving==='general' ? 'Saving…' : 'Save General'}</button></div>
             </div>
@@ -147,13 +147,13 @@ export default function AdminSettingsPage() {
             <h2 className="text-lg font-medium">Monitoring</h2>
             <div className="rounded border p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium">Charts refresh interval (seconds)</label>
-                <input type="number" min={5} step={5} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" placeholder="15" value={monitoring.chartsRefreshSec} onChange={e => setMonitoring({ ...monitoring, chartsRefreshSec: Number(e.target.value) })} />
+                <label htmlFor="monitoring-chartsRefreshSec" className="block text-sm font-medium">Charts refresh interval (seconds)</label>
+                <input id="monitoring-chartsRefreshSec" type="number" min={5} step={5} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" placeholder="15" value={monitoring.chartsRefreshSec} onChange={e => setMonitoring({ ...monitoring, chartsRefreshSec: Number(e.target.value) })} />
                 <p className="text-xs text-muted-foreground mt-1">How often the admin charts auto-refresh.</p>
               </div>
               <div>
-                <label className="block text-sm font-medium">Time series retention (days)</label>
-                <input type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" placeholder="7" value={monitoring.retentionDays} onChange={e => setMonitoring({ ...monitoring, retentionDays: Number(e.target.value) })} />
+                <label htmlFor="monitoring-retentionDays" className="block text-sm font-medium">Time series retention (days)</label>
+                <input id="monitoring-retentionDays" type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" placeholder="7" value={monitoring.retentionDays} onChange={e => setMonitoring({ ...monitoring, retentionDays: Number(e.target.value) })} />
                 <p className="text-xs text-muted-foreground mt-1">Retention period for MetricPoint records.</p>
               </div>
               <div className="pt-2"><button disabled={saving==='monitoring'} onClick={() => saveCategory('monitoring')} className="px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm">{saving==='monitoring' ? 'Saving…' : 'Save Monitoring'}</button></div>
@@ -201,37 +201,37 @@ export default function AdminSettingsPage() {
             <h2 className="text-lg font-medium">Security</h2>
             <div className="rounded border p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium">Session max age (minutes)</label>
-                <input type="number" min={5} step={5} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" placeholder="60" value={security.sessionMaxAgeMin} onChange={e => setSecurity({ ...security, sessionMaxAgeMin: Number(e.target.value) })} />
+                <label htmlFor="security-sessionMaxAgeMin" className="block text-sm font-medium">Session max age (minutes)</label>
+                <input id="security-sessionMaxAgeMin" type="number" min={5} step={5} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" placeholder="60" value={security.sessionMaxAgeMin} onChange={e => setSecurity({ ...security, sessionMaxAgeMin: Number(e.target.value) })} />
               </div>
               <div>
                 <label className="block text-sm font-medium">Require email verification</label>
-                <label className="mt-1 inline-flex items-center gap-2 text-sm"><input type="checkbox" className="accent-foreground" checked={security.requireEmailVerification} onChange={e => setSecurity({ ...security, requireEmailVerification: e.target.checked })} /> Enforce verification before login</label>
+                <label htmlFor="security-requireEmailVerification" className="mt-1 inline-flex items-center gap-2 text-sm"><input id="security-requireEmailVerification" type="checkbox" className="accent-foreground" checked={security.requireEmailVerification} onChange={e => setSecurity({ ...security, requireEmailVerification: e.target.checked })} /> Enforce verification before login</label>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium">Login IP window (seconds)</label>
-                  <input type="number" min={10} step={10} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginIpWindowSec} onChange={e => setSecurity({ ...security, loginIpWindowSec: Number(e.target.value) })} />
+                  <label htmlFor="security-loginIpWindowSec" className="block text-sm font-medium">Login IP window (seconds)</label>
+                  <input id="security-loginIpWindowSec" type="number" min={10} step={10} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginIpWindowSec} onChange={e => setSecurity({ ...security, loginIpWindowSec: Number(e.target.value) })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium">Login IP limit (attempts)</label>
-                  <input type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginIpLimit} onChange={e => setSecurity({ ...security, loginIpLimit: Number(e.target.value) })} />
+                  <label htmlFor="security-loginIpLimit" className="block text-sm font-medium">Login IP limit (attempts)</label>
+                  <input id="security-loginIpLimit" type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginIpLimit} onChange={e => setSecurity({ ...security, loginIpLimit: Number(e.target.value) })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium">Lock window (seconds)</label>
-                  <input type="number" min={30} step={30} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginLockWindowSec} onChange={e => setSecurity({ ...security, loginLockWindowSec: Number(e.target.value) })} />
+                  <label htmlFor="security-loginLockWindowSec" className="block text-sm font-medium">Lock window (seconds)</label>
+                  <input id="security-loginLockWindowSec" type="number" min={30} step={30} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginLockWindowSec} onChange={e => setSecurity({ ...security, loginLockWindowSec: Number(e.target.value) })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium">Lock threshold (failures)</label>
-                  <input type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginLockThreshold} onChange={e => setSecurity({ ...security, loginLockThreshold: Number(e.target.value) })} />
+                  <label htmlFor="security-loginLockThreshold" className="block text-sm font-medium">Lock threshold (failures)</label>
+                  <input id="security-loginLockThreshold" type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginLockThreshold} onChange={e => setSecurity({ ...security, loginLockThreshold: Number(e.target.value) })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium">Lock duration (minutes)</label>
-                  <input type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginLockDurationMin} onChange={e => setSecurity({ ...security, loginLockDurationMin: Number(e.target.value) })} />
+                  <label htmlFor="security-loginLockDurationMin" className="block text-sm font-medium">Lock duration (minutes)</label>
+                  <input id="security-loginLockDurationMin" type="number" min={1} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.loginLockDurationMin} onChange={e => setSecurity({ ...security, loginLockDurationMin: Number(e.target.value) })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium">Password history limit</label>
-                  <input type="number" min={0} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.passwordHistoryLimit} onChange={e => setSecurity({ ...security, passwordHistoryLimit: Number(e.target.value) })} />
+                  <label htmlFor="security-passwordHistoryLimit" className="block text-sm font-medium">Password history limit</label>
+                  <input id="security-passwordHistoryLimit" type="number" min={0} step={1} className="mt-1 w-40 rounded-md border px-3 py-2 bg-background" value={security.passwordHistoryLimit} onChange={e => setSecurity({ ...security, passwordHistoryLimit: Number(e.target.value) })} />
                   <p className="text-xs text-muted-foreground mt-1">How many previous passwords are disallowed on reset.</p>
                 </div>
               </div>
