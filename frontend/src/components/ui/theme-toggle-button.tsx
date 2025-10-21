@@ -16,8 +16,8 @@ function apply(mode: Mode) {
   const eff = computeEffective(mode)
   html.classList.toggle("dark", eff === "dark")
   html.setAttribute("data-theme", eff)
-  try { localStorage.setItem("theme", mode) } catch {}
-  try { window.dispatchEvent(new CustomEvent("themechange", { detail: { mode: eff } })) } catch {}
+  try { localStorage.setItem("theme", mode) } catch { /* ignore storage errors */ }
+  try { window.dispatchEvent(new CustomEvent("themechange", { detail: { mode: eff } })) } catch { /* ignore dispatch errors */ }
 }
 
 export function ThemeToggleButton() {
@@ -34,8 +34,8 @@ export function ThemeToggleButton() {
     if (mode === "system") {
       const mm = window.matchMedia("(prefers-color-scheme: dark)")
       const handler = () => apply("system")
-      try { mm.addEventListener("change", handler) } catch { mm.addListener(handler) }
-      return () => { try { mm.removeEventListener("change", handler) } catch { mm.removeListener(handler) } }
+    try { mm.addEventListener("change", handler) } catch { /* fallback for older browsers */ mm.addListener(handler) }
+  return () => { try { mm.removeEventListener("change", handler) } catch { /* fallback */ mm.removeListener(handler) } }
     }
   }, [mode])
 
