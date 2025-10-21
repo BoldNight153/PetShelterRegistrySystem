@@ -10,8 +10,8 @@ import { ServicesProvider } from '@/services/provider'
   return function (this: any, ..._args: any[]) {
     try {
       if (orig && typeof orig === 'function') return orig.apply(this, _args)
-    } catch (e) {
-      // ignore
+    } catch {
+      // ignore any errors during scrollIntoView in jsdom
     }
     return undefined
   }
