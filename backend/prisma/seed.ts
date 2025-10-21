@@ -1,7 +1,70 @@
 import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import argon2 from 'argon2';
+// Declare minimal process type to appease TS in environments without @types/node
+declare const process: { env: Record<string, string | undefined> };
+const prisma: any = new PrismaClient();
 
 async function main() {
+  // Seed base roles for RBAC (system_admin > admin > shelter_admin > veterinarian > staff_manager > staff > staff_assistant > volunteer > owner)
+  const roles = [
+    { name: 'system_admin', rank: 100, description: 'Full system administrator' },
+    { name: 'admin', rank: 80, description: 'Organization administrator' },
+    { name: 'shelter_admin', rank: 60, description: 'Shelter administrator' },
+    { name: 'veterinarian', rank: 55, description: 'Veterinary professional' },
+    { name: 'staff_manager', rank: 50, description: 'Management-level shelter staff' },
+    { name: 'staff', rank: 40, description: 'Shelter staff' },
+    { name: 'staff_assistant', rank: 30, description: 'Assistant or junior shelter staff' },
+    { name: 'volunteer', rank: 20, description: 'Volunteer' },
+    { name: 'owner', rank: 10, description: 'Pet owner portal user' },
+  ];
+  for (const r of roles) {
+    await prisma.role.upsert({
+      where: { name: r.name },
+      update: { rank: r.rank, description: r.description },
+      create: r,
+    });
+  }
+
+  // Seed permissions
+  const permissions = [
+    'pets.read','pets.write','shelters.read','shelters.write','locations.read','locations.write','owners.read','owners.write','medical.read','medical.write','events.read','events.write'
+  ];
+  for (const name of permissions) {
+    await prisma.permission.upsert({ where: { name }, update: {}, create: { name } });
+  }
+
+  // Attach permissions to roles
+  async function grant(roleName: string, permNames: string[]) {
+    const role = await prisma.role.findUnique({ where: { name: roleName } });
+    if (!role) return;
+    for (const p of permNames) {
+      const perm = await prisma.permission.findUnique({ where: { name: p } });
+      if (!perm) continue;
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } as any },
+        update: {},
+        create: { roleId: role.id, permissionId: perm.id },
+      });
+    }
+  }
+
+  // Owner (formerly 'user'): read-only baseline
+  await grant('owner', ['pets.read','shelters.read','locations.read','owners.read','medical.read','events.read']);
+  // Volunteer: conservative read-only for now (same as owner); refine later
+  await grant('volunteer', ['pets.read','shelters.read','locations.read','owners.read','medical.read','events.read']);
+  // Staff assistant: mostly read-only; allow recording events
+  await grant('staff_assistant', ['pets.read','shelters.read','locations.read','owners.read','medical.read','events.read','events.write']);
+  // Staff: operational writes (same as previous staff mapping)
+  await grant('staff', ['pets.read','pets.write','shelters.read','locations.read','locations.write','owners.read','owners.write','medical.read','medical.write','events.read','events.write']);
+  // Staff manager: same as staff for now; refine later with additional privileges
+  await grant('staff_manager', ['pets.read','pets.write','shelters.read','locations.read','locations.write','owners.read','owners.write','medical.read','medical.write','events.read','events.write']);
+  // Veterinarian: focus on medical writes + relevant reads
+  await grant('veterinarian', ['pets.read','owners.read','medical.read','medical.write','events.read']);
+  // Admin tiers: full access
+  await grant('shelter_admin', permissions);
+  await grant('admin', permissions);
+  await grant('system_admin', permissions);
+
   // create shelters
   const s1 = await prisma.shelter.upsert({ where: { id: 'central-shelter' }, update: {}, create: { id: 'central-shelter', name: 'Central Shelter', address: { city: 'Metropolis' }, phone: '555-1234' } });
   const s2 = await prisma.shelter.upsert({ where: { id: 'north-shelter' }, update: {}, create: { id: 'north-shelter', name: 'North Shelter', address: { city: 'North Town' }, phone: '555-5678' } });
@@ -22,12 +85,60 @@ async function main() {
   await prisma.petOwner.upsert({ where: { id: 'p2-o2' }, update: {}, create: { id: 'p2-o2', petId: p2.id, ownerId: o2.id, role: 'OWNER', isPrimary: true } });
 
   await prisma.medicalRecord.upsert({ where: { id: 'm1' }, update: {}, create: { id: 'm1', petId: p1.id, vetName: 'Dr. Vet', recordType: 'vaccine', notes: 'Rabies shot' } });
+
+  // Optional seed user for testing admin access
+  const adminEmail = (process as any)?.env?.SEED_ADMIN_EMAIL || 'admin@example.com';
+  const adminPass = (process as any)?.env?.SEED_ADMIN_PASSWORD || 'Admin123!@#';
+  const existing = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (!existing) {
+    // Use a light hash cost for seeding only
+  const passwordHash = await (argon2 as any).hash(adminPass, { type: (argon2 as any).argon2id });
+    const user = await prisma.user.create({ data: { email: adminEmail, passwordHash, name: 'Seed Admin', emailVerified: new Date() } });
+    const sysAdmin = await prisma.role.findUnique({ where: { name: 'system_admin' } });
+    if (sysAdmin) {
+      await prisma.userRole.create({ data: { userId: user.id, roleId: sysAdmin.id } });
+    }
+    console.log(`Seeded admin user: ${adminEmail} / ${adminPass}`);
+  }
+
+  // Seed default application settings if not present
+  const defaultSettings: Record<string, Record<string, any>> = {
+    general: {
+      siteName: 'Pet Shelter Registry System',
+      environment: (process as any)?.env?.NODE_ENV || 'development',
+    },
+    monitoring: {
+      chartsRefreshSec: 15,
+      retentionDays: 7,
+    },
+    auth: {
+      google: true,
+      github: true,
+    },
+    docs: {
+      showPublicDocsLink: true,
+    },
+    security: {
+      requireEmailVerification: true,
+      // 30 days in minutes for refresh/session max-age fallback
+      sessionMaxAgeMin: 30 * 24 * 60,
+    },
+  };
+
+  for (const [category, entries] of Object.entries(defaultSettings)) {
+    for (const [key, value] of Object.entries(entries)) {
+      const existing = await prisma.setting.findUnique({ where: { category_key: { category, key } } });
+      if (!existing) {
+        await prisma.setting.create({ data: { category, key, value } });
+      }
+    }
+  }
 }
 
 main()
   .catch(e => {
     console.error(e);
-    process.exit(1);
+    (globalThis as any).process?.exit?.(1);
   })
   .finally(async () => {
     await prisma.$disconnect();

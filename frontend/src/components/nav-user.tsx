@@ -1,20 +1,7 @@
-// React import unnecessary with the new JSX transform
-import { useEffect, useMemo, useRef, useState } from "react"
-import {
-  ChevronsUpDown,
-  LogOut,
-  Sparkles,
-  ServerCrash,
-  Server,
-  RefreshCcw,
-  Settings2,
-} from "lucide-react"
+import * as React from "react"
+import { BadgeCheck, Bell, ChevronsUpDown, CreditCard, LogOut } from "lucide-react"
 
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,78 +11,63 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "@/components/ui/sidebar"
-import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar"
+import ThemeToggleGroup from "@/components/ui/theme-toggle-group"
+import { useAuth } from "@/lib/auth-context"
+// no direct Links here; we open an Auth drawer
+import AuthDrawer from "@/components/auth/AuthDrawer"
 
-export default function NavUser({
-  user,
-}: {
-  user: {
-    name: string
-    email: string
-    avatar: string
-  }
-}) {
-  const { isMobile } = useSidebar()
+type NavUserProps = {
+  placement?: "header" | "sidebar"
+}
 
-  // API status indicator state
-  type ApiState = "checking" | "online" | "offline"
-  const [apiState, setApiState] = useState<ApiState>("checking")
-  const [latencyMs, setLatencyMs] = useState<number | null>(null)
-  const controllerRef = useRef<AbortController | null>(null)
+export default function NavUser({ placement = "header" }: NavUserProps) {
+  const { isMobile, state } = useSidebar()
+  const { logout, authenticated, user } = useAuth()
+  const [drawerOpen, setDrawerOpen] = React.useState(false)
+  const [drawerView, setDrawerView] = React.useState<"login" | "register">("login")
 
-  const checkHealth = async () => {
-    try {
-      controllerRef.current?.abort()
-      const ctl = new AbortController()
-      controllerRef.current = ctl
-      setApiState("checking")
-      const started = performance.now()
-      // Hit the dev proxy which forwards to backend http://localhost:4000/health
-      const res = await fetch("/health", { signal: ctl.signal, cache: "no-store" })
-      const elapsed = Math.max(0, performance.now() - started)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setLatencyMs(Math.round(elapsed))
-      setApiState("online")
-    } catch (_err) {
-      setApiState("offline")
-      setLatencyMs(null)
+  // Unauthenticated: show inline Login | Register links (works in header and sidebar footer)
+  if (!authenticated || !user) {
+    // In the sidebar, when collapsed to icon mode, hide the Login | Register UI entirely
+    if (placement === "sidebar" && state === "collapsed") {
+      return null
     }
+    return (
+      <>
+        <div className="flex items-center gap-2 text-sm">
+          <button
+            className="underline"
+            onClick={() => {
+              setDrawerView("login")
+              setDrawerOpen(true)
+            }}
+          >
+            Log in
+          </button>
+          <span aria-hidden>|</span>
+          <button
+            className="underline"
+            onClick={() => {
+              setDrawerView("register")
+              setDrawerOpen(true)
+            }}
+          >
+            Register
+          </button>
+        </div>
+        <AuthDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          initialView={drawerView}
+          onSuccess={() => setDrawerOpen(false)}
+        />
+      </>
+    )
   }
 
-  useEffect(() => {
-    let timer: any
-    // Initial check soon after mount
-    checkHealth()
-    // Poll every 30s to keep it up to date during dev sessions
-    timer = setInterval(checkHealth, 30000)
-    return () => {
-      clearInterval(timer)
-      controllerRef.current?.abort()
-    }
-  }, [])
-
-  const statusDisplay = useMemo(() => {
-    const dotClass =
-      apiState === "online"
-        ? "bg-emerald-500"
-        : apiState === "offline"
-        ? "bg-rose-500"
-        : "bg-amber-500"
-    const label =
-      apiState === "online"
-        ? `Online${latencyMs != null ? ` • ${latencyMs}ms` : ""}`
-        : apiState === "offline"
-        ? "Offline"
-        : "Checking…"
-    const Icon = apiState === "online" ? Server : apiState === "offline" ? ServerCrash : RefreshCcw
-    return { dotClass, label, Icon }
-  }, [apiState, latencyMs])
+  // Condensed mode: on mobile viewports, and in collapsed sidebar icon mode show only the avatar
+  const condensed = isMobile || (placement === "sidebar" && state === "collapsed")
 
   return (
     <SidebarMenu>
@@ -103,22 +75,30 @@ export default function NavUser({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
-              aria-label="User menu"
               size="lg"
-              className="px-2 sm:px-3 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              className={
+                "data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground " +
+                (condensed && placement === "header"
+                  ? "!justify-center !gap-0 !px-2 !w-8 !h-8 rounded-lg"
+                  : "")
+              }
             >
               <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+                <AvatarImage src="/avatars/shadcn.jpg" alt={user.name || user.email || "User"} />
+                <AvatarFallback className="rounded-lg">U</AvatarFallback>
               </Avatar>
-              <div className="hidden sm:grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user.name}</span>
-                <span className="truncate text-xs">{user.email}</span>
-              </div>
-              <ChevronsUpDown className="ml-auto size-4 hidden sm:block" />
+              {!condensed && (
+                <>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">{user.name || user.email || "User"}</span>
+                    <span className="truncate text-xs">{user.email || ""}</span>
+                  </div>
+                  <ChevronsUpDown className="ml-auto size-4" />
+                </>
+              )}
             </SidebarMenuButton>
           </DropdownMenuTrigger>
-            <DropdownMenuContent
+          <DropdownMenuContent
             className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 rounded-lg"
             side={isMobile ? "bottom" : "right"}
             align="end"
@@ -127,49 +107,38 @@ export default function NavUser({
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+                  <AvatarImage src="/avatars/shadcn.jpg" alt={user.name || user.email || "User"} />
+                  <AvatarFallback className="rounded-lg">U</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-xs">{user.email}</span>
+                  <span className="truncate font-medium">{user.name || user.email || 'User'}</span>
+                  <span className="truncate text-xs">{user.email || ''}</span>
                 </div>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
-                <Sparkles />
-                Upgrade to Pro
+                <BadgeCheck />
+                Account
               </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            {/* Settings (replaces Account/Billing/Notifications) */}
-            <DropdownMenuGroup>
               <DropdownMenuItem>
-                <Settings2 />
-                Settings
+                <CreditCard />
+                Billing
               </DropdownMenuItem>
-            </DropdownMenuGroup>
-            {/* API status moved to sit directly above Theme */}
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={(e) => { e.preventDefault(); checkHealth() }} className="gap-2">
-                <span className={`inline-block size-2 rounded-full ${statusDisplay.dotClass}`} />
-                {(() => { const Icon = statusDisplay.Icon; return <Icon className="size-4" /> })()}
-                <span className="flex-1">API status</span>
-                <span className="text-xs opacity-70">{statusDisplay.label}</span>
+              <DropdownMenuItem>
+                <Bell />
+                Notifications
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>Theme</DropdownMenuLabel>
-            <div className="px-2 py-1.5">
-              <ThemeToggle />
-            </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => logout()}>
               <LogOut />
               Log out
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="flex items-center gap-2">
+              <ThemeToggleGroup />
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

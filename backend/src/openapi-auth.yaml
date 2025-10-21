@@ -1,0 +1,613 @@
+openapi: 3.1.0
+info:
+  title: Auth REST API
+  version: 0.1.0
+  x-ci-updated: "2025-10-21T00:00:00Z"
+  description: >-
+    Authentication and session endpoints for the Pet Shelter Registry System.
+    Uses cookie-based JWT access tokens and rotating refresh tokens with double-submit CSRF protection.
+    
+    Tips:
+    - Use the servers dropdown to switch between same-origin ("/") and an absolute host.
+    - Code samples use relative URLs so requests target the selected server's base.
+  license:
+    name: MIT
+    url: "https://opensource.org/licenses/MIT"
+servers:
+  - url: "/"
+    description: Same-origin (recommended for deployed environments)
+  - url: "{scheme}://{host}"
+    description: Absolute template for non-same-origin testing
+    variables:
+      scheme:
+        enum: [http, https]
+        default: http
+      host:
+        default: localhost:4000
+security: []
+tags:
+  - name: Auth
+    description: Email/password auth, tokens, and diagnostics
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: accessToken
+      description: JWT access token issued by /auth/login or after verification/reset
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: x-csrf-token
+      description: Required for state-changing requests; value must match the csrfToken cookie
+  responses:
+    AuthSuccess:
+      description: >-
+        Successful authentication. For browser flows the server typically sets cookies and may
+        redirect; API clients may receive this JSON body directly. The payload shape is shared by
+        email/password login and OAuth callback flows.
+      headers:
+        Set-Cookie:
+          description: >-
+            Sets two HttpOnly cookies on successful authentication:
+            - accessToken: short-lived JWT used for API authorization (HttpOnly, SameSite=Lax, Path=/, Secure in production)
+            - refreshToken: opaque token used to rotate sessions (HttpOnly, SameSite=Lax, Path=/, Secure in production, Max-Age set)
+            Multiple Set-Cookie headers will be present in the response.
+          schema:
+            type: string
+          examples:
+            accessCookie:
+              summary: accessToken cookie
+              value: accessToken=eyJhbGciOi...; Path=/; HttpOnly; SameSite=Lax; Secure
+            refreshCookie:
+              summary: refreshToken cookie
+              value: refreshToken=4f6b0d9e...; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax; Secure
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean, description: Indicates the authentication succeeded }
+              provider:
+                type: string
+                enum: [password, google, github]
+                description: Authentication provider
+              user:
+                type: object
+                description: Authenticated user summary
+                properties:
+                  id: { type: string }
+                  email: { type: string }
+                  name: { type: ["string", "null"] }
+                  emailVerified: { type: ["string", "null"], format: date-time }
+                required: [id, email]
+              roles:
+                type: array
+                items: { type: string }
+                description: Assigned roles for the authenticated user
+              permissions:
+                type: array
+                items: { type: string }
+                description: Effective permissions for the authenticated user
+              redirect:
+                type: ["string", "null"]
+                format: uri
+                description: Optional URL to navigate to after successful login
+              created:
+                type: boolean
+                description: True if a new user account was created during this flow
+              linked:
+                type: boolean
+                description: True if an existing user account was linked to this provider
+            required: [ok, provider, user]
+          example:
+            ok: true
+            provider: password
+            user:
+              id: "7be82153-7c1a-4823-abff-49f2003cfb0b"
+              email: "admin@example.com"
+              name: "Admin"
+              emailVerified: "2025-10-15T10:37:44.000Z"
+            roles: ["user"]
+            permissions: ["pets:read", "owners:read"]
+            redirect: null
+            created: false
+            linked: false
+    TooManyRequests:
+      description: Too Many Requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Authenticated but action is not allowed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          oneOf:
+            - type: string
+            - type: object
+      required: [error]
+paths:
+  /auth/csrf:
+    get:
+      tags: [Auth]
+      summary: Issue CSRF token
+      description: Returns a CSRF token and sets a non-HttpOnly csrfToken cookie for double-submit protection.
+      operationId: getCsrf
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  csrfToken: { type: string }
+                required: [csrfToken]
+              example:
+                csrfToken: "abc.def"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            # Uses same-origin; adjust if calling from outside the app
+            curl -s /auth/csrf | jq
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      description: |
+        Register a new user account. This endpoint accepts the user's name, email,
+        and a password and creates a new identity in the system. It is intended for
+        interactive client use (web or mobile) and performs server-side validation
+        of inputs to ensure password strength and email format.
+
+        Behavior and constraints:
+        - The server will return 201 Created on success along with a minimal
+          representation of the new user. Additional post-registration steps such
+          as sending verification emails or creating onboarding tasks may occur.
+        - The operation is protected by CSRF; callers must include the `x-csrf-token`
+          header obtained from `/auth/csrf` when making browser-originated requests.
+        - The endpoint avoids leaking account existence via its responses; when in
+          doubt, callers should treat 400 responses as generic validation failures.
+      operationId: register
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string, format: password }
+              required: [name, email, password]
+            example:
+              name: "Admin"
+              email: "admin@example.com"
+              password: "Admin123!@#"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  email: { type: string }
+                  name: { type: string }
+                  emailVerified: { type: ["string", "null"], format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -i -X POST /auth/register \
+              -H 'Content-Type: application/json' \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF" \
+              -d '{"name":"Admin","email":"admin@example.com","password":"Admin123!@#"}'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email/password
+      description: |
+        Authenticate a user using email and password. On successful authentication,
+        the server establishes a session and issues authentication cookies (access
+        and refresh tokens) while returning a JSON `AuthSuccess` payload to the
+        client.
+
+        Important notes:
+        - The endpoint is CSRF-protected; include the `x-csrf-token` header for
+          browser-based flows. API clients using non-browser clients should follow
+          the same CSRF contract or use the OAuth endpoints instead.
+        - Failed authentication attempts return 401 Unauthorized. Login attempts are
+          rate-limited and may contribute to account lockout policies if repeated
+          failures are detected.
+      operationId: login
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string, format: password }
+              required: [email, password]
+            example:
+              email: "admin@example.com"
+              password: "Admin123!@#"
+      responses:
+        "200": { $ref: "#/components/responses/AuthSuccess" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -i -X POST /auth/login \
+              -H 'Content-Type: application/json' \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF" \
+              -d '{"email":"admin@example.com","password":"Admin123!@#"}'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout and revoke refresh token
+      description: |
+        Terminate the current authenticated session and revoke the refresh token
+        associated with the session. This endpoint clears authentication cookies and
+        ensures the session cannot be renewed without re-authentication.
+
+        Implementation details:
+        - The endpoint is idempotent: calling it for an already-signed-out session
+          will generally return success (204 No Content).
+        - A valid CSRF token is required when called from a browser context.
+      operationId: logout
+      security:
+        - csrfHeader: []
+        - cookieAuth: []
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -i -X POST /auth/logout \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF; refreshToken=<from login>" 
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token and issue new access token
+      description: |
+        Exchange a valid refresh token for a new short-lived access token and
+        optionally rotate the refresh token to a new value. This improves long-
+        lived session security by limiting the lifetime of access tokens while
+        providing seamless re-authentication.
+
+        Security and failure modes:
+        - If the refresh token is missing, expired, or revoked, the server
+          responds with 401 Unauthorized and the client must prompt the user to
+          re-authenticate.
+        - Clients must present a valid CSRF header for this state-changing
+          operation when executed from a browser.
+      operationId: refresh
+      security:
+        - csrfHeader: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            CSRF=$(curl -s /auth/csrf | jq -r .csrfToken)
+            curl -i -X POST /auth/refresh \
+              -H "x-csrf-token: $CSRF" \
+              --cookie "csrfToken=$CSRF; refreshToken=<from login>" 
+
+  /auth/request-email-verification:
+    post:
+      tags: [Auth]
+      summary: Request email verification
+      description: |
+        Request that the system send a verification email to the supplied address
+        with a short-lived token or link to confirm ownership. To reduce the
+        ability to enumerate accounts, the endpoint intentionally returns a generic
+        success response even when the email is not associated with an account.
+      operationId: requestEmailVerification
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+              required: [email]
+            example:
+              email: "user@example.com"
+      responses:
+        "200":
+          description: Always OK (to avoid enumeration)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                required: [ok]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verify email using token
+      description: |
+        Complete the email verification flow by validating a previously issued
+        verification token. Successful verification marks the user's email as
+        verified and may enable account features gated behind verified emails.
+
+        Notes:
+        - Tokens are time-limited and single-use; attempting to reuse an expired
+          or consumed token will return a 400 Bad Request.
+      operationId: verifyEmail
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+              required: [token]
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/request-password-reset:
+    post:
+      tags: [Auth]
+      summary: Request password reset email
+      description: |
+        Initiate a password reset by asking the system to send a secure reset
+        token to the user's verified email address. The endpoint avoids leaking
+        whether an account exists by returning a generic success response.
+
+        Security:
+        - Rate limiting is applied to mitigate abuse.
+      operationId: requestPasswordReset
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+              required: [email]
+      responses:
+        "200":
+          description: Always OK (to avoid enumeration)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                required: [ok]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password using token
+      description: |
+        Reset a user's password by presenting a valid reset token along with the
+        new password. The server enforces password policies and invalidates the
+        reset token upon successful reset.
+
+        Important:
+        - This is a state-changing operation protected by CSRF when invoked from
+          browser contexts.
+      operationId: resetPassword
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                password: { type: string, format: password }
+              required: [token, password]
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current authenticated user
+      description: |
+        Return the authenticated user's profile and permission context. This
+        endpoint is intended for client applications that need to adapt UI
+        behavior based on roles, permissions, or user metadata.
+
+        Behavior:
+        - Requires a valid session cookie; responds with 401 if unauthenticated.
+        - The returned payload intentionally omits sensitive secrets and tokens.
+      operationId: getMe
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  email: { type: string }
+                  name: { type: ["string", "null"] }
+                  emailVerified: { type: ["string", "null"], format: date-time }
+                  roles:
+                    type: array
+                    items: { type: string }
+                  permissions:
+                    type: array
+                    items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/mode:
+    get:
+      tags: [Auth]
+      summary: Diagnostics for current authentication mode
+      description: |
+        Return a diagnostics object describing runtime authentication configuration
+        (enabled OAuth providers, whether email verification is required, session
+        lifetimes, etc.). This endpoint helps clients adapt UI flows (show/hide
+        registration or OAuth buttons) and is safe for unauthenticated access.
+      operationId: authMode
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: object
+                    additionalProperties: { type: boolean }
+                  emailVerificationRequired: { type: boolean }
+                  sessionMaxAgeMin: { type: number }
+                required: [providers]
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/oauth/{provider}/start:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [google, github]
+        description: OAuth provider
+    get:
+      tags: [Auth]
+      summary: Start OAuth flow for provider
+      description: |
+        Start an OAuth 2.0 authorization flow with the chosen provider. This
+        endpoint prepares any required server-side state (PKCE, state token) and
+        redirects the user agent to the external provider's authorization URL.
+
+        Implementation notes:
+        - The endpoint may return 302 to redirect the browser or 200 with helper
+          data for non-browser clients.
+        - The server sets a transient correlation cookie to validate the
+          subsequent callback from the provider.
+      operationId: oauthStart
+      responses:
+        "200":
+          description: OK (may redirect)
+        "302":
+          description: Redirect to OAuth provider authorization URL
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500": { description: Provider not configured }
+
+  /auth/oauth/{provider}/callback:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [google, github]
+        description: OAuth provider
+      - name: code
+        in: query
+        required: true
+        schema: { type: string }
+      - name: state
+        in: query
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Auth]
+      summary: OAuth callback handler (code exchange and login)
+      description: |
+        Complete the OAuth flow after the provider redirects back with an
+        authorization code. The server validates returned parameters, exchanges
+        the code for provider tokens, optionally provisions or links a local
+        user account, and establishes a session.
+
+        Security:
+        - The server validates the `state` parameter and any PKCE exchange to
+          mitigate CSRF and code injection attacks.
+        - Provisioning behavior (auto-creating accounts) depends on server config
+          and may require additional verification in some deployments.
+      operationId: oauthCallback
+      responses:
+        "200": { $ref: "#/components/responses/AuthSuccess" }
+        "302":
+          description: >-
+            Redirects to success or failure URL. Note: for some clients the same JSON body shape
+            as "200" (see components.responses.AuthSuccess) may be returned instead of a redirect.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { description: Callback error }

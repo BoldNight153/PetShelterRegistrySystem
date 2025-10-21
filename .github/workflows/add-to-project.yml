@@ -1,21 +1,29 @@
+ # yaml-language-server: $schema=https://json.schemastore.org/github-workflow
 name: add-to-project
 
 on:
   issues:
-    types: [opened, reopened]
+    types:
+      - opened
+      - reopened
+      - edited
+      - labeled
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types:
+      - opened
+      - reopened
+      - ready_for_review
 
 jobs:
   add:
     runs-on: ubuntu-latest
     env:
-      PROJECT_URL: ${{ secrets.PROJECT_URL || '' }}
-      PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN || '' }}
+      PROJECT_URL: ${{ secrets.PROJECT_URL }}
+      PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
     steps:
       - name: Add to GitHub Project
-        if: ${{ env.PROJECT_URL != '' && env.PROJECTS_TOKEN != '' }}
+        if: "${{ env.PROJECT_URL != '' && env.PROJECTS_TOKEN != '' }}"
         uses: actions/add-to-project@v0.6.1
         with:
-          project-url: ${{ env.PROJECT_URL }}
-          github-token: ${{ env.PROJECTS_TOKEN }}
+          project-url: "${{ env.PROJECT_URL }}"
+          github-token: "${{ env.PROJECTS_TOKEN }}"

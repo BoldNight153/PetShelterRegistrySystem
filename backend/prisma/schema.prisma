@@ -31,56 +31,56 @@ enum OwnerRole {
 }
 
 model Shelter {
-  id         String    @id @default(uuid())
-  name       String
-  address    Json?
-  phone      String?
-  email      String?
-  capacity   Int?
-  notes      String?
-  pets       Pet[]
-  locations  Location[]
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id        String     @id @default(uuid())
+  name      String
+  address   Json?
+  phone     String?
+  email     String?
+  capacity  Int?
+  notes     String?
+  pets      Pet[]
+  locations Location[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 }
 
 model Location {
-  id         String   @id @default(uuid())
-  shelter    Shelter  @relation(fields: [shelterId], references: [id], onDelete: Cascade)
-  shelterId  String
-  code       String   // e.g. "A-12" or "Room 3 / Cage 4"
+  id          String   @id @default(uuid())
+  shelter     Shelter  @relation(fields: [shelterId], references: [id], onDelete: Cascade)
+  shelterId   String
+  code        String // e.g. "A-12" or "Room 3 / Cage 4"
   description String?
-  capacity   Int?
-  notes      String?
-  pets       Pet[]
-  createdAt  DateTime @default(now())
+  capacity    Int?
+  notes       String?
+  pets        Pet[]
+  createdAt   DateTime @default(now())
 }
 
 model Owner {
-  id         String     @id @default(uuid())
-  firstName  String
-  lastName   String
-  email      String?    @unique
-  phone      String?
-  type       String?    // individual | organization
-  address    Json?
-  notes      String?
-  pets       PetOwner[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id        String     @id @default(uuid())
+  firstName String
+  lastName  String
+  email     String?    @unique
+  phone     String?
+  type      String? // individual | organization
+  address   Json?
+  notes     String?
+  pets      PetOwner[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   @@index([lastName, firstName])
 }
 
 model PetOwner {
-  id        String     @id @default(uuid())
-  pet       Pet        @relation(fields: [petId], references: [id], onDelete: Cascade)
+  id        String    @id @default(uuid())
+  pet       Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
   petId     String
-  owner     Owner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner     Owner     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId   String
-  role      OwnerRole  @default(OWNER)
-  isPrimary Boolean    @default(false)
-  startDate DateTime   @default(now())
+  role      OwnerRole @default(OWNER)
+  isPrimary Boolean   @default(false)
+  startDate DateTime  @default(now())
   endDate   DateTime?
   notes     String?
 
@@ -88,55 +88,251 @@ model PetOwner {
 }
 
 model MedicalRecord {
-  id          String    @id @default(uuid())
-  pet         Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
-  petId       String
-  visitDate   DateTime  @default(now())
-  vetName     String?
-  recordType  String?
-  notes       String?
-  files       Json?
-  createdAt   DateTime  @default(now())
+  id         String   @id @default(uuid())
+  pet        Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  petId      String
+  visitDate  DateTime @default(now())
+  vetName    String?
+  recordType String?
+  notes      String?
+  files      Json?
+  createdAt  DateTime @default(now())
 }
 
 model Event {
-  id            String    @id @default(uuid())
-  pet           Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
+  id            String   @id @default(uuid())
+  pet           Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
   petId         String
   type          String
-  occurredAt    DateTime  @default(now())
+  occurredAt    DateTime @default(now())
   fromShelterId String?
   toShelterId   String?
   notes         String?
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime @default(now())
 }
 
 model Pet {
-  id           String       @id @default(uuid())
-  name         String
-  species      String
-  breed        String?
-  sex          Sex          @default(UNKNOWN)
-  dob          DateTime?
-  microchip    String?      @unique
-  color        String?
-  weightKg     Float?
-  sterilized   Boolean      @default(false)
-  status       PetStatus    @default(AVAILABLE)
-  isAlive      Boolean      @default(true)
-  deceasedAt   DateTime?
-  notes        String?
-  intakeAt     DateTime?
-  shelterId    String?
-  shelter      Shelter?     @relation(fields: [shelterId], references: [id], onDelete: Restrict)
-  locationId   String?      // pin/cage location
-  location     Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  owners       PetOwner[]
-  medical      MedicalRecord[]
-  events       Event[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id         String          @id @default(uuid())
+  name       String
+  species    String
+  breed      String?
+  sex        Sex             @default(UNKNOWN)
+  dob        DateTime?
+  microchip  String?         @unique
+  color      String?
+  weightKg   Float?
+  sterilized Boolean         @default(false)
+  status     PetStatus       @default(AVAILABLE)
+  isAlive    Boolean         @default(true)
+  deceasedAt DateTime?
+  notes      String?
+  intakeAt   DateTime?
+  shelterId  String?
+  shelter    Shelter?        @relation(fields: [shelterId], references: [id], onDelete: Restrict)
+  locationId String? // pin/cage location
+  location   Location?       @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  owners     PetOwner[]
+  medical    MedicalRecord[]
+  events     Event[]
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   @@index([name])
   @@index([species])
+}
+
+// --------------------
+// Auth & RBAC models
+// --------------------
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  emailVerified DateTime?
+  passwordHash  String? // nullable for SSO-only users
+  name          String?
+  image         String?
+  accounts      Account[]
+  refreshTokens RefreshToken[]
+  roles         UserRole[]
+  auditLogs     AuditLog[]
+  locks         UserLock[]
+  passwordHistory PasswordHistory[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Account {
+  id                String   @id @default(uuid())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String
+  provider          String
+  providerAccountId String
+  accessToken       String?
+  refreshToken      String?
+  expiresAt         Int?
+  tokenType         String?
+  scope             String?
+  idToken           String?
+  profile           Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model RefreshToken {
+  id              String    @id @default(uuid())
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  token           String    @unique
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  replacedByToken String?
+  userAgent       String?
+  ipAddress       String?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model VerificationToken {
+  id         String    @id @default(uuid())
+  identifier String // e.g., email
+  token      String    @unique
+  type       String // email_verify | password_reset
+  expiresAt  DateTime
+  consumedAt DateTime?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([identifier, type])
+  @@index([expiresAt])
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  rank        Int              @default(0)
+  description String?
+  users       UserRole[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model UserRole {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId       String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  permissionId String
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+// Time-series metric points for monitoring charts
+// Persisted account lock state (manual or automatic)
+model AuditLog {
+  id        String   @id @default(uuid())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    String?
+  action    String
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, action, createdAt])
+}
+
+// Persisted account lock state (manual or automatic)
+model UserLock {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  reason     String
+  manual     Boolean  @default(false)
+  lockedAt   DateTime @default(now())
+  expiresAt  DateTime?
+  unlockedAt DateTime?
+  lockedBy   String?
+  unlockedBy String?
+  notes      String?
+
+  @@index([userId])
+}
+
+// Historical password hashes for reuse prevention
+model PasswordHistory {
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// Time-series metric points for monitoring charts
+model MetricPoint {
+  id        String   @id @default(cuid())
+  metric    String
+  value     Float
+  labels    Json?
+  createdAt DateTime @default(now())
+
+  @@index([metric, createdAt])
+}
+
+// Key-Value application settings grouped by category
+model Setting {
+  id        String   @id @default(cuid())
+  category  String
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?  // user id who last updated
+
+  @@unique([category, key])
+  @@index([category])
+}
+
+// Generic rate limit counters (windowed)
+model RateLimit {
+  id           String   @id @default(cuid())
+  scope        String   // e.g., auth_login_ip, auth_login_user_fail
+  key          String   // e.g., IP or email
+  windowStart  DateTime // start of the window bucket
+  count        Int      @default(0)
+  lastAttemptAt DateTime @default(now())
+
+  @@unique([scope, key, windowStart])
+  @@index([scope, key, windowStart])
 }

@@ -3,7 +3,6 @@
 import * as React from "react"
 import {
   AudioWaveform,
-  BookOpen,
   Bot,
   Command,
   Frame,
@@ -17,6 +16,7 @@ import {
 import NavMain from "@/components/nav-main"
 import { NavProjects } from "@/components/nav-projects"
 import NavUser from "@/components/nav-user"
+import NavAdmin from "@/components/nav-admin"
 import TeamSwitcher from "@/components/team-switcher"
 import {
   Sidebar,
@@ -91,33 +91,6 @@ const data = {
       ],
     },
     {
-      title: "Documentation",
-      url: "#",
-      icon: BookOpen,
-      items: [
-        {
-          title: "REST API Docs",
-          url: "/docs",
-        },
-        {
-          title: "Introduction",
-          url: "#",
-        },
-        {
-          title: "Get Started",
-          url: "#",
-        },
-        {
-          title: "Tutorials",
-          url: "#",
-        },
-        {
-          title: "Changelog",
-          url: "#",
-        },
-      ],
-    },
-    {
       title: "Settings",
       url: "#",
       icon: Settings2,
@@ -168,10 +141,11 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
+        <NavAdmin />
         <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser placement="sidebar" />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

@@ -14,12 +14,32 @@ info:
     name: MIT
     url: "https://opensource.org/licenses/MIT"
 servers:
-  - url: "http://localhost:{port}"
-    description: Local development server
+  - url: "/"
+    description: Same-origin (recommended)
+  - url: "{scheme}://{host}"
+    description: Absolute template for non-same-origin testing
     variables:
-      port:
-        default: "4000"
+      scheme:
+        enum: [http, https]
+        default: http
+      host:
+        default: localhost:4000
 security: []
+tags:
+  - name: Pets
+    description: Manage pets within shelters
+  - name: Shelters
+    description: Manage shelters and their capacities
+  - name: Locations
+    description: Manage individual locations/kennels within shelters
+  - name: Owners
+    description: Manage owners and contacts
+  - name: Medical
+    description: Record medical events for pets
+  - name: Events
+    description: Track general system events
+  - name: PetOwners
+    description: Manage relationships between pets and owners
 components:
   schemas:
     Sex:
@@ -343,8 +363,21 @@ components:
 paths:
   /pets:
     get:
+      tags: [Pets]
+      operationId: listPets
       summary: List pets
       description: Returns a list of pets (paginated top 100).
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s /pets | jq
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('/pets');
+            const pets = await res.json();
+            console.log(pets);
       responses:
         "200":
           description: OK
@@ -355,7 +388,11 @@ paths:
                 items:
                   $ref: "#/components/schemas/Pet"
               example: []
+        "400":
+          $ref: "#/components/responses/BadRequest"
     post:
+      tags: [Pets]
+      operationId: createPet
       summary: Create a pet
       requestBody:
         required: true
@@ -397,6 +434,23 @@ paths:
                 $ref: "#/components/schemas/Pet"
         "400":
           $ref: "#/components/responses/BadRequest"
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -X POST /pets \
+              -H 'Content-Type: application/json' \
+              -d '{"name":"Milo","species":"Dog"}'
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('/pets', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: 'Milo', species: 'Dog' })
+            });
+            const pet = await res.json();
+            console.log(pet);
 
   /pets/{id}:
     parameters:
@@ -407,6 +461,8 @@ paths:
           type: string
         description: Pet id
     get:
+      tags: [Pets]
+      operationId: getPet
       summary: Get pet by id
       responses:
         "200":
@@ -418,6 +474,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     put:
+      tags: [Pets]
+      operationId: updatePet
       summary: Update pet
       requestBody:
         required: true
@@ -437,6 +495,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
+      tags: [Pets]
+      operationId: deletePet
       summary: Delete pet
       responses:
         "204":
@@ -446,7 +506,14 @@ paths:
 
   /shelters:
     get:
+      tags: [Shelters]
+      operationId: listShelters
       summary: List shelters
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s /shelters | jq
       responses:
         "200":
           description: OK
@@ -456,7 +523,11 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Shelter"
+        "400":
+          $ref: "#/components/responses/BadRequest"
     post:
+      tags: [Shelters]
+      operationId: createShelter
       summary: Create shelter
       requestBody:
         required: true
@@ -469,6 +540,21 @@ paths:
           description: Created
         "400":
           $ref: "#/components/responses/BadRequest"
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -X POST /shelters \
+              -H 'Content-Type: application/json' \
+              -d '{"name":"Central Shelter"}'
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('/shelters', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: 'Central Shelter' })
+            });
+            console.log(await res.json());
 
   /shelters/{id}:
     parameters:
@@ -479,6 +565,8 @@ paths:
           type: string
         description: Shelter id
     get:
+      tags: [Shelters]
+      operationId: getShelter
       summary: Get shelter
       responses:
         "200":
@@ -490,6 +578,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     put:
+      tags: [Shelters]
+      operationId: updateShelter
       summary: Update shelter
       requestBody:
         required: true
@@ -503,6 +593,8 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
     delete:
+      tags: [Shelters]
+      operationId: deleteShelter
       summary: Delete shelter
       responses:
         "204":
@@ -512,7 +604,14 @@ paths:
 
   /locations:
     get:
+      tags: [Locations]
+      operationId: listLocations
       summary: List locations
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s /locations | jq
       responses:
         "200":
           description: OK
@@ -522,7 +621,11 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Location"
+        "400":
+          $ref: "#/components/responses/BadRequest"
     post:
+      tags: [Locations]
+      operationId: createLocation
       summary: Create location
       requestBody:
         required: true
@@ -535,6 +638,21 @@ paths:
           description: Created
         "400":
           $ref: "#/components/responses/BadRequest"
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -X POST /locations \
+              -H 'Content-Type: application/json' \
+              -d '{"shelterId":"central-shelter","code":"A-1"}'
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('/locations', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ shelterId: 'central-shelter', code: 'A-1' })
+            });
+            console.log(await res.json());
 
   /locations/{id}:
     parameters:
@@ -545,6 +663,8 @@ paths:
           type: string
         description: Location id
     get:
+      tags: [Locations]
+      operationId: getLocation
       summary: Get location
       responses:
         "200":
@@ -556,6 +676,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     put:
+      tags: [Locations]
+      operationId: updateLocation
       summary: Update location
       requestBody:
         required: true
@@ -569,6 +691,8 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
     delete:
+      tags: [Locations]
+      operationId: deleteLocation
       summary: Delete location
       responses:
         "204":
@@ -578,7 +702,14 @@ paths:
 
   /owners:
     get:
+      tags: [Owners]
+      operationId: listOwners
       summary: List owners
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s /owners | jq
       responses:
         "200":
           description: OK
@@ -588,7 +719,11 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Owner"
+        "400":
+          $ref: "#/components/responses/BadRequest"
     post:
+      tags: [Owners]
+      operationId: createOwner
       summary: Create owner
       requestBody:
         required: true
@@ -601,6 +736,21 @@ paths:
           description: Created
         "400":
           $ref: "#/components/responses/BadRequest"
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -X POST /owners \
+              -H 'Content-Type: application/json' \
+              -d '{"firstName":"Alice","lastName":"Smith","email":"alice@example.com"}'
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('/owners', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ firstName: 'Alice', lastName: 'Smith', email: 'alice@example.com' })
+            });
+            console.log(await res.json());
 
   /owners/{id}:
     parameters:
@@ -611,6 +761,8 @@ paths:
           type: string
         description: Owner id
     get:
+      tags: [Owners]
+      operationId: getOwner
       summary: Get owner
       responses:
         "200":
@@ -622,6 +774,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     put:
+      tags: [Owners]
+      operationId: updateOwner
       summary: Update owner
       requestBody:
         required: true
@@ -635,6 +789,8 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
     delete:
+      tags: [Owners]
+      operationId: deleteOwner
       summary: Delete owner
       responses:
         "204":
@@ -644,7 +800,14 @@ paths:
 
   /medical:
     get:
+      tags: [Medical]
+      operationId: listMedicalRecords
       summary: List medical records
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s /medical | jq
       responses:
         "200":
           description: OK
@@ -654,7 +817,11 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/MedicalRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
     post:
+      tags: [Medical]
+      operationId: createMedicalRecord
       summary: Create medical record
       requestBody:
         required: true
@@ -667,6 +834,21 @@ paths:
           description: Created
         "400":
           $ref: "#/components/responses/BadRequest"
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -X POST /medical \
+              -H 'Content-Type: application/json' \
+              -d '{"petId":"031b7d02-14dc-4542-a9eb-9f23be036e14","eventType":"VACCINATION","notes":"Rabies"}'
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('/medical', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ petId: '031b7d02-14dc-4542-a9eb-9f23be036e14', eventType: 'VACCINATION', notes: 'Rabies' })
+            });
+            console.log(await res.json());
 
   /medical/{id}:
     parameters:
@@ -677,6 +859,8 @@ paths:
           type: string
         description: Medical record id
     get:
+      tags: [Medical]
+      operationId: getMedicalRecord
       summary: Get medical record
       responses:
         "200":
@@ -688,6 +872,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     put:
+      tags: [Medical]
+      operationId: updateMedicalRecord
       summary: Update medical record
       requestBody:
         required: true
@@ -701,6 +887,8 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
     delete:
+      tags: [Medical]
+      operationId: deleteMedicalRecord
       summary: Delete medical record
       responses:
         "204":
@@ -710,7 +898,14 @@ paths:
 
   /events:
     get:
+      tags: [Events]
+      operationId: listEvents
       summary: List events
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s /events | jq
       responses:
         "200":
           description: OK
@@ -720,7 +915,11 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Event"
+        "400":
+          $ref: "#/components/responses/BadRequest"
     post:
+      tags: [Events]
+      operationId: createEvent
       summary: Create event
       requestBody:
         required: true
@@ -733,6 +932,21 @@ paths:
           description: Created
         "400":
           $ref: "#/components/responses/BadRequest"
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -X POST /events \
+              -H 'Content-Type: application/json' \
+              -d '{"type":"CHECKIN","description":"Pet intake"}'
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('/events', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'CHECKIN', description: 'Pet intake' })
+            });
+            console.log(await res.json());
 
   /events/{id}:
     parameters:
@@ -743,6 +957,8 @@ paths:
           type: string
         description: Event id
     get:
+      tags: [Events]
+      operationId: getEvent
       summary: Get event
       responses:
         "200":
@@ -754,6 +970,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     put:
+      tags: [Events]
+      operationId: updateEvent
       summary: Update event
       requestBody:
         required: true
@@ -767,6 +985,8 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
     delete:
+      tags: [Events]
+      operationId: deleteEvent
       summary: Delete event
       responses:
         "204":
@@ -776,7 +996,14 @@ paths:
 
   /pet-owners:
     get:
+      tags: [PetOwners]
+      operationId: listPetOwners
       summary: List pet-owner links
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -s /pet-owners | jq
       responses:
         "200":
           description: OK
@@ -786,7 +1013,11 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PetOwner"
+        "400":
+          $ref: "#/components/responses/BadRequest"
     post:
+      tags: [PetOwners]
+      operationId: createPetOwner
       summary: Create pet-owner link
       requestBody:
         required: true
@@ -799,6 +1030,21 @@ paths:
           description: Created
         "400":
           $ref: "#/components/responses/BadRequest"
+      x-codeSamples:
+        - lang: curl
+          label: curl
+          source: |
+            curl -X POST /pet-owners \
+              -H 'Content-Type: application/json' \
+              -d '{"petId":"031b7d02-14dc-4542-a9eb-9f23be036e14","ownerId":"36fa99ff-0a81-4451-af12-2d2d5c881a01","role":"OWNER"}'
+        - lang: javascript
+          label: fetch (node)
+          source: |
+            const res = await fetch('/pet-owners', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ petId: '031b7d02-14dc-4542-a9eb-9f23be036e14', ownerId: '36fa99ff-0a81-4451-af12-2d2d5c881a01', role: 'OWNER' })
+            });
+            console.log(await res.json());
 
   /pet-owners/{id}:
     parameters:
@@ -809,6 +1055,8 @@ paths:
           type: string
         description: PetOwner id
     get:
+      tags: [PetOwners]
+      operationId: getPetOwner
       summary: Get pet-owner link
       responses:
         "200":
@@ -820,6 +1068,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
+      tags: [PetOwners]
+      operationId: deletePetOwner
       summary: Delete pet-owner link
       responses:
         "204":

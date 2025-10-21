@@ -1,41 +1,70 @@
 import express from 'express';
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
+import { prismaClient as prisma } from '../prisma/client';
+import { IOwnerService } from '../services/interfaces/ownerService.interface';
+import { requirePermission } from '../middleware/auth';
 
 const router = express.Router();
-const prisma = new PrismaClient();
+// prefer DI service when available
 
 const OwnerSchema = z.object({ firstName: z.string().min(1), lastName: z.string().min(1), email: z.string().email().optional(), phone: z.string().optional(), type: z.string().optional(), address: z.any().optional(), notes: z.string().optional() });
 
 router.get('/', async (req, res) => {
+  const maybe = req.container?.resolve?.('ownerService') as IOwnerService | undefined;
+  if (maybe && typeof maybe.listOwners === 'function') {
+    const items = await maybe.listOwners(500);
+    return res.json(items);
+  }
   const items = await prisma.owner.findMany({ take: 500 });
   res.json(items);
 });
 
-router.post('/', async (req, res) => {
+const OWNERS_WRITE = 'owners.write';
+router.post('/', requirePermission(OWNERS_WRITE), async (req, res) => {
   const parsed = OwnerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+  const maybe = req.container?.resolve?.('ownerService') as IOwnerService | undefined;
+  if (maybe && typeof maybe.createOwner === 'function') {
+    const created = await maybe.createOwner(parsed.data);
+    return res.status(201).json(created);
+  }
   const created = await prisma.owner.create({ data: parsed.data });
   res.status(201).json(created);
 });
 
 router.get('/:id', async (req, res) => {
   const id = req.params.id;
+  const maybe = req.container?.resolve?.('ownerService') as IOwnerService | undefined;
+  if (maybe && typeof maybe.getOwner === 'function') {
+    const item = await maybe.getOwner(id);
+    if (!item) return res.status(404).json({ error: 'not found' });
+    return res.json(item);
+  }
   const item = await prisma.owner.findUnique({ where: { id } });
   if (!item) return res.status(404).json({ error: 'not found' });
   res.json(item);
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission(OWNERS_WRITE), async (req, res) => {
   const id = req.params.id;
   const parsed = OwnerSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+  const maybe = req.container?.resolve?.('ownerService') as IOwnerService | undefined;
+  if (maybe && typeof maybe.updateOwner === 'function') {
+    const updated = await maybe.updateOwner(id, parsed.data);
+    return res.json(updated);
+  }
   const updated = await prisma.owner.update({ where: { id }, data: parsed.data });
   res.json(updated);
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission(OWNERS_WRITE), async (req, res) => {
   const id = req.params.id;
+  const maybe = req.container?.resolve?.('ownerService') as IOwnerService | undefined;
+  if (maybe && typeof maybe.deleteOwner === 'function') {
+    await maybe.deleteOwner(id);
+    return res.status(204).end();
+  }
   await prisma.owner.delete({ where: { id } });
   res.status(204).end();
 });

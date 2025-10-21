@@ -1,8 +1,11 @@
 /* Optional: Use hosted fonts for a clean UI look */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap");
 @import "tailwindcss";
+/* tailwind:plugins */
 @plugin "tailwindcss-animate";
+/* Code highlighting handled by react-shiki; default styles imported in MarkdownRenderer. */
 
+/* tailwind:custom-variant */
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -28,6 +31,7 @@
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
   --destructive: oklch(0.577 0.245 27.325);
+  --success: oklch(0.7 0.19 149); /* greenish success */
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286.067);
@@ -46,6 +50,7 @@
   --sidebar-ring: oklch(0.705 0.015 286.067);
 }
 
+/* tailwind:theme */
 @theme inline {
   /* Fonts */
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
@@ -71,6 +76,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -128,8 +134,85 @@
     margin: 0;
     min-width: 320px;
     min-height: 100vh;
-    @apply bg-background text-foreground font-sans;
+  /* tailwind:apply */ @apply bg-background text-foreground font-sans;
   }
+}
+
+/* Docs prose tuning */
+.prose {
+  /* tailwind:apply */ @apply max-w-none leading-relaxed;
+}
+.dark .prose {
+  --tw-prose-body: var(--color-foreground);
+  --tw-prose-headings: var(--color-foreground);
+  --tw-prose-links: var(--color-primary);
+  --tw-prose-bold: var(--color-foreground);
+  --tw-prose-quotes: var(--color-muted-foreground);
+  --tw-prose-code: var(--color-foreground);
+  --tw-prose-th-borders: var(--color-border);
+  --tw-prose-td-borders: var(--color-border);
+}
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  /* tailwind:apply */ @apply scroll-mt-24;
+}
+.prose pre {
+  /* Keep container shape; let Shiki theme set background and colors */
+  /* tailwind:apply */ @apply rounded-lg border border-border text-sm leading-6 overflow-auto;
+}
+.prose code:not(pre code) {
+  /* Inline code chips can stay themed by app */
+  /* tailwind:apply */ @apply rounded border border-border px-1 py-0.5 text-[0.9em] bg-muted;
+}
+.prose table {
+  /* tailwind:apply */ @apply w-full border-collapse;
+}
+.prose th, .prose td {
+  /* tailwind:apply */ @apply border border-border px-3 py-2 align-top;
+}
+.prose img {
+  /* tailwind:apply */ @apply rounded-lg border border-border shadow-sm;
+  display: block;
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+}
+
+/* Optional helper for diagrams that benefit from gentle zoom on desktop */
+.prose .diagram {
+  max-width: 100%;
+  transition: transform 200ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .prose .diagram:hover {
+    transform: scale(1.02);
+  }
+}
+
+/* Figure for diagrams */
+.prose .diagram-figure {
+  margin: 1.25rem 0 0.5rem 0;
+}
+
+/* Diagram lightbox button (top-right overlay) */
+.diagram-figure .diagram-open-btn {
+  /* Fallback styles to avoid color-mix for older browsers */
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+}
+.diagram-figure .diagram-open-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* Remove leftover highlight.js rule; Shiki controls backgrounds */
+/* (intentionally empty) */
+
+/* Dark mode: improve code contrast (base + tokens) */
+.dark .prose code:not(pre code) {
+  background-color: #111827; /* gray-900 */
+  color: #e5e7eb; /* gray-200 */
+  font-weight: 500;
+  border-color: #334155; /* slate-600 */
 }
 
 /* Sidebar rail visual override: keep large hit area but show a 1px rail only */
@@ -165,8 +248,8 @@
 
 /* Sidebar container edge: keep the persistent side border very subtle */
 [data-slot="sidebar-container"] {
-  /* Dim the edge line so the rail is the prominent interactive affordance */
-  border-color: color-mix(in oklab, var(--color-sidebar-border) 30%, transparent);
+  /* Fallback border color without color-mix */
+  border-color: var(--color-sidebar-border);
 }
 
 /* End of sidebar-rail tweaks */

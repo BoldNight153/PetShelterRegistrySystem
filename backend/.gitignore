@@ -1,3 +1,10 @@
+# Sensitive local files (never commit)
+.env
+.env.*
+client_secret_*.json
+
+# Prisma artifacts
+prisma/dev.db-journal
 node_modules/
 dev.db
 .env

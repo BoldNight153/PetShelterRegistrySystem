@@ -1,0 +1,767 @@
+openapi: 3.1.0
+info:
+  title: Admin REST API
+  version: 0.1.0
+  description: >-
+    Administrative endpoints for roles/permissions, user role assignments, monitoring, and settings.
+    Requires an authenticated session and the system_admin role (unless otherwise noted). These endpoints
+    power internal operator tools and dashboards and are gated in production.
+    
+    Tips:
+    - Use the servers dropdown to switch between same-origin ("/") and an absolute host.
+    - Code samples use relative URLs so requests target the selected server's base.
+  license:
+    name: MIT
+    url: "https://opensource.org/licenses/MIT"
+servers:
+  - url: "/"
+    description: Same-origin (recommended for deployed environments)
+  - url: "{scheme}://{host}"
+    description: Absolute template for non-same-origin testing
+    variables:
+      scheme:
+        enum: [http, https]
+        default: http
+      host:
+        default: localhost:4000
+security: []
+tags:
+  - name: Roles
+    description: Create, update, list, and delete roles.
+  - name: Permissions
+    description: Manage permission grants to roles.
+  - name: User Roles
+    description: Assign and revoke roles for specific users.
+  - name: Monitoring
+    description: Runtime metrics, time series, and retention tasks.
+  - name: Settings
+    description: System settings grouped by category.
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: accessToken
+      description: JWT access token cookie
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: x-csrf-token
+      description: Required for state-changing requests; value must match the csrfToken cookie
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          oneOf:
+            - type: string
+            - type: object
+      required: [error]
+    Role:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: >-
+            Unique role name (e.g., system_admin, admin, shelter_admin, staff_manager,
+            staff, staff_assistant, veterinarian, volunteer, owner)
+        rank:
+          type: integer
+          description: Higher rank implies higher privilege in UI sorting.
+        description:
+          type:
+            - string
+            - "null"
+      required: [id, name, rank]
+    Permission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: Unique permission name (e.g., pets.write)
+        description:
+          type:
+            - string
+            - "null"
+      required: [id, name]
+    UserRole:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        roleId:
+          type: string
+          format: uuid
+      required: [userId, roleId]
+    UserSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: [string, 'null'] }
+        roles:
+          type: array
+          items: { type: string, description: Role name }
+        lock:
+          type: [
+            'null',
+            object
+          ]
+          properties:
+            reason: { type: string }
+            until: { type: ['string','null'], format: date-time }
+      required: [id, email, roles]
+    PagedUsers:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/UserSummary' }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+      required: [items, total, page, pageSize]
+    UpsertRoleInput:
+      type: object
+      properties:
+        name:
+          type: string
+        rank:
+          type: integer
+          default: 0
+        description:
+          type: string
+      required: [name]
+    GrantPermissionInput:
+      type: object
+      properties:
+        roleName:
+          type: string
+        permission:
+          type: string
+      required: [roleName, permission]
+    AssignRoleInput:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        roleName:
+          type: string
+      required: [userId, roleName]
+    ApiOk:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required: [ok]
+    UpsertSettingsInput:
+      type: object
+      properties:
+        category: { type: string }
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              value: {}
+            required: [key, value]
+      required: [category, entries]
+    SettingsResponse:
+      type: object
+      properties:
+        settings:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: {}
+      required: [settings]
+    MetricsSnapshot:
+      type: object
+      properties:
+        requests:
+          type: object
+          properties:
+            count: { type: number }
+            errors: { type: number }
+            p50: { type: [number, 'null'] }
+            p90: { type: [number, 'null'] }
+            p99: { type: [number, 'null'] }
+        loopLag:
+          type: object
+          properties:
+            meanMs: { type: [number, 'null'] }
+            maxMs: { type: [number, 'null'] }
+            samples:
+              type: array
+              items: { type: number }
+        timestamp: { type: string, format: date-time }
+      required: [requests, loopLag, timestamp]
+    SeriesPoint:
+      type: object
+      properties:
+        value: { type: number }
+        createdAt: { type: string, format: date-time }
+      required: [value, createdAt]
+    SeriesResponse:
+      type: object
+      properties:
+        metric: { type: string }
+        minutes: { type: number }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/SeriesPoint' }
+      required: [metric, minutes, points]
+    RuntimeStatus:
+      type: object
+      properties:
+        status: { type: string }
+        pid: { type: number }
+        ppid: { type: number }
+        node: { type: string }
+        versions: { type: object }
+        uptimeSec: { type: number }
+        hrtime:
+          type: object
+          properties:
+            sec: { type: number }
+            nsec: { type: number }
+        memory:
+          type: object
+          properties:
+            rss: { type: number }
+            heapTotal: { type: number }
+            heapUsed: { type: number }
+            external: { type: number }
+            arrayBuffers: { type: number }
+        cpu:
+          type: object
+          properties:
+            userMicros: { type: number }
+            systemMicros: { type: number }
+        eventLoopLagMs: { type: [number, 'null'] }
+        retention:
+          type: object
+          properties:
+            lastCleanupAt: { type: ['string','null'], format: date-time }
+            lastCleanupDeleted: { type: ['number','null'] }
+        timestamp: { type: string, format: date-time }
+      required: [status, pid, node, uptimeSec, timestamp]
+    RetentionCleanupResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        lastCleanupAt: { type: ['string','null'], format: date-time }
+        lastCleanupDeleted: { type: ['number','null'] }
+      required: [ok]
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            validationError:
+              value:
+                error:
+                  message: "validation failed"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            notFound:
+              value:
+                error: "not found"
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            unauthorized:
+              value:
+                error: "unauthorized"
+    Forbidden:
+      description: Authenticated but lacks required role (system_admin)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            forbidden:
+              value:
+                error: "forbidden"
+    TooManyRequests:
+      description: Too Many Requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+paths:
+  /admin/roles:
+    get:
+      summary: List roles
+      description: Returns all roles in the system, ordered by rank descending.
+      tags: [Roles]
+      operationId: listRoles
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Role"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/roles/upsert:
+    post:
+      summary: Create or update a role
+      description: Creates a role if it does not exist, otherwise updates rank/description.
+      tags: [Roles]
+      operationId: upsertRole
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertRoleInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/roles/{name}/permissions:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: List permissions for a role
+      description: Returns all permissions currently granted to the specified role.
+      tags: [Permissions]
+      operationId: listRolePermissions
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Permission' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/roles/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Delete a role
+      description: Deletes a role by name. Will return 404 if the role does not exist.
+      tags: [Roles]
+      operationId: deleteRole
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/permissions:
+    get:
+      summary: List permissions
+      description: Returns all permissions available in the system.
+      tags: [Permissions]
+      operationId: listPermissions
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Permission"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/permissions/grant:
+    post:
+      summary: Grant a permission to a role
+      description: Grants the specified permission to the given role.
+      tags: [Permissions]
+      operationId: grantPermission
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantPermissionInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiOk"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/permissions/revoke:
+    post:
+      summary: Revoke a permission from a role
+      description: Removes the specified permission from the given role.
+      tags: [Permissions]
+      operationId: revokePermission
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantPermissionInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiOk"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/users/assign-role:
+    post:
+      summary: Assign a role to a user
+      description: Assigns an existing role to the specified user.
+      tags: [User Roles]
+      operationId: assignRoleToUser
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRoleInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRole"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/users/revoke-role:
+    post:
+      summary: Revoke a role from a user
+      description: Removes an assigned role from the specified user.
+      tags: [User Roles]
+      operationId: revokeRoleFromUser
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRoleInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiOk"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/users/{userId}/roles:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List roles assigned to a user
+      description: Returns all roles currently assigned to the specified user.
+      tags: [User Roles]
+      operationId: listUserRoles
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Role' }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/users:
+    get:
+      summary: Search/list users
+      description: Returns a paginated list of users with their role names. Query by email or name.
+      tags: [User Roles]
+      operationId: searchUsers
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          required: false
+          description: Search text for email or name
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+          required: false
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+          required: false
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedUsers'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/users/lock:
+    post:
+      summary: Manually lock a user account
+      description: Locks the specified user account. Requires staff_manager or higher. Optional expiresAt can be provided.
+      tags: [User Roles]
+      operationId: lockUser
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string, format: uuid }
+                reason: { type: string }
+                expiresAt: { type: ['string','null'], format: date-time }
+                notes: { type: ['string','null'] }
+              required: [userId, reason]
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/users/unlock:
+    post:
+      summary: Manually unlock a user account
+      description: Unlocks the specified user, revokes active sessions, and sends a password reset email.
+      tags: [User Roles]
+      operationId: unlockUser
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string, format: uuid }
+                unlockReason: { type: ['string','null'] }
+              required: [userId]
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # Monitoring endpoints
+  /admin/monitoring/metrics:
+    get:
+      summary: Current metrics snapshot
+      description: Returns recent request latency percentiles and event loop lag statistics.
+      tags: [Monitoring]
+      operationId: getMetricsSnapshot
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSnapshot'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/monitoring/series:
+    get:
+      summary: Query time series points
+      description: Returns persisted metric points for the selected metric within the last N minutes.
+      tags: [Monitoring]
+      operationId: getMetricSeries
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: metric
+          required: false
+          schema: { type: string, default: 'http.p99' }
+        - in: query
+          name: minutes
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1440, default: 60 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeriesResponse'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/monitoring/runtime:
+    get:
+      summary: Runtime status
+      description: Basic Node.js process, memory, CPU, and event loop stats, plus retention info.
+      tags: [Monitoring]
+      operationId: getRuntimeStatus
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeStatus'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/monitoring/retention/cleanup:
+    post:
+      summary: Trigger retention cleanup
+      description: Immediately runs the metrics retention cleanup task. Requires CSRF.
+      tags: [Monitoring]
+      operationId: runRetentionCleanup
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionCleanupResult'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  # Settings endpoints
+  /admin/settings:
+    get:
+      summary: List settings
+      description: Returns all settings grouped by category. Optionally filter by category.
+      tags: [Settings]
+      operationId: listSettings
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: category
+          schema: { type: string }
+          required: false
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      summary: Upsert settings
+      description: Upserts one or more key/value entries within a category. Requires CSRF.
+      tags: [Settings]
+      operationId: upsertSettings
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertSettingsInput'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiOk'
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }

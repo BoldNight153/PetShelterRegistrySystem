@@ -1,13 +1,15 @@
-import React, { Suspense, useEffect, useMemo, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useParams } from 'react-router-dom'
 
 const RedocStandaloneLazy = React.lazy(() =>
   import('redoc').then((mod) => ({ default: mod.RedocStandalone }))
 )
 
 export default function RedocPage() {
+  type Spec = 'pets' | 'auth' | 'admin'
   // Detect light/dark mode and update on changes
   type ThemeMode = 'light' | 'dark'
-  const getMode = (): ThemeMode => {
+  const getMode = useCallback((): ThemeMode => {
     if (typeof document === 'undefined') return 'light'
     const html = document.documentElement
     const dataTheme = (html.getAttribute('data-theme') || '').toLowerCase()
@@ -17,11 +19,11 @@ export default function RedocPage() {
       const stored = (localStorage.getItem('theme') || '').toLowerCase()
       if (stored === 'dark') return 'dark'
       if (stored === 'light') return 'light'
-    } catch {}
+  } catch { /* ignore theme storage */ }
     if (html.classList.contains('dark')) return 'dark'
     if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'
     return 'light'
-  }
+  }, [])
 
   const [mode, setMode] = useState<ThemeMode>(getMode())
 
@@ -34,9 +36,8 @@ export default function RedocPage() {
     if (mql.addEventListener) mql.addEventListener('change', onChange)
     else mql.addListener(onChange)
     // Listen for explicit app theme signals
-    const onThemeEvent = (e: Event) => {
-      const anyE = e as any
-      const next = anyE?.detail?.mode
+    const onThemeEvent = (e: Event | CustomEvent<{ mode?: ThemeMode }>) => {
+      const next = (e as CustomEvent<{ mode?: ThemeMode }>).detail?.mode
       if (next === 'dark' || next === 'light') setMode(next)
       else onChange()
     }
@@ -64,10 +65,10 @@ export default function RedocPage() {
       if (prev === null) document.body.removeAttribute('data-redoc')
       else document.body.setAttribute('data-redoc', prev)
     }
-  }, [])
+  }, [getMode])
 
   // Curated hex palettes for ReDoc (no CSS vars)
-  const buildRedocTheme = (m: ThemeMode) => {
+  const buildRedocTheme = useCallback((m: ThemeMode) => {
     const light = {
       colors: {
         primary: { main: '#4F46E5' }, // keep indigo accent per app
@@ -155,9 +156,9 @@ export default function RedocPage() {
       },
     }
     return m === 'dark' ? dark : light
-  }
+  }, [])
 
-  const redocTheme = useMemo(() => buildRedocTheme(mode), [mode])
+  const redocTheme = useMemo(() => buildRedocTheme(mode), [mode, buildRedocTheme])
   // IMPORTANT: All hooks must run before any early returns to keep hook order stable
   const dynamicCss = useMemo(() => {
     const isDark = mode === 'dark'
@@ -353,15 +354,136 @@ export default function RedocPage() {
     `
   }, [mode])
 
+  const params = useParams<{ api?: string }>()
+  const readSpecFromUrl = (): Spec => {
+    // Prefer route param when provided (e.g., /docs/api/:api/spec)
+    const routeApi = params.api as string | undefined
+    const fromRoute = (routeApi || '').toLowerCase()
+    if (fromRoute === 'auth') return 'auth'
+    if (fromRoute === 'admin') return 'admin'
+    if (fromRoute === 'pets') return 'pets'
+    // Fallback to query param
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href)
+      const which = (u.searchParams.get('spec') || '').toLowerCase()
+      if (which === 'auth') return 'auth'
+      if (which === 'admin') return 'admin'
+      if (which === 'pets') return 'pets'
+    }
+    // Last fallback: localStorage remembered choice
+    try {
+      const last = (localStorage.getItem('docs:lastSpec') || '').toLowerCase()
+      if (last === 'auth' || last === 'admin' || last === 'pets') return last as Spec
+  } catch { /* ignore docs storage */ }
+    return 'pets'
+  }
+  const [spec, setSpec] = useState<Spec>(readSpecFromUrl())
+
+  useEffect(() => {
+    // If we're on legacy /docs with ?spec=, redirect to new path
+    const u = new URL(window.location.href)
+    if (u.pathname === '/docs') {
+      const s = (u.searchParams.get('spec') || readSpecFromUrl()).toLowerCase() as Spec
+      const next = s === 'admin' || s === 'auth' || s === 'pets' ? s : 'pets'
+      const to = `/docs/api/${next}/spec`
+      window.history.replaceState({}, '', to)
+    }
+    const onPop = () => setSpec(readSpecFromUrl())
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.api])
+
+  // Version switching
+  type VersionMode = 'latest' | 'versioned'
+  const [versionMode, setVersionMode] = useState<VersionMode>(() => {
+  try { return (localStorage.getItem('docs:versionMode') as VersionMode) || 'latest' } catch { return 'latest' }
+  })
+  const [currentVersion, setCurrentVersion] = useState<string>('')
+
+  // Resolve the JSON URL based on spec + version mode. When versioned, we need the semantic version.
+  const baseJsonUrl = (s: Spec) => {
+    if (s === 'admin') return '/api-docs/admin'
+    if (s === 'auth') return '/auth-docs'
+    return '/api-docs'
+  }
+  const latestJsonUrl = `${baseJsonUrl(spec)}/latest/openapi.json`
+
+  useEffect(() => {
+    // Persist choices
+  try { localStorage.setItem('docs:lastSpec', spec) } catch { /* ignore */ }
+  }, [spec])
+  useEffect(() => {
+  try { localStorage.setItem('docs:versionMode', versionMode) } catch { /* ignore */ }
+  }, [versionMode])
+
+  useEffect(() => {
+    // Fetch version from latest to derive versioned URL label
+    let aborted = false
+    const fetchVersion = async () => {
+      try {
+        const res = await fetch(latestJsonUrl, { credentials: 'include' })
+        if (!res.ok) return
+        const json = await res.json()
+        const v = String(json?.info?.version || '').trim()
+        if (!aborted) setCurrentVersion(v)
+  } catch { /* ignore fetch errors */ }
+    }
+    fetchVersion()
+    return () => { aborted = true }
+  }, [latestJsonUrl])
+
+  const specUrl = versionMode === 'latest'
+    ? latestJsonUrl
+    : `${baseJsonUrl(spec)}/v${(currentVersion || '0.0.0')}/openapi.json`
+
+  const onChangeSpec = (next: Spec) => {
+    setSpec(next)
+    if (typeof window !== 'undefined') {
+      // Prefer clean path: /docs/api/:api/spec
+      const to = `/docs/api/${next}/spec`
+      window.history.pushState({}, '', to)
+    }
+  }
+
   // Let ReDoc fetch the spec via specUrl so its search index initializes properly
 
   return (
     <div className="rd-theme w-full min-h-[80vh] rounded-xl">
+      <div className="flex items-center justify-end gap-3 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <label className="text-xs opacity-70" htmlFor="spec-picker">API</label>
+          <select
+            id="spec-picker"
+            className="border rounded-md text-sm px-2 py-1 bg-transparent"
+            value={spec}
+            onChange={(e) => onChangeSpec(e.target.value as Spec)}
+          >
+            <option value="pets">Pets REST API</option>
+            <option value="auth">Auth REST API</option>
+            <option value="admin">Admin REST API</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs opacity-70" htmlFor="version-picker">Version</label>
+          <select
+            id="version-picker"
+            className="border rounded-md text-sm px-2 py-1 bg-transparent"
+            value={versionMode}
+            onChange={(e) => setVersionMode(e.target.value as VersionMode)}
+          >
+            <option value="latest">Latest</option>
+            <option value="versioned">{currentVersion ? `Current (${currentVersion})` : 'Current (loading...)'}</option>
+          </select>
+        </div>
+      </div>
       <Suspense fallback={<div className="p-4 text-sm opacity-70">Loading viewer…</div>}>
         <RedocStandaloneLazy
-          key={`redoc-${mode}`}
-          specUrl="/api-docs/latest/openapi.json"
+          key={`redoc-${mode}-${spec}`}
+          specUrl={specUrl}
           options={{
+            // Redoc typings expect its own theme interface; our object matches but TS can't infer it here.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             theme: redocTheme as any,
             scrollYOffset: 0,
             hideDownloadButton: false,
