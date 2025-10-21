@@ -11,7 +11,7 @@ describe('More routes integration tests', () => {
   let petOwnerId: string | undefined;
   let medicalId: string | undefined;
   let eventId: string | undefined;
-  const prisma: any = new PrismaClient();
+  const prisma = new PrismaClient();
   const agent = request.agent(app);
   let csrfToken: string | undefined;
   let testEmail: string | undefined;
