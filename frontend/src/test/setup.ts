@@ -20,19 +20,15 @@ if (!window.matchMedia) {
 
 // Safe no-op scrollIntoView for jsdom environment to avoid errors from UI libraries
 if (typeof window !== 'undefined' && typeof window.HTMLElement !== 'undefined') {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window.HTMLElement.prototype as any).scrollIntoView = function scrollIntoView() {
-    // intentionally empty for test environment
-  }
+	window.HTMLElement.prototype.scrollIntoView = vi.fn(() => {}) as unknown as typeof window.HTMLElement.prototype.scrollIntoView
 }
 
 // Global no-op implementations for browser dialog APIs used in the app
 // Keeps test output quiet; individual tests can override these with spies if needed.
 if (typeof window !== 'undefined') {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	;(window as any).alert = vi.fn()
+	window.alert = vi.fn() as unknown as typeof window.alert
 	// confirm defaults to true to allow destructive flows in tests unless they stub it
-	;(window as any).confirm = vi.fn().mockImplementation(() => true)
+	window.confirm = vi.fn(() => true) as unknown as typeof window.confirm
 	// prompt returns null by default (user cancelled) — tests can stub to provide values
-	;(window as any).prompt = vi.fn().mockImplementation(() => null)
+	window.prompt = vi.fn(() => null) as unknown as typeof window.prompt
 }

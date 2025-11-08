@@ -1,8 +1,8 @@
 import { render, screen, cleanup } from '@testing-library/react'
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { vi, test, expect } from 'vitest'
 import { ServicesProvider } from '@/services/provider'
 import { useServices } from '@/services/hooks'
+import type { Services } from '@/services/defaults'
 
 function Consumer() {
   const s = useServices()
@@ -22,7 +22,9 @@ test('ServicesProvider provides default services and allows overrides', () => {
 
   const fakeLoad = vi.fn(async () => ({}))
   const fakeSave = vi.fn(async () => ({}))
-  const override: any = { admin: { settings: { loadSettings: fakeLoad, saveSettings: fakeSave } } }
+  const override = {
+    admin: { settings: { loadSettings: fakeLoad, saveSettings: fakeSave } },
+  } satisfies Partial<Services>
   render(
     <ServicesProvider services={override}>
       <Consumer />

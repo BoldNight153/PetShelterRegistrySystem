@@ -29,7 +29,7 @@ describe('AdminRolesPage', () => {
           upsertRole: upsertRoleMock,
           deleteRole: deleteRoleMock,
           listPermissions: async () => [],
-          listRolePermissions: async (_: string) => [],
+          listRolePermissions: async () => [],
           grantPermission: async () => {},
           revokePermission: async () => {},
         }

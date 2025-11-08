@@ -483,7 +483,6 @@ export default function RedocPage() {
           specUrl={specUrl}
           options={{
             // Redoc typings expect its own theme interface; our object matches but TS can't infer it here.
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             theme: redocTheme as any,
             scrollYOffset: 0,
             hideDownloadButton: false,

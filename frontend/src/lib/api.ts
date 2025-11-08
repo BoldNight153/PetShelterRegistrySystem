@@ -46,9 +46,8 @@ export async function login(input: LoginInput) {
     for (let i = 0; i < maxAttempts; i++) {
       try {
         await getCsrfToken();
-        // success — cookies are visible to server
-        // Dev-only log
-        // eslint-disable-next-line no-undef
+  // success — cookies are visible to server
+  // Dev-only log
         if ((import.meta as any)?.env?.DEV) console.debug('[auth.login] post-login csrf sync ok (attempt)', i + 1);
         break;
       } catch (e) {
@@ -61,8 +60,7 @@ export async function login(input: LoginInput) {
   } catch (e) {
     // Don't fail the login flow for non-fatal timing issues; log in dev so
     // we can iterate if stable failures remain.
-    // eslint-disable-next-line no-undef
-    if ((import.meta as any)?.env?.DEV) console.warn('[auth.login] post-login csrf sync failed, proceeding anyway');
+    if ((import.meta as any)?.env?.DEV) console.warn('[auth.login] post-login csrf sync failed, proceeding anyway', e);
   }
 
   return body;
@@ -111,9 +109,8 @@ export async function refresh() {
     // Use a short polling loop — if the cookie appears we proceed; otherwise
     // we still send the request after the timeout to avoid hanging forever.
     try {
-      // eslint-disable-next-line no-undef
       if ((import.meta as any)?.env?.DEV) console.debug('[auth.refresh] pre-flight csrf', csrf, 'attempt', attempt + 1);
-    } catch (e) {}
+    } catch {}
 
     const maxWaitMs = 500; // total time to wait for cookie to appear
     const pollIntervalMs = 50;
@@ -122,17 +119,15 @@ export async function refresh() {
       try {
         // If running in a browser, check document.cookie. In non-browser
         // environments this will throw; ignore there.
-        // eslint-disable-next-line no-undef
         if (typeof document !== 'undefined' && document.cookie && document.cookie.indexOf('csrfToken=') !== -1) {
           // Quick heuristic: check that some fragment of the token appears in the cookie
           if (document.cookie.indexOf(csrf.split('.')[0]) !== -1 || document.cookie.indexOf(csrf.split('.').pop() || '') !== -1) {
             // cookie observed and appears to contain our token
-            // eslint-disable-next-line no-undef
             if ((import.meta as any)?.env?.DEV) console.debug('[auth.refresh] cookie visible before request');
             break;
           }
         }
-      } catch (e) {
+      } catch {
         // Non-browser environment; skip waiting
         break;
       }
@@ -142,11 +137,8 @@ export async function refresh() {
     // Dev-only debug: log the csrf token used for the refresh so it can be
     // correlated with server logs and recorder traces.
     try {
-      // eslint-disable-next-line no-undef
       if ((import.meta as any)?.env?.DEV) console.debug('[auth.refresh] attempt', attempt + 1, 'csrf', csrf);
-    } catch (e) {
-      /* ignore */
-    }
+    } catch {}
 
     const res = await fetch(`${API_BASE}auth/refresh`, {
       method: 'POST',
