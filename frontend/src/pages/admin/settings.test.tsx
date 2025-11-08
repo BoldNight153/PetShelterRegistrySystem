@@ -1,7 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import AdminSettingsPage from './settings'
-import { ServicesProvider } from '@/services/provider'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('@/lib/auth-context', () => {
   return {
@@ -30,11 +31,8 @@ describe('AdminSettingsPage (Security)', () => {
   })
 
   it('saves security settings including new thresholds', async () => {
-    render(
-      <ServicesProvider services={{ admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }}>
-        <AdminSettingsPage />
-      </ServicesProvider>
-    )
+  const { wrapper } = renderWithProviders(<div />, { services: { admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }, withRouter: true })
+    render(<AdminSettingsPage />, { wrapper })
 
     // Wait for settings to load
     await waitFor(() => expect(loadSettingsMock).toHaveBeenCalledTimes(1))
@@ -60,6 +58,34 @@ describe('AdminSettingsPage (Security)', () => {
       'passwordHistoryLimit',
     ]))
   })
+
+  it('toggles a security flag and saves the changed value', async () => {
+    // Start with requireEmailVerification = true from loadSettingsMock
+  const { wrapper } = renderWithProviders(<div />, { services: { admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }, withRouter: true })
+    render(<AdminSettingsPage />, { wrapper })
+
+    // Wait for settings to load
+    await waitFor(() => expect(loadSettingsMock).toHaveBeenCalledTimes(1))
+
+  // Toggle the Require email verification checkbox (control text is the inline label)
+  const checkbox = await screen.findByRole('checkbox', { name: /Enforce verification/i })
+  // initial should be checked
+  expect((checkbox as HTMLInputElement).checked).toBe(true)
+  fireEvent.click(checkbox)
+  expect((checkbox as HTMLInputElement).checked).toBe(false)
+
+    // Click Save Security
+    const saveBtn = await screen.findByRole('button', { name: /save security/i })
+    fireEvent.click(saveBtn)
+
+    await waitFor(() => expect(saveSettingsMock).toHaveBeenCalled())
+
+    const [category, entries] = saveSettingsMock.mock.calls.at(-1)!
+    expect(category).toBe('security')
+    const changed = (entries as Array<{ key: string; value: unknown }>).find(e => e.key === 'requireEmailVerification')
+    expect(changed).toBeDefined()
+    expect(changed!.value).toBe(false)
+  })
 })
 
 describe('AdminSettingsPage (Access control)', () => {
@@ -70,10 +96,14 @@ describe('AdminSettingsPage (Access control)', () => {
     const { default: NonAdminSettings } = await import('./settings')
     // Import a fresh ServicesProvider from the reset module registry so the component uses the same context instance
     const { ServicesProvider: FreshServicesProvider } = await import('@/services/provider')
+    // Wrap the fresh provider with a QueryClientProvider to ensure queries can run
+    const qc = new QueryClient()
     render(
-      <FreshServicesProvider services={{ admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }}>
-        <NonAdminSettings />
-      </FreshServicesProvider>
+      <QueryClientProvider client={qc}>
+        <FreshServicesProvider services={{ admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }}>
+          <NonAdminSettings />
+        </FreshServicesProvider>
+      </QueryClientProvider>
     )
     expect(await screen.findByText(/access denied/i)).toBeInTheDocument()
   })

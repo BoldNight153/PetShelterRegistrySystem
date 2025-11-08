@@ -18,6 +18,26 @@ async function main() {
     await prisma.petOwner.upsert({ where: { id: 'p1-o1' }, update: {}, create: { id: 'p1-o1', petId: p1.id, ownerId: o1.id, role: 'FOSTER', isPrimary: true } });
     await prisma.petOwner.upsert({ where: { id: 'p2-o2' }, update: {}, create: { id: 'p2-o2', petId: p2.id, ownerId: o2.id, role: 'OWNER', isPrimary: true } });
     await prisma.medicalRecord.upsert({ where: { id: 'm1' }, update: {}, create: { id: 'm1', petId: p1.id, vetName: 'Dr. Vet', recordType: 'vaccine', notes: 'Rabies shot' } });
+    // Seed default `main` menu and items for development
+    const mainMenu = await prisma.menu.upsert({ where: { name: 'main' }, update: { title: 'Main Navigation', isActive: true }, create: { name: 'main', title: 'Main Navigation', description: 'Primary site navigation', isActive: true } });
+    const existingMenuItems = await prisma.menuItem.findMany({ where: { menuId: mainMenu.id } });
+    if (!existingMenuItems.length) {
+        const playground = await prisma.menuItem.create({ data: { menuId: mainMenu.id, title: 'Playground', url: '#', order: 0 } });
+        await prisma.menuItem.createMany({ data: [
+            { menuId: mainMenu.id, parentId: playground.id, title: 'History', url: '#', order: 0 },
+            { menuId: mainMenu.id, parentId: playground.id, title: 'Starred', url: '#', order: 1 },
+            { menuId: mainMenu.id, parentId: playground.id, title: 'Settings', url: '#', order: 2 },
+        ] });
+        const docs = await prisma.menuItem.create({ data: { menuId: mainMenu.id, title: 'Documentation', url: '#', order: 10 } });
+        await prisma.menuItem.createMany({ data: [
+            { menuId: mainMenu.id, parentId: docs.id, title: 'Introduction', url: '#', order: 0 },
+            { menuId: mainMenu.id, parentId: docs.id, title: 'Get Started', url: '#', order: 1 },
+            { menuId: mainMenu.id, parentId: docs.id, title: 'Tutorials', url: '#', order: 2 },
+            { menuId: mainMenu.id, parentId: docs.id, title: 'Changelog', url: '#', order: 3 },
+        ] });
+        await prisma.menuItem.create({ data: { menuId: mainMenu.id, title: 'Settings', url: '#', order: 20 } });
+        console.log('Seeded default `main` menu with items');
+    }
 }
 main()
     .catch(e => {

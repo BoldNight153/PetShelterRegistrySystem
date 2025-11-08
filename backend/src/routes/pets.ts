@@ -2,9 +2,18 @@ import express from 'express';
 import { z } from 'zod';
 import { prismaClient as prisma } from '../prisma/client';
 import { requireRole } from '../middleware/auth';
+import type { Prisma } from '@prisma/client';
 
-function resolvePetService(req: any) {
-  try { return req.container?.resolve('petService'); } catch { return null; }
+type PetService = {
+  list?: (limit?: number) => Promise<unknown[]>;
+  create?: (data: any) => Promise<unknown>;
+  getById?: (id: string) => Promise<unknown>;
+  update?: (id: string, data: any) => Promise<unknown>;
+  delete?: (id: string) => Promise<void>;
+};
+
+function resolvePetService(req: any): PetService | null {
+  try { return req.container?.resolve('petService') as PetService; } catch { return null; }
 }
 
 const router = express.Router();
@@ -27,7 +36,7 @@ const PetUpdate = PetCreate.partial();
 
 router.get('/', async (req, res) => {
   const svc = resolvePetService(req);
-  if (svc) return res.json(await svc.list(100));
+  if (svc?.list) return res.json(await svc.list(100));
   const pets = await prisma.pet.findMany({ take: 100 });
   res.json(pets);
 });
@@ -54,19 +63,19 @@ router.post('/', requireRole('staff', 'shelter_admin', 'admin', 'system_admin'),
   }
 
   const svc = resolvePetService(req);
-  if (svc) {
+  if (svc?.create) {
     const pet = await svc.create(petData);
     return res.status(201).json(pet);
   }
 
-  const pet = await prisma.pet.create({ data: petData });
+  const pet = await prisma.pet.create({ data: petData as unknown as Prisma.PetCreateInput });
   res.status(201).json(pet);
 });
 
 router.get('/:id', async (req, res) => {
   const id = req.params.id;
   const svc = resolvePetService(req);
-  const pet = svc ? await svc.getById(id) : await prisma.pet.findUnique({ where: { id } });
+  const pet = svc?.getById ? await svc.getById(id) : await prisma.pet.findUnique({ where: { id } });
   if (!pet) return res.status(404).json({ error: 'not found' });
   res.json(pet);
 });
@@ -93,8 +102,8 @@ router.put('/:id', requireRole('staff', 'shelter_admin', 'admin', 'system_admin'
 
   try {
     const svc = resolvePetService(req);
-    if (svc) return res.json(await svc.update(id, updateData));
-    const updated = await prisma.pet.update({ where: { id }, data: updateData });
+    if (svc?.update) return res.json(await svc.update(id, updateData));
+    const updated = await prisma.pet.update({ where: { id }, data: updateData as unknown as Prisma.PetUpdateInput });
     res.json(updated);
   } catch (err: any) {
     // Prisma throws when record not found
@@ -107,7 +116,7 @@ router.delete('/:id', requireRole('staff', 'shelter_admin', 'admin', 'system_adm
   const id = req.params.id;
   try {
     const svc = resolvePetService(req);
-    if (svc) {
+    if (svc?.delete) {
       await svc.delete(id);
       return res.status(204).end();
     }

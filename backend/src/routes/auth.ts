@@ -14,8 +14,10 @@ import type { Prisma } from '@prisma/client';
 // Deduped constants for lint rules
 const INTERNAL_ERROR = 'internal error';
 const HEADER_UA = 'user-agent';
+const HEADER_CSRF = 'x-csrf-token';
 const INVALID_TOKEN = 'invalid token';
 const AUDIT_LOGIN_LOCKED = 'auth.login.locked_user';
+const DIAG_VALIDATE_CSRF_MISSING = 'diagnostic /validateCsrf missing';
 
 const router = Router();
 
@@ -29,7 +31,7 @@ function resolveRateLimitService(req: any): RateLimitService | null {
     const v = req.container?.resolve?.('rateLimitService') ?? req.container?.resolve?.('rateLimit');
     return v ? (v as RateLimitService) : null;
   } catch (err) {
-    try { (req as any).log?.warn?.({ err }, 'rateLimit service resolution failed'); } catch {}
+    try { (req).log?.warn?.({ err }, 'rateLimit service resolution failed'); } catch {}
     return null;
   }
 }
@@ -43,9 +45,17 @@ router.get('/csrf', (_req: Request, res: Response) => {
   const hmac = crypto.createHmac('sha256', secret).update(token).digest('hex');
   const csrfToken = `${token}.${hmac}`;
   // Non-HttpOnly so clients can read and reflect in header; SameSite=Lax is fine
+  // Determine secure flag: allow explicit override via COOKIE_SECURE, otherwise
+  // require HTTPS-based APP_ORIGIN in production to enable Secure. This avoids
+  // accidentally setting Secure=true on localhost HTTP which would prevent
+  // cookies from being stored by the browser.
+  const cookieSecure = typeof process.env.COOKIE_SECURE !== 'undefined'
+    ? String(process.env.COOKIE_SECURE) === 'true'
+    : (process.env.NODE_ENV === 'production' && String(process.env.APP_ORIGIN || '').startsWith('https'));
+
   res.cookie('csrfToken', csrfToken, {
     httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
+    secure: cookieSecure,
     sameSite: 'lax',
     maxAge: 60 * 60 * 1000,
     path: '/',
@@ -56,8 +66,18 @@ router.get('/csrf', (_req: Request, res: Response) => {
 // Middleware to validate CSRF on state-changing requests
 function validateCsrf(req: Request, res: Response, next: NextFunction): void {
   const fromCookie = req.cookies?.csrfToken;
-  const fromHeader = req.header('x-csrf-token');
+  const fromHeader = req.header(HEADER_CSRF);
   if (!fromCookie || !fromHeader) {
+    // DEV DIAGNOSTIC: log missing pieces for deterministic debugging
+    try {
+        if (process.env.NODE_ENV !== 'production') {
+          const rawCookieHeader = req.get('cookie');
+          const incomingCsrfHeader = req.get(HEADER_CSRF);
+          try { (req as any).log?.info?.({ cookieHeader: rawCookieHeader, parsedCookies: req.cookies, xCsrfHeader: incomingCsrfHeader }, DIAG_VALIDATE_CSRF_MISSING); } catch {}
+
+        console.log(DIAG_VALIDATE_CSRF_MISSING, 'cookieHeader=', rawCookieHeader, 'parsedCookies=', JSON.stringify(req.cookies || {}), HEADER_CSRF + '=', incomingCsrfHeader);
+      }
+    } catch {}
     res.status(403).json({ error: 'CSRF token missing' });
     return;
   }
@@ -65,6 +85,16 @@ function validateCsrf(req: Request, res: Response, next: NextFunction): void {
   const secret = process.env.CSRF_SECRET || 'dev-csrf-secret';
   const expected = crypto.createHmac('sha256', secret).update(token).digest('hex');
   if (sig !== expected || fromHeader !== fromCookie) {
+    // DEV DIAGNOSTIC: log mismatch details so we can correlate header vs cookie seen by server
+    try {
+        if (process.env.NODE_ENV !== 'production') {
+          const rawCookieHeader = req.get('cookie');
+          const incomingCsrfHeader = req.get(HEADER_CSRF);
+          try { (req as any).log?.info?.({ cookieHeader: rawCookieHeader, parsedCookies: req.cookies, xCsrfHeader: incomingCsrfHeader, expected, sig }, 'diagnostic /validateCsrf mismatch'); } catch {}
+
+        console.log('[diagnostic] /validateCsrf mismatch - cookieHeader=', rawCookieHeader, 'parsedCookies=', JSON.stringify(req.cookies || {}), HEADER_CSRF + '=', incomingCsrfHeader, 'expectedSig=', expected, 'sig=', sig);
+      }
+    } catch {}
     res.status(403).json({ error: 'CSRF token invalid' });
     return;
   }
@@ -73,9 +103,12 @@ function validateCsrf(req: Request, res: Response, next: NextFunction): void {
 
 // Helpers
 function cookieBase() {
+  const cookieSecure = typeof process.env.COOKIE_SECURE !== 'undefined'
+    ? String(process.env.COOKIE_SECURE) === 'true'
+    : (process.env.NODE_ENV === 'production' && String(process.env.APP_ORIGIN || '').startsWith('https'));
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: cookieSecure,
     sameSite: 'lax' as const,
     path: '/',
   };
@@ -199,7 +232,7 @@ router.post('/register', validateCsrf, async (req: Request, res: Response) => {
   const user = authSvc ? await authSvc.createUser(createPayload) : await prisma.user.create({ data: createPayload });
   await logAudit(String(user.id), 'auth.register', { ip: req.ip, get: req.get.bind(req) });
     const access = signAccessToken(String(user.id));
-  const rt = await createRefreshToken(req as Request, String(user.id));
+  const rt = await createRefreshToken(req, String(user.id));
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.status(201).json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
   } catch (err: any) {
@@ -389,6 +422,19 @@ router.post('/logout', validateCsrf, async (req: Request, res: Response) => {
 
 router.post('/refresh', validateCsrf, async (req: Request, res: Response) => {
   try {
+    // TEMP DIAGNOSTIC: log incoming Cookie header and parsed cookies for deterministic debugging in dev
+    try {
+      if (process.env.NODE_ENV !== 'production') {
+        const rawCookieHeader = req.get('cookie');
+        const incomingCsrfHeader = req.get('x-csrf-token');
+        // Use console.log to ensure visible in local dev environment; also use structured logger if available
+        try { (req as any).log?.info?.({ cookieHeader: rawCookieHeader, parsedCookies: req.cookies, xCsrfHeader: incomingCsrfHeader }, 'diagnostic /auth/refresh incoming'); } catch {}
+
+        console.log('[diagnostic] /auth/refresh incoming - cookieHeader=', rawCookieHeader, 'parsedCookies=', JSON.stringify(req.cookies || {}), 'x-csrf-token=', incomingCsrfHeader);
+      }
+      } catch {
+        // swallow diagnostics errors
+      }
     const rt = req.cookies?.refreshToken as string | undefined;
     if (!rt) return res.status(401).json({ error: 'missing refresh token' });
     const authSvcRefresh = resolveAuthService(req);
@@ -475,7 +521,7 @@ router.post('/verify-email', validateCsrf, async (req: Request, res: Response) =
     await logAudit(String(user.id), 'auth.email_verification.verified', req);
   await logAudit(String(user.id), 'auth.email_verification.verified', { ip: req.ip, get: req.get.bind(req) });
     // issue fresh session
-  const access = signAccessToken(String(user.id));
+  const access = signAccessToken(user.id);
   const rt = await createRefreshToken(req, String(user.id));
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
     return res.json({ id: updated.id, email: updated.email, emailVerified: updated.emailVerified });
@@ -548,8 +594,8 @@ router.post('/reset-password', validateCsrf, async (req: Request, res: Response)
     const hashOpts = process.env.NODE_ENV === 'test'
       ? { type: argon2.argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
       : { type: argon2.argon2id };
-    const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
-    const updateData: any = { passwordHash };
+  const passwordHash = (await (argon2 as any).hash(password, hashOpts)) as string;
+  const updateData: Prisma.UserUpdateInput = { passwordHash };
     // If the account wasn't verified yet, password reset via emailed token proves control of inbox.
     // Mark emailVerified to allow immediate login post-reset.
     if (!user.emailVerified) updateData.emailVerified = new Date();
@@ -740,13 +786,7 @@ router.get('/oauth/:provider/start', async (req: any, res: Response) => {
     if (!enabled) return res.status(403).json({ error: `${provider} login disabled` });
 
     const state = generateState();
-    res.cookie('oauth_state', state, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 10 * 60 * 1000,
-    });
+    res.cookie('oauth_state', state, { ...cookieBase(), httpOnly: true, maxAge: 10 * 60 * 1000 });
 
     if (prov === 'google') {
       const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -783,7 +823,7 @@ router.get('/oauth/:provider/start', async (req: any, res: Response) => {
 // - Fetches profile and links/creates user + Account
 // - Issues access/refresh cookies and redirects
 // ---------------------------------------------
-router.get('/oauth/:provider/callback', async (req: any, res) => {
+  router.get('/oauth/:provider/callback', async (req: Request, res: Response) => {
   const successRedirect = process.env.OAUTH_SUCCESS_REDIRECT || '/';
   const failureRedirect = process.env.OAUTH_FAILURE_REDIRECT || '/login?error=oauth_failed';
   const provider = String(req.params.provider);

@@ -8,6 +8,7 @@ import { resetPasswordEmailTemplate, sendMail } from '../lib/email';
 const router = express.Router();
 // use centralized prisma client
 const ERR = { notFound: 'user not found' } as const;
+const ERR_ROLE_OR_PERMISSION_NOT_FOUND = 'role or permission not found' as const;
 
 async function logAudit(userId: string | null, action: string, req: any, metadata?: any) {
   try {
@@ -93,13 +94,13 @@ router.post('/permissions/grant', adminGuard, async (req, res) => {
       await maybeRoleService.grantPermissionToRole(roleName, permission);
       await logAudit(String(req.user?.id ?? '' ) || null, 'admin.permissions.grant', req, { roleName, permission });
       return res.json({ ok: true });
-    } catch (e) {
-      return res.status(404).json({ error: 'role or permission not found' });
+    } catch {
+      return res.status(404).json({ error: ERR_ROLE_OR_PERMISSION_NOT_FOUND });
     }
   }
   const role = await prisma.role.findUnique({ where: { name: roleName } });
   const perm = await prisma.permission.findUnique({ where: { name: permission } });
-  if (!role || !perm) return res.status(404).json({ error: 'role or permission not found' });
+  if (!role || !perm) return res.status(404).json({ error: ERR_ROLE_OR_PERMISSION_NOT_FOUND });
   await prisma.rolePermission.upsert({
     where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } },
     update: {},
@@ -119,13 +120,13 @@ router.post('/permissions/revoke', adminGuard, async (req, res) => {
       await maybeRoleService.revokePermissionFromRole(roleName, permission);
       await logAudit(String(req.user?.id ?? '' ) || null, 'admin.permissions.revoke', req, { roleName, permission });
       return res.json({ ok: true });
-    } catch (e) {
-      return res.status(404).json({ error: 'role or permission not found' });
+    } catch {
+      return res.status(404).json({ error: ERR_ROLE_OR_PERMISSION_NOT_FOUND });
     }
   }
   const role = await prisma.role.findUnique({ where: { name: roleName } });
   const perm = await prisma.permission.findUnique({ where: { name: permission } });
-  if (!role || !perm) return res.status(404).json({ error: 'role or permission not found' });
+  if (!role || !perm) return res.status(404).json({ error: ERR_ROLE_OR_PERMISSION_NOT_FOUND });
   await prisma.rolePermission.delete({ where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } } });
   await logAudit(String(req.user?.id ?? '' ) || null, 'admin.permissions.revoke', req, { roleName, permission });
   res.json({ ok: true });
@@ -231,7 +232,7 @@ router.get('/users', adminGuard, async (req, res) => {
   try {
     // normalize params
   const rawQ = req.query.q;
-  const q = typeof rawQ === 'string' ? rawQ.trim() : String(rawQ ?? '').trim();
+  const q = typeof rawQ === 'string' ? rawQ.trim() : '';
     const page = Math.max(1, Number(req.query.page ?? 1));
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
   const maybeUserService = req.container?.resolve?.('userService') as import('../services/interfaces/userService.interface').IUserService | undefined;
@@ -268,7 +269,7 @@ router.get('/users', adminGuard, async (req, res) => {
     }));
     res.json({ items: users, total, page, pageSize });
   } catch (err) {
-  try { (req as unknown as Record<string, any>).log?.error({ err }, 'user listing failed'); } catch {}
+  try { (req as unknown as Record<string, any>).log?.error('user listing failed', { err }); } catch {}
     res.status(500).json({ error: 'Failed to list users' });
   }
 });
@@ -278,19 +279,20 @@ const staffGuard = requireRole('staff_manager', 'shelter_admin', 'admin', 'syste
 router.post('/users/lock', staffGuard, async (req: any, res) => {
   const { userId, reason, expiresAt, notes } = req.body || {};
   if (!userId || !reason) return res.status(400).json({ error: 'userId and reason are required' });
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const userIdStr = String(userId);
+  const user = await prisma.user.findUnique({ where: { id: userIdStr } });
   if (!user) return res.status(404).json({ error: ERR.notFound });
-  const data: any = { userId, reason: String(reason), manual: true, lockedAt: new Date(), lockedBy: req.user?.id || null };
+  const data: any = { userId: userIdStr, reason: String(reason), manual: true, lockedAt: new Date(), lockedBy: req.user?.id || null };
   if (expiresAt) data.expiresAt = new Date(String(expiresAt));
   if (notes) data.notes = String(notes);
   const maybeUserService = req.container?.resolve?.('userService') as import('../services/interfaces/userService.interface').IUserService | undefined;
   if (maybeUserService && typeof maybeUserService.lockUser === 'function') {
-    const lock = await maybeUserService.lockUser(userId, { reason: String(reason), expiresAt: data.expiresAt ?? null, notes: data.notes ?? null, actorId: req.user?.id || null });
-    await logAudit(String(req.user?.id ?? '' ) || null, 'admin.users.lock', req, { userId, reason, expiresAt: data.expiresAt ?? null });
+  const lock = await maybeUserService.lockUser(userIdStr, { reason: String(reason), expiresAt: data.expiresAt ?? null, notes: data.notes ?? null, actorId: req.user?.id || null });
+  await logAudit(String(req.user?.id ?? '' ) || null, 'admin.users.lock', req, { userId: userIdStr, reason, expiresAt: data.expiresAt ?? null });
     return res.json({ ok: true, lock });
   }
   const lock = await prisma.userLock.create({ data });
-  await logAudit(String(req.user?.id ?? '' ) || null, 'admin.users.lock', req, { userId, reason, expiresAt: data.expiresAt ?? null });
+  await logAudit(String(req.user?.id ?? '' ) || null, 'admin.users.lock', req, { userId: userIdStr, reason, expiresAt: data.expiresAt ?? null });
   res.json({ ok: true, lock });
 });
 
@@ -300,7 +302,7 @@ router.post('/users/unlock', staffGuard, async (req: any, res) => {
   if (!userId) return res.status(400).json({ error: 'userId is required' });
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return res.status(404).json({ error: 'user not found' });
-  const maybeUserService = (req as unknown as Record<string, any>).container?.resolve?.('userService') as any | undefined;
+  const maybeUserService = (req as unknown as Record<string, any>).container?.resolve?.('userService');
   if (maybeUserService && typeof maybeUserService.unlockUser === 'function') {
     await maybeUserService.unlockUser(userId, { actorId: req.user?.id || null, notes: unlockReason || undefined });
     // send password reset email still handled by service or fallback below
@@ -336,6 +338,232 @@ router.post('/users/unlock', staffGuard, async (req: any, res) => {
   res.json({ ok: true });
 });
 
+// ----------------------
+// Admin: Menus & MenuItems CRUD
+// ----------------------
+// Admins and system_admins can manage menus and their items
+const menusGuard = adminGuard;
+
+const MenuCreateSchema = z.object({
+  name: z.string().min(1),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  locale: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const MenuUpdateSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  locale: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const MenuItemCreateSchema = z.object({
+  title: z.string().min(1),
+  url: z.string().optional(),
+  icon: z.string().optional(),
+  target: z.string().optional(),
+  external: z.boolean().optional(),
+  order: z.number().int().optional(),
+  meta: z.unknown().optional(),
+  parentId: z.string().optional(),
+  isVisible: z.boolean().optional(),
+  isPublished: z.boolean().optional(),
+  locale: z.string().optional(),
+});
+
+const MenuItemUpdateSchema = z.object({
+  title: z.string().optional(),
+  url: z.string().optional(),
+  icon: z.string().optional(),
+  target: z.string().optional(),
+  external: z.boolean().optional(),
+  order: z.number().int().optional(),
+  meta: z.unknown().optional(),
+  parentId: z.string().nullable().optional(),
+  isVisible: z.boolean().optional(),
+  isPublished: z.boolean().optional(),
+  locale: z.string().optional(),
+});
+
+function buildTree(items: Array<Record<string, unknown>>) : Array<Record<string, unknown>> {
+  type Node = Record<string, unknown> & { id: string; parentId?: string | null; order?: number | null; children?: Node[] };
+  const byId: Record<string, Node> = {};
+  const roots: Node[] = [];
+  for (const it of items) {
+    const node = { ...it } as Node;
+    node.children = [];
+    byId[node.id] = node;
+  }
+  for (const it of items) {
+  const id = String(it['id']);
+  const parentId = it['parentId'] as string | undefined | null;
+    const parent = parentId ? byId[parentId] : undefined;
+    if (parent) parent.children!.push(byId[id]);
+    else roots.push(byId[id]);
+  }
+  // sort children by order
+  function sortRec(node: Node) {
+    if (!node.children) return;
+    node.children.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    for (const c of node.children) sortRec(c);
+  }
+  for (const r of roots) sortRec(r);
+  return roots.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+// List all menus with nested items
+router.get('/menus', menusGuard, async (req, res) => {
+  const maybeMenuService = req.container?.resolve?.('menuService') as import('../services/interfaces/menuService.interface').IMenuService | undefined;
+  if (maybeMenuService && typeof maybeMenuService.listMenus === 'function') {
+    const menus = await maybeMenuService.listMenus();
+    return res.json(menus);
+  }
+  const menus = await prisma.menu.findMany({ include: { items: { orderBy: { order: 'asc' } } }, orderBy: { name: 'asc' } });
+  const shaped = menus.map(m => ({ id: m.id, name: m.name, title: m.title, description: m.description, locale: m.locale, isActive: m.isActive, createdAt: m.createdAt, updatedAt: m.updatedAt, items: buildTree(((m.items || []) as unknown[]).map((it) => ({ ...(it as Record<string, unknown>) }))) }));
+  res.json(shaped);
+});
+
+// Get single menu by name
+router.get('/menus/:name', menusGuard, async (req, res) => {
+  const name = req.params.name;
+  const maybeMenuService = req.container?.resolve?.('menuService') as import('../services/interfaces/menuService.interface').IMenuService | undefined;
+  if (maybeMenuService && typeof maybeMenuService.getMenuByName === 'function') {
+    const menu = await maybeMenuService.getMenuByName(name);
+    if (!menu) return res.status(404).json({ error: 'not found' });
+    return res.json(menu);
+  }
+  const menu = await prisma.menu.findUnique({ where: { name }, include: { items: { orderBy: { order: 'asc' } } } });
+  if (!menu) return res.status(404).json({ error: 'not found' });
+  const shaped = { id: menu.id, name: menu.name, title: menu.title, description: menu.description, locale: menu.locale, isActive: menu.isActive, createdAt: menu.createdAt, updatedAt: menu.updatedAt, items: buildTree(((menu.items || []) as unknown[]).map((it) => ({ ...(it as Record<string, unknown>) }))) };
+  res.json(shaped);
+});
+
+// Create a menu
+router.post('/menus', menusGuard, async (req: any, res) => {
+  const parsed = MenuCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+  const { name, title, description, locale, isActive } = parsed.data;
+  try {
+    const maybeMenuService = req.container?.resolve?.('menuService') as import('../services/interfaces/menuService.interface').IMenuService | undefined;
+    let menu;
+    if (maybeMenuService && typeof maybeMenuService.createMenu === 'function') {
+      menu = await maybeMenuService.createMenu({ name, title: title ?? undefined, description: description ?? undefined, locale: locale ?? undefined, isActive: isActive ?? true });
+    } else {
+      menu = await prisma.menu.create({ data: { name, title: title ?? undefined, description: description ?? undefined, locale: locale ?? undefined, isActive: isActive ?? true } });
+    }
+    await logAudit(String(req.user?.id ?? '' ) || null, 'admin.menus.create', req, { id: menu.id, name });
+    res.json(menu);
+  } catch {
+    return res.status(400).json({ error: 'failed to create menu' });
+  }
+});
+
+// Update menu
+router.put('/menus/:id', menusGuard, async (req: any, res) => {
+  const parsed = MenuUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+  const { id } = req.params as { id: string };
+  try {
+    const maybeMenuService = req.container?.resolve?.('menuService') as import('../services/interfaces/menuService.interface').IMenuService | undefined;
+    let menu;
+      if (maybeMenuService && typeof maybeMenuService.updateMenu === 'function') {
+        // service expects a simple Partial of menu fields
+        menu = await maybeMenuService.updateMenu(id, parsed.data as unknown as Partial<{ name: string; title: string | null; description: string | null; locale: string | null; isActive: boolean }>);
+      } else {
+        menu = await prisma.menu.update({ where: { id }, data: parsed.data as unknown as Prisma.MenuUpdateInput });
+      }
+    await logAudit(String(req.user?.id ?? '' ) || null, 'admin.menus.update', req, { id });
+    res.json(menu);
+  } catch {
+    return res.status(404).json({ error: 'not found' });
+  }
+});
+
+// Delete menu
+router.delete('/menus/:id', menusGuard, async (req: any, res) => {
+  const { id } = req.params as { id: string };
+  try {
+    const maybeMenuService = req.container?.resolve?.('menuService') as import('../services/interfaces/menuService.interface').IMenuService | undefined;
+    if (maybeMenuService && typeof maybeMenuService.deleteMenu === 'function') {
+      await maybeMenuService.deleteMenu(id);
+    } else {
+      await prisma.menu.delete({ where: { id } });
+    }
+    await logAudit(String(req.user?.id ?? '' ) || null, 'admin.menus.delete', req, { id });
+    res.status(204).end();
+  } catch {
+    return res.status(404).json({ error: 'not found' });
+  }
+});
+
+// Menu items routes
+router.get('/menus/:menuId/items', menusGuard, async (req, res) => {
+  const { menuId } = req.params as { menuId: string };
+  const maybeMenuService = req.container?.resolve?.('menuService') as import('../services/interfaces/menuService.interface').IMenuService | undefined;
+  if (maybeMenuService && typeof maybeMenuService.getItemsForMenu === 'function') {
+    const items = await maybeMenuService.getItemsForMenu(menuId);
+    return res.json(items);
+  }
+  const items = await prisma.menuItem.findMany({ where: { menuId }, orderBy: { order: 'asc' } });
+  res.json(buildTree(((items || []) as unknown[]).map((it) => ({ ...(it as Record<string, unknown>) }))));
+});
+
+router.post('/menus/:menuId/items', menusGuard, async (req: any, res) => {
+  const parsed = MenuItemCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+  const { menuId } = req.params as { menuId: string };
+  const data: any = { menuId, title: parsed.data.title, url: parsed.data.url ?? undefined, icon: parsed.data.icon ?? undefined, target: parsed.data.target ?? undefined, external: parsed.data.external ?? false, order: parsed.data.order ?? 0, meta: parsed.data.meta ?? undefined, parentId: parsed.data.parentId ?? undefined, isVisible: parsed.data.isVisible ?? true, isPublished: parsed.data.isPublished ?? true, locale: parsed.data.locale ?? undefined };
+  try {
+    const maybeMenuService = req.container?.resolve?.('menuService') as import('../services/interfaces/menuService.interface').IMenuService | undefined;
+    let item;
+    if (maybeMenuService && typeof maybeMenuService.createMenuItem === 'function') {
+      item = await maybeMenuService.createMenuItem(data as unknown as Partial<import('../services/interfaces/menuService.interface').MenuItemRow> & { menuId: string });
+    } else {
+      item = await prisma.menuItem.create({ data: data as unknown as Prisma.MenuItemCreateInput });
+    }
+    await logAudit(String(req.user?.id ?? '' ) || null, 'admin.menuItems.create', req, { id: item.id, menuId });
+    res.json(item);
+  } catch {
+    return res.status(400).json({ error: 'failed to create item' });
+  }
+});
+
+router.put('/menus/items/:id', menusGuard, async (req: any, res) => {
+  const parsed = MenuItemUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+  const { id } = req.params as { id: string };
+  try {
+    const maybeMenuService = req.container?.resolve?.('menuService') as import('../services/interfaces/menuService.interface').IMenuService | undefined;
+    let item;
+    if (maybeMenuService && typeof maybeMenuService.updateMenuItem === 'function') {
+      item = await maybeMenuService.updateMenuItem(id, parsed.data as unknown as Partial<import('../services/interfaces/menuService.interface').MenuItemRow>);
+    } else {
+      item = await prisma.menuItem.update({ where: { id }, data: parsed.data as unknown as Prisma.MenuItemUpdateInput });
+    }
+    await logAudit(String(req.user?.id ?? '' ) || null, 'admin.menuItems.update', req, { id });
+    res.json(item);
+  } catch {
+    return res.status(404).json({ error: 'not found' });
+  }
+});
+
+router.delete('/menus/items/:id', menusGuard, async (req: any, res) => {
+  const { id } = req.params as { id: string };
+  try {
+    const maybeMenuService = req.container?.resolve?.('menuService') as import('../services/interfaces/menuService.interface').IMenuService | undefined;
+    if (maybeMenuService && typeof maybeMenuService.deleteMenuItem === 'function') {
+      await maybeMenuService.deleteMenuItem(id);
+    } else {
+      await prisma.menuItem.delete({ where: { id } });
+    }
+    await logAudit(String(req.user?.id ?? '' ) || null, 'admin.menuItems.delete', req, { id });
+    res.status(204).end();
+  } catch {
+    return res.status(404).json({ error: 'not found' });
+  }
+});
+
 export default router;
 
 // ----------------------
@@ -367,7 +595,7 @@ router.get('/settings', settingsGuard, async (req: any, res) => {
 // Upsert settings for a category; body: { category: string, entries: { key: string, value: any }[] }
 const UpsertSettingsSchema = z.object({
   category: z.string().min(1),
-  entries: z.array(z.object({ key: z.string().min(1), value: z.any() })).min(1),
+  entries: z.array(z.object({ key: z.string().min(1), value: z.unknown() })).min(1),
 });
 
 router.put('/settings', settingsGuard, async (req: any, res) => {
@@ -375,7 +603,7 @@ router.put('/settings', settingsGuard, async (req: any, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
   const { category, entries } = parsed.data;
   const actorId = req.user?.id || null;
-  const maybeSettings = req.container?.resolve?.('settingsService') as any | undefined;
+  const maybeSettings = req.container?.resolve?.('settingsService');
   if (maybeSettings && typeof maybeSettings.upsertSettings === 'function') {
     await maybeSettings.upsertSettings(category, entries, actorId);
     await logAudit((typeof actorId === 'string' ? actorId : null), 'admin.settings.upsert', req, { category, keys: entries.map((e: { key: string }) => e.key) });
@@ -385,8 +613,8 @@ router.put('/settings', settingsGuard, async (req: any, res) => {
   for (const { key, value } of entries) {
     writes.push(prisma.setting.upsert({
       where: { category_key: { category, key } },
-      create: { category, key, value, updatedBy: actorId || undefined },
-      update: { value, updatedBy: actorId || undefined },
+      create: { category, key, value: value as Prisma.InputJsonValue, updatedBy: actorId || undefined },
+      update: { value: value as Prisma.InputJsonValue, updatedBy: actorId || undefined },
     }));
   }
   await prisma.$transaction(writes);

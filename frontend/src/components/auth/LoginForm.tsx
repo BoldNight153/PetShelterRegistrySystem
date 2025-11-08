@@ -1,6 +1,6 @@
 import { useState } from "react";
-// Use auth context to ensure header updates immediately
-import { useAuth } from "@/lib/auth-context";
+import { useAppDispatch } from '@/store/hooks'
+import { login as loginThunk } from '@/store/slices/authSlice'
 import { Link } from "react-router-dom";
 import PasswordInput from "@/components/ui/password-input";
 import { useForm } from "react-hook-form";
@@ -14,7 +14,7 @@ export function LoginForm({ onSuccess, switchToRegister }: { onSuccess?: () => v
   // form state handled by react-hook-form
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const dispatch = useAppDispatch()
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -26,7 +26,7 @@ export function LoginForm({ onSuccess, switchToRegister }: { onSuccess?: () => v
     setLoading(true);
     setError(null);
     try {
-      await login(vals.email, vals.password);
+      await dispatch(loginThunk({ email: vals.email, password: vals.password }))
       toast.success("Signed in successfully");
       onSuccess?.();
     } catch (err: any) {

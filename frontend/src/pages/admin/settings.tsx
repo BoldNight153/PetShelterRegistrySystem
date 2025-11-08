@@ -1,12 +1,12 @@
 import { useAuth } from '@/lib/auth-context'
 import { useEffect, useState } from 'react'
-import { useServices } from '@/services/hooks'
+import { useAdminSettings, useSaveAdminSettings } from '@/services/hooks/admin'
 import { ShieldAlert } from 'lucide-react'
 
 export default function AdminSettingsPage() {
   const { user } = useAuth()
-  const services = useServices()
-  const settingsService = services.admin.settings
+  const { data: settingsData } = useAdminSettings()
+  const saveMutation = useSaveAdminSettings()
   const isSystemAdmin = !!user?.roles?.includes('system_admin')
   const sections = [
     { id: 'general', label: 'General' },
@@ -35,41 +35,34 @@ export default function AdminSettingsPage() {
   })
 
   useEffect(() => {
-    let cancel = false
-    ;(async () => {
-      try {
-  const s = await settingsService.loadSettings()
-        if (cancel) return
-        if (s.general) setGeneral({
-          appName: String(s.general.appName ?? 'Pet Shelter Registry'),
-          supportEmail: String(s.general.supportEmail ?? '')
-        })
-        if (s.monitoring) setMonitoring({
-          chartsRefreshSec: Number(s.monitoring.chartsRefreshSec ?? 15),
-          retentionDays: Number(s.monitoring.retentionDays ?? 7)
-        })
-        if (s.auth) setAuthSettings({
-          mode: (s.auth.mode === 'jwt' ? 'jwt' : 'session'),
-          google: Boolean(s.auth.google),
-          github: Boolean(s.auth.github)
-        })
-        if (s.docs) setDocs({ showPublicDocsLink: Boolean(s.docs.showPublicDocsLink ?? true) })
-        if (s.security) setSecurity({
-          sessionMaxAgeMin: Number(s.security.sessionMaxAgeMin ?? 60),
-          requireEmailVerification: Boolean(s.security.requireEmailVerification ?? true),
-          loginIpWindowSec: Number(s.security.loginIpWindowSec ?? 60),
-          loginIpLimit: Number(s.security.loginIpLimit ?? 20),
-          loginLockWindowSec: Number(s.security.loginLockWindowSec ?? 15 * 60),
-          loginLockThreshold: Number(s.security.loginLockThreshold ?? 5),
-          loginLockDurationMin: Number(s.security.loginLockDurationMin ?? 15),
-          passwordHistoryLimit: Number(s.security.passwordHistoryLimit ?? 10),
-        })
-      } finally {
-        if (!cancel) setLoading(false)
-      }
-    })()
-    return () => { cancel = true }
-  }, [settingsService])
+    if (!settingsData) return
+    const s = settingsData
+    if (s.general) setGeneral({
+      appName: String(s.general.appName ?? 'Pet Shelter Registry'),
+      supportEmail: String(s.general.supportEmail ?? '')
+    })
+    if (s.monitoring) setMonitoring({
+      chartsRefreshSec: Number(s.monitoring.chartsRefreshSec ?? 15),
+      retentionDays: Number(s.monitoring.retentionDays ?? 7)
+    })
+    if (s.auth) setAuthSettings({
+      mode: (s.auth.mode === 'jwt' ? 'jwt' : 'session'),
+      google: Boolean(s.auth.google),
+      github: Boolean(s.auth.github)
+    })
+    if (s.docs) setDocs({ showPublicDocsLink: Boolean(s.docs.showPublicDocsLink ?? true) })
+    if (s.security) setSecurity({
+      sessionMaxAgeMin: Number(s.security.sessionMaxAgeMin ?? 60),
+      requireEmailVerification: Boolean(s.security.requireEmailVerification ?? true),
+      loginIpWindowSec: Number(s.security.loginIpWindowSec ?? 60),
+      loginIpLimit: Number(s.security.loginIpLimit ?? 20),
+      loginLockWindowSec: Number(s.security.loginLockWindowSec ?? 15 * 60),
+      loginLockThreshold: Number(s.security.loginLockThreshold ?? 5),
+      loginLockDurationMin: Number(s.security.loginLockDurationMin ?? 15),
+      passwordHistoryLimit: Number(s.security.passwordHistoryLimit ?? 10),
+    })
+    setLoading(false)
+  }, [settingsData])
 
   if (!isSystemAdmin) {
     return (
@@ -83,24 +76,23 @@ export default function AdminSettingsPage() {
   async function saveCategory(id: string) {
     try {
       setSaving(id)
-      const { admin } = services
-      if (id === 'general') await admin.settings.saveSettings('general', [
+      if (id === 'general') await saveMutation.mutateAsync({ category: 'general', entries: [
         { key: 'appName', value: general.appName },
         { key: 'supportEmail', value: general.supportEmail },
-      ])
-      if (id === 'monitoring') await admin.settings.saveSettings('monitoring', [
+      ] })
+      if (id === 'monitoring') await saveMutation.mutateAsync({ category: 'monitoring', entries: [
         { key: 'chartsRefreshSec', value: Number(monitoring.chartsRefreshSec) },
         { key: 'retentionDays', value: Number(monitoring.retentionDays) },
-      ])
-      if (id === 'auth') await admin.settings.saveSettings('auth', [
+      ] })
+      if (id === 'auth') await saveMutation.mutateAsync({ category: 'auth', entries: [
         { key: 'mode', value: auth.mode },
         { key: 'google', value: auth.google },
         { key: 'github', value: auth.github },
-      ])
-      if (id === 'docs') await admin.settings.saveSettings('docs', [
+      ] })
+      if (id === 'docs') await saveMutation.mutateAsync({ category: 'docs', entries: [
         { key: 'showPublicDocsLink', value: docs.showPublicDocsLink },
-      ])
-      if (id === 'security') await admin.settings.saveSettings('security', [
+      ] })
+      if (id === 'security') await saveMutation.mutateAsync({ category: 'security', entries: [
         { key: 'sessionMaxAgeMin', value: Number(security.sessionMaxAgeMin) },
         { key: 'requireEmailVerification', value: Boolean(security.requireEmailVerification) },
         { key: 'loginIpWindowSec', value: Number(security.loginIpWindowSec) },
@@ -109,7 +101,7 @@ export default function AdminSettingsPage() {
         { key: 'loginLockThreshold', value: Number(security.loginLockThreshold) },
         { key: 'loginLockDurationMin', value: Number(security.loginLockDurationMin) },
         { key: 'passwordHistoryLimit', value: Number(security.passwordHistoryLimit) },
-      ])
+      ] })
     } finally {
       setSaving(null)
     }

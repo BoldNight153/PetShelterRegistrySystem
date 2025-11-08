@@ -3,6 +3,7 @@ import { prismaClient } from '../../prisma/client';
 import { UserService } from '../../services/userService';
 import { AuthService } from '../../services/authService';
 import { RateLimitService } from '../../services/rateLimitService';
+import type { LimitOptions } from '../../services/rateLimitService';
 import { RoleService } from '../../services/roleService';
 import { SettingsService } from '../../services/settingsService';
 import { AuditService } from '../../services/auditService';
@@ -37,8 +38,8 @@ export function makeTestContainer() {
   type Cradle = { rateLimitService?: RateLimitService } & Record<string, any>;
   function makeLegacyRateLimitWrapper(cradle: Cradle): RateLimitService {
     return {
-      incrementAndCheck: (opts: any) => (cradle.rateLimitService as RateLimitService).incrementAndCheck(opts),
-      getCount: (opts: any) => (cradle.rateLimitService as RateLimitService).getCount(opts),
+      incrementAndCheck: (opts: LimitOptions) => (cradle.rateLimitService as RateLimitService).incrementAndCheck(opts),
+      getCount: (opts: Omit<LimitOptions, 'limit'>) => (cradle.rateLimitService as RateLimitService).getCount(opts),
       resetWindow: (s: string, k: string, w: number) => (cradle.rateLimitService as RateLimitService).resetWindow(s, k, w),
     } as unknown as RateLimitService;
   }

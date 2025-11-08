@@ -7,6 +7,7 @@ import {
   Trash2,
   type LucideIcon,
 } from "lucide-react"
+import { Link } from "react-router-dom"
 
 import {
   DropdownMenu,
@@ -32,9 +33,35 @@ export function NavProjects({
     name: string
     url: string
     icon: LucideIcon
+    external?: boolean
+    target?: string | null
   }[]
 }) {
   const { isMobile } = useSidebar()
+
+  const renderProjectLink = (project: {
+    name: string
+    url: string
+    icon: LucideIcon
+    external?: boolean
+    target?: string | null
+  }) => {
+    const href = project.url || "#"
+    if (project.external) {
+      return (
+        <a href={href} target={project.target ?? "_blank"} rel="noreferrer noopener">
+          <project.icon />
+          <span>{project.name}</span>
+        </a>
+      )
+    }
+    return (
+      <Link to={href}>
+        <project.icon />
+        <span>{project.name}</span>
+      </Link>
+    )
+  }
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -43,10 +70,7 @@ export function NavProjects({
         {projects.map((item) => (
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton asChild>
-              <a href={item.url}>
-                <item.icon />
-                <span>{item.name}</span>
-              </a>
+              {renderProjectLink(item)}
             </SidebarMenuButton>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

@@ -3,7 +3,7 @@ import app from '../../index';
 import { PrismaClient } from '@prisma/client';
 import { ensureRoleWithPermissionsForUser } from './rbac';
 
-const prisma: any = new PrismaClient();
+const prisma = new PrismaClient();
 
 export async function createLoggedInAdminAgent() {
   const agent = request.agent(app);

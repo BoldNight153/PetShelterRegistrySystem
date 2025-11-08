@@ -133,6 +133,205 @@ async function main() {
       }
     }
   }
+
+  type MenuNode = {
+    title: string;
+    url?: string | null;
+    icon?: string | null;
+    target?: string | null;
+    external?: boolean | null;
+    order?: number | null;
+    meta?: Record<string, any> | null;
+    children?: MenuNode[];
+  };
+
+  type MenuSeed = {
+    name: string;
+    title: string;
+    description?: string | null;
+    locale?: string | null;
+    isActive?: boolean;
+    items: MenuNode[];
+  };
+
+  const VOLUNTEER_AND_UP = ['volunteer', 'staff_assistant', 'staff', 'staff_manager', 'veterinarian', 'shelter_admin', 'admin', 'system_admin'];
+  const STAFF_OR_ABOVE = ['staff', 'staff_manager', 'veterinarian', 'shelter_admin', 'admin', 'system_admin'];
+  const MANAGER_OR_ABOVE = ['staff_manager', 'shelter_admin', 'admin', 'system_admin'];
+  const SHELTER_ADMIN_OR_ABOVE = ['shelter_admin', 'admin', 'system_admin'];
+  const ADMIN_ONLY = ['admin', 'system_admin'];
+
+  async function syncMenu(seed: MenuSeed) {
+    const menu = await prisma.menu.upsert({
+      where: { name: seed.name },
+      update: {
+        title: seed.title,
+        description: seed.description ?? null,
+        locale: seed.locale ?? null,
+        isActive: seed.isActive ?? true,
+      },
+      create: {
+        name: seed.name,
+        title: seed.title,
+        description: seed.description ?? null,
+        locale: seed.locale ?? null,
+        isActive: seed.isActive ?? true,
+      },
+    });
+
+    await prisma.menuItem.deleteMany({ where: { menuId: menu.id } });
+
+    async function createNodes(parentId: string | null, nodes: MenuNode[]) {
+      for (const node of nodes) {
+        const item = await prisma.menuItem.create({
+          data: {
+            menuId: menu.id,
+            parentId,
+            title: node.title,
+            url: node.url ?? null,
+            icon: node.icon ?? null,
+            target: node.target ?? null,
+            external: node.external ?? false,
+            order: node.order ?? 0,
+            meta: node.meta ?? undefined,
+            isVisible: true,
+            isPublished: true,
+            locale: seed.locale ?? null,
+          },
+        });
+        if (node.children && node.children.length) {
+          await createNodes(item.id, node.children);
+        }
+      }
+    }
+
+    await createNodes(null, seed.items);
+    console.log(`Seeded menu '${seed.name}' with ${seed.items.length} top-level group(s)`);
+  }
+
+  const adminMenuItems: MenuNode[] = [
+    {
+      title: 'Overview',
+      icon: 'LayoutDashboard',
+      order: 0,
+      meta: { requiresRoles: VOLUNTEER_AND_UP },
+      children: [
+        { title: 'Dashboard', url: '/dashboard', order: 0, icon: 'Gauge', meta: { requiresRoles: VOLUNTEER_AND_UP } },
+        { title: 'Alerts', url: '/alerts', order: 10, icon: 'BellRing', meta: { requiresPermissions: ['events.read'] } },
+        { title: 'Upcoming Events', url: '/events/upcoming', order: 20, icon: 'CalendarRange', meta: { requiresPermissions: ['events.read'] } },
+      ],
+    },
+    {
+      title: 'Animal Management',
+      icon: 'PawPrint',
+      order: 10,
+      meta: { requiresPermissions: ['pets.read'] },
+      children: [
+        { title: 'All Animals', url: '/animals', order: 0, icon: 'List', meta: { requiresPermissions: ['pets.read'] } },
+        { title: 'Intake', url: '/animals/intake', order: 10, icon: 'LogIn', meta: { requiresPermissions: ['pets.write'] } },
+        { title: 'Adoptions', url: '/animals/adoptions', order: 20, icon: 'UsersRound', meta: { requiresPermissions: ['pets.read', 'owners.read'] } },
+        { title: 'Medical Records', url: '/animals/medical', order: 30, icon: 'Stethoscope', meta: { requiresPermissions: ['medical.read'] } },
+        { title: 'Events Log', url: '/animals/events', order: 40, icon: 'History', meta: { requiresPermissions: ['events.read'] } },
+      ],
+    },
+    {
+      title: 'People & Relationships',
+      icon: 'Users',
+      order: 20,
+      meta: { requiresPermissions: ['owners.read'] },
+      children: [
+        { title: 'Owners', url: '/people/owners', order: 0, icon: 'User', meta: { requiresPermissions: ['owners.read'] } },
+        { title: 'Fosters', url: '/people/fosters', order: 10, icon: 'Home', meta: { requiresPermissions: ['owners.read'] } },
+        { title: 'Volunteers', url: '/people/volunteers', order: 20, icon: 'Handshake', meta: { requiresRoles: VOLUNTEER_AND_UP } },
+        { title: 'Contacts', url: '/people/contacts', order: 30, icon: 'BookUser', meta: { requiresPermissions: ['owners.read'] } },
+      ],
+    },
+    {
+      title: 'Shelters & Facilities',
+      icon: 'Building2',
+      order: 30,
+      meta: { requiresPermissions: ['shelters.read'] },
+      children: [
+        { title: 'Locations', url: '/facilities/locations', order: 0, icon: 'MapPin', meta: { requiresPermissions: ['locations.read'] } },
+        { title: 'Capacity', url: '/facilities/capacity', order: 10, icon: 'BarChart3', meta: { requiresPermissions: ['shelters.read'] } },
+        { title: 'Maintenance', url: '/facilities/maintenance', order: 20, icon: 'Wrench', meta: { requiresPermissions: ['locations.write'] } },
+        { title: 'Inventory', url: '/facilities/inventory', order: 30, icon: 'Boxes', meta: { requiresPermissions: ['shelters.write'] } },
+      ],
+    },
+    {
+      title: 'Scheduling & Tasks',
+      icon: 'ClipboardList',
+      order: 40,
+      meta: { requiresRoles: STAFF_OR_ABOVE },
+      children: [
+        { title: 'Calendar', url: '/schedule/calendar', order: 0, icon: 'CalendarRange', meta: { requiresRoles: STAFF_OR_ABOVE } },
+        { title: 'Shifts', url: '/schedule/shifts', order: 10, icon: 'ClipboardClock', meta: { requiresRoles: MANAGER_OR_ABOVE } },
+        { title: 'Follow-ups', url: '/schedule/follow-ups', order: 20, icon: 'CheckSquare', meta: { requiresPermissions: ['events.read'] } },
+        { title: 'Reminders', url: '/schedule/reminders', order: 30, icon: 'AlarmClock', meta: { requiresPermissions: ['events.write'] } },
+      ],
+    },
+    {
+      title: 'Reporting & Analytics',
+      icon: 'PieChart',
+      order: 50,
+      meta: { requiresPermissions: ['pets.read'] },
+      children: [
+        { title: 'Outcomes', url: '/reports/outcomes', order: 0, icon: 'PieChart', meta: { requiresPermissions: ['pets.read'] } },
+        { title: 'Intake vs Adoption', url: '/reports/intake-vs-adoption', order: 10, icon: 'TrendingUp', meta: { requiresPermissions: ['pets.read'] } },
+        { title: 'Compliance', url: '/reports/compliance', order: 20, icon: 'ShieldAlert', meta: { requiresPermissions: ['medical.read'] } },
+        { title: 'Exports', url: '/reports/exports', order: 30, icon: 'FileDown', meta: { requiresRoles: MANAGER_OR_ABOVE } },
+      ],
+    },
+    {
+      title: 'Projects',
+      icon: 'Briefcase',
+      order: 55,
+      meta: { requiresRoles: MANAGER_OR_ABOVE },
+      children: [
+        { title: 'Active Projects', url: '/projects/active', order: 0, icon: 'ListChecks', meta: { requiresRoles: MANAGER_OR_ABOVE } },
+        { title: 'New Project', url: '/projects/new', order: 10, icon: 'PlusSquare', meta: { requiresRoles: SHELTER_ADMIN_OR_ABOVE } },
+        { title: 'Archived Projects', url: '/projects/archived', order: 20, icon: 'Archive', meta: { requiresRoles: MANAGER_OR_ABOVE } },
+      ],
+    },
+    {
+      title: 'Admin & Settings',
+      icon: 'Settings2',
+      order: 60,
+      meta: { requiresRoles: ADMIN_ONLY },
+      children: [
+        { title: 'Users & Roles', url: '/settings/users', order: 0, icon: 'Shield', meta: { requiresRoles: ADMIN_ONLY } },
+        { title: 'Navigation Builder', url: '/settings/navigation', order: 10, icon: 'PanelsTopLeft', meta: { requiresRoles: ADMIN_ONLY } },
+        { title: 'Integrations', url: '/settings/integrations', order: 20, icon: 'Plug', meta: { requiresRoles: ADMIN_ONLY } },
+        { title: 'Organization Settings', url: '/settings/general', order: 30, icon: 'SlidersHorizontal', meta: { requiresRoles: ADMIN_ONLY } },
+        { title: 'Documentation', url: '/docs', order: 40, icon: 'BookOpen', meta: { requiresRoles: ADMIN_ONLY } },
+        { title: 'System Logs', url: '/settings/logs', order: 50, icon: 'ScrollText', meta: { requiresRoles: ADMIN_ONLY } },
+      ],
+    },
+  ];
+
+  const menusToSeed: MenuSeed[] = [
+    {
+      name: 'admin_main',
+      title: 'Admin Navigation',
+      description: 'Primary navigation for the administration console',
+      items: adminMenuItems,
+    },
+    {
+      name: 'test_main',
+      title: 'Dev Preview Navigation',
+      description: 'Sample data served by /menus/test_main for frontend testing',
+      items: adminMenuItems,
+    },
+    {
+      name: 'main',
+      title: 'Main Navigation',
+      description: 'Default navigation menu',
+      items: adminMenuItems,
+    },
+  ];
+
+  for (const menu of menusToSeed) {
+    await syncMenu(menu);
+  }
 }
 
 main()

@@ -1,6 +1,8 @@
 import { createContainer, asClass, asValue, asFunction } from 'awilix';
+import type { AwilixContainer } from 'awilix';
 import { UserService } from './services/userService';
 import { RoleService } from './services/roleService';
+import { MenuService } from './services/menuService';
 import { prismaClient } from './prisma/client';
 import { SettingsService } from './services/settingsService';
 import { AuditService } from './services/auditService';
@@ -14,12 +16,13 @@ import { EventService } from './services/eventService';
 import { AuthService } from './services/authService';
 import { RateLimitService } from './services/rateLimitService';
 
-export const container = createContainer();
+export const container: AwilixContainer = createContainer();
 
 container.register({
   prisma: asValue(prismaClient),
   userService: asClass(UserService).singleton(),
   roleService: asClass(RoleService).singleton(),
+  menuService: asClass(MenuService).singleton(),
   settingsService: asClass(SettingsService).singleton(),
   auditService: asClass(AuditService).singleton(),
   ownerService: asClass(OwnerService).singleton(),
@@ -44,10 +47,11 @@ type Cradle = { rateLimitService?: RateLimitService } & Record<string, any>;
 
 function makeLegacyRateLimitWrapper(cradle: Cradle): RateLimitService {
   return {
-    incrementAndCheck: (opts: any) => {
+    incrementAndCheck: (opts: import('./services/rateLimitService').LimitOptions) => {
       return (cradle.rateLimitService as RateLimitService).incrementAndCheck(opts);
     },
-    getCount: (opts: any) => {
+    getCount: (opts: Omit<import('./services/rateLimitService').LimitOptions, 'limit'>) => {
+      // Omit 'limit' is the expected shape for getCount
       return (cradle.rateLimitService as RateLimitService).getCount(opts);
     },
     resetWindow: (scope: string, key: string, windowMs: number) => {

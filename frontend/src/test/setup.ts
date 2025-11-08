@@ -25,3 +25,14 @@ if (typeof window !== 'undefined' && typeof window.HTMLElement !== 'undefined') 
     // intentionally empty for test environment
   }
 }
+
+// Global no-op implementations for browser dialog APIs used in the app
+// Keeps test output quiet; individual tests can override these with spies if needed.
+if (typeof window !== 'undefined') {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	;(window as any).alert = vi.fn()
+	// confirm defaults to true to allow destructive flows in tests unless they stub it
+	;(window as any).confirm = vi.fn().mockImplementation(() => true)
+	// prompt returns null by default (user cancelled) — tests can stub to provide values
+	;(window as any).prompt = vi.fn().mockImplementation(() => null)
+}

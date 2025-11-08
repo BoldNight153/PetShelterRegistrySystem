@@ -1,7 +1,7 @@
 import request from 'supertest';
 import app from '../index';
 import { PrismaClient } from '@prisma/client';
-import { ensureRoleWithPermissionsForUser, ensureRole, ensurePermission, grantPermissionToRole } from './helpers/rbac';
+import { ensureRole, ensurePermission } from './helpers/rbac';
 import { createLoggedInAdminAgent } from './helpers/agent';
 
 describe('Admin endpoints', () => {
@@ -11,15 +11,15 @@ describe('Admin endpoints', () => {
   jest.setTimeout(30000);
   const prisma: any = new PrismaClient();
   const agent = request.agent(app);
-  let csrfToken: string | undefined;
-  let adminEmail: string | undefined;
+  let _csrfToken: string | undefined;
+  let _adminEmail: string | undefined;
   let adminUserId: string | undefined;
 
   beforeAll(async () => {
     const { agent: a, user, email } = await createLoggedInAdminAgent();
-    // rebind the local agent reference by copying cookies via supertest.agent reuse
-    (agent as any).jar = (a as any).jar;
-    adminEmail = email;
+  // rebind the local agent reference by copying cookies via supertest.agent reuse
+  (agent as any).jar = (a as any).jar;
+  _adminEmail = email;
     adminUserId = user.id;
   });
 

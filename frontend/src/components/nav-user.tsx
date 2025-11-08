@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar"
 import ThemeToggleGroup from "@/components/ui/theme-toggle-group"
-import { useAuth } from "@/lib/auth-context"
+import { useAuth } from '@/lib/auth-context'
 // no direct Links here; we open an Auth drawer
 import AuthDrawer from "@/components/auth/AuthDrawer"
 

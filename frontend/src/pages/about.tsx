@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAuth } from '@/lib/auth-context'
 
 declare const __APP_VERSION__: string
 
@@ -11,10 +12,16 @@ type VersionInfo = {
 export default function AboutPage() {
   const [info, setInfo] = useState<VersionInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const { authenticated } = useAuth()
   const viteEnv = (import.meta as unknown as { env?: Record<string, string> }).env
   const frontendVersion = (viteEnv?.VITE_APP_VERSION as string | undefined) || __APP_VERSION__
 
   useEffect(() => {
+    if (!authenticated) {
+      setInfo(null)
+      setError(null)
+      return
+    }
     let cancelled = false
     ;(async () => {
       try {
@@ -28,7 +35,7 @@ export default function AboutPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [authenticated])
 
   return (
     <div className="p-6 space-y-6">
@@ -43,7 +50,9 @@ export default function AboutPage() {
         <h2 className="text-lg font-medium mb-2">Versions</h2>
         <dl className="space-y-1">
           <div className="flex gap-2"><dt className="w-40 text-muted-foreground">Frontend</dt><dd className="font-mono">{String(frontendVersion)}</dd></div>
-          {error ? (
+          {!authenticated ? (
+            <div className="flex gap-2"><dt className="w-40 text-muted-foreground">Backend</dt><dd className="text-muted-foreground">Sign in to view backend version details.</dd></div>
+          ) : error ? (
             <div className="flex gap-2"><dt className="w-40 text-muted-foreground">Backend</dt><dd className="text-red-600">{error}</dd></div>
           ) : info ? (
             <>

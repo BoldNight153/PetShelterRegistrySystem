@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { useAppDispatch } from '@/store/hooks'
+import { register as registerThunk } from '@/store/slices/authSlice'
 import PasswordInput from "@/components/ui/password-input";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,7 +19,7 @@ export function RegisterForm({ onSuccess, switchToLogin }: { onSuccess?: () => v
     defaultValues: { name: "", email: "", password: "", confirm: "" },
     mode: "onBlur",
   })
-  const { register: registerUser } = useAuth();
+  const dispatch = useAppDispatch()
 
   const pwd = form.watch("password") || ""
   const confirm = form.watch("confirm") || ""
@@ -34,7 +35,7 @@ export function RegisterForm({ onSuccess, switchToLogin }: { onSuccess?: () => v
     setLoading(true);
     setError(null);
     try {
-      await registerUser(values.email, values.password, values.name);
+  await dispatch(registerThunk({ email: values.email, password: values.password, name: values.name }))
       toast.success("Account created");
       onSuccess?.();
     } catch (err: any) {
