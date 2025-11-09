@@ -887,15 +887,16 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
-  /admin/menus/{idOrName}:
+  /admin/menus/{menuId}:
     parameters:
-      - name: idOrName
+      - name: menuId
         in: path
         required: true
+        description: Menu identifier; accepts a menu UUID or unique menu name.
         schema: { type: string }
     get:
       summary: Get a menu by id or name
-      description: Returns a single menu with nested items by ID or name.
+      description: Returns a single menu with nested items. When a menu name is supplied it must be unique.
       tags: [Settings]
       operationId: getAdminMenu
       security:
@@ -910,16 +911,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-
-  /admin/menus/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: string }
     put:
       summary: Update a menu
-      description: Update fields on an existing menu.
+      description: Update fields on an existing menu. A menu ID is required.
       tags: [Settings]
       operationId: updateAdminMenu
       security:
@@ -945,7 +939,7 @@ paths:
 
     delete:
       summary: Delete a menu
-      description: Removes the menu and its items.
+      description: Removes the menu and its items. A menu ID is required.
       tags: [Settings]
       operationId: deleteAdminMenu
       security:
@@ -989,9 +983,9 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
-  /admin/menus/items/{id}:
+  /admin/menu-items/{itemId}:
     parameters:
-      - name: id
+      - name: itemId
         in: path
         required: true
         schema: { type: string }
