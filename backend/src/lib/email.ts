@@ -6,15 +6,18 @@ export type MailOptions = {
   html?: string;
   text?: string;
 };
-
 function getEnv(name: string, fallback?: string): string | undefined {
   const v = process.env[name];
   if (v == null || v === '') return fallback;
   return v;
 }
 
+// Minimal transport interface we need from nodemailer
+type EmailSendResult = { messageId: string };
+type EmailTransport = { sendMail: (opts: MailOptions & { from?: string }) => Promise<EmailSendResult> };
+
 // Create a transporter based on env; fallback to a dev JSON/console logger
-export function createTransport() {
+export function createTransport(): EmailTransport {
   const host = getEnv('SMTP_HOST');
   const portStr = getEnv('SMTP_PORT');
   const user = getEnv('SMTP_USER');
@@ -23,35 +26,49 @@ export function createTransport() {
 
   if (host && portStr) {
     const port = Number(portStr);
-    return nodemailer.createTransport({
+    const real = nodemailer.createTransport({
       host,
       port,
       secure,
       auth: user && pass ? { user, pass } : undefined,
-    } as any);
+    });
+    // Wrap the real transporter in a minimal, well-typed adapter so callers
+    // only see the small sendMail API we need and we avoid returning
+    // nodemailer's complex union types directly.
+    return {
+      sendMail: async (opts: MailOptions & { from?: string }) => {
+  const info: unknown = await (real as any).sendMail(opts);
+  // nodemailer returns varying info shapes depending on transport; prefer messageId when present
+  const maybeMsg = info ? (info as any).messageId ?? undefined : undefined;
+  const messageId = maybeMsg || `smtp-${Date.now()}`;
+        return { messageId };
+      },
+    };
   }
 
-  // Dev fallback: log emails to console/JSON
+  // Dev fallback: log emails to console/JSON and return a stable shape
   return {
-    async sendMail(opts: any) {
+    sendMail(opts: MailOptions & { from?: string }) {
       const payload = {
         transport: 'dev-console',
         to: opts.to,
         subject: opts.subject,
         text: opts.text,
         html: opts.html,
+        from: opts.from,
       };
-      // eslint-disable-next-line no-console
+
       console.info('[dev-email]', JSON.stringify(payload, null, 2));
-      return { messageId: `dev-${Date.now()}` } as any;
+      return Promise.resolve({ messageId: `dev-${Date.now()}` });
     },
-  } as any;
+  };
 }
 
-export async function sendMail(opts: MailOptions) {
+export async function sendMail(opts: MailOptions): Promise<EmailSendResult> {
   const from = getEnv('EMAIL_FROM') || 'no-reply@localhost';
   const transporter = createTransport();
-  return transporter.sendMail({ from, ...opts });
+  // Return a stable EmailSendResult shape so callers can rely on messageId
+  return await transporter.sendMail({ from, ...opts });
 }
 
 export function verificationEmailTemplate(params: { verifyUrl: string }) {

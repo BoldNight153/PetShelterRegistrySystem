@@ -9,7 +9,7 @@ type AuditLog = {
   userId?: string | null
   ipAddress?: string | null
   userAgent?: string | null
-  metadata?: any
+  metadata?: unknown
 }
 
 type Page<T> = { items: T[]; total: number; page: number; pageSize: number }

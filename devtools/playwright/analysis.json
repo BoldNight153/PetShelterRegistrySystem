@@ -1,0 +1,116 @@
+[
+  {
+    "requestIndex": 353,
+    "requestTs": "2025-10-29T09:37:18.998Z",
+    "requestUrl": "http://localhost:5173/auth/refresh",
+    "requestMethod": "POST",
+    "xCsrfHeader": "ba31014a2a5041d10dc7ba4ba7498784.9c040a85be7d9b4adf670a9d54c123aec9df531b16a9238dd0633f56ecae3ca3",
+    "requestCookieHeaderPresent": false,
+    "snapshotTs": "2025-10-29T09:37:18.408Z",
+    "snapshotCsrf": null,
+    "snapshotHasRefresh": false,
+    "responseStatus": 401,
+    "responseBody": "{\"error\":\"missing refresh token\"}",
+    "classification": "missing_refresh_token",
+    "notes": [
+      "snapshot_no_refresh",
+      "snapshot_csrf_missing",
+      "request_cookie_header_missing"
+    ]
+  },
+  {
+    "requestIndex": 354,
+    "requestTs": "2025-10-29T09:37:19.002Z",
+    "requestUrl": "http://localhost:5173/auth/refresh",
+    "requestMethod": "POST",
+    "xCsrfHeader": "37b1d0d6b65dc7b8199fcb716ec86bed.dd502f967f6e8ec36c7c3dec73df5ee2deefc89df98e07f163e59412b2be158d",
+    "requestCookieHeaderPresent": false,
+    "snapshotTs": "2025-10-29T09:37:18.408Z",
+    "snapshotCsrf": null,
+    "snapshotHasRefresh": false,
+    "responseStatus": 401,
+    "responseBody": "{\"error\":\"missing refresh token\"}",
+    "classification": "missing_refresh_token",
+    "notes": [
+      "snapshot_no_refresh",
+      "snapshot_csrf_missing",
+      "request_cookie_header_missing"
+    ]
+  },
+  {
+    "requestIndex": 363,
+    "requestTs": "2025-10-29T09:37:19.030Z",
+    "requestUrl": "http://localhost:5173/auth/refresh",
+    "requestMethod": "POST",
+    "xCsrfHeader": "6269ff4bd59b77a286d64d494ad0d7ae.cee6f4094f43749e8276ae0f9758a853732b9c9755d76633ee39ab6fc781a803",
+    "requestCookieHeaderPresent": false,
+    "snapshotTs": "2025-10-29T09:37:18.408Z",
+    "snapshotCsrf": null,
+    "snapshotHasRefresh": false,
+    "responseStatus": 401,
+    "responseBody": "{\"error\":\"missing refresh token\"}",
+    "classification": "missing_refresh_token",
+    "notes": [
+      "snapshot_no_refresh",
+      "snapshot_csrf_missing",
+      "request_cookie_header_missing"
+    ]
+  },
+  {
+    "requestIndex": 374,
+    "requestTs": "2025-10-29T09:37:19.127Z",
+    "requestUrl": "http://localhost:5173/auth/refresh",
+    "requestMethod": "POST",
+    "xCsrfHeader": "67fe348ee9d37c74b20de644863e7693.531234fabf240ac697fc485b3e2e899f4bfa9bbdd773924a93a41ea58a06642e",
+    "requestCookieHeaderPresent": false,
+    "snapshotTs": "2025-10-29T09:37:18.408Z",
+    "snapshotCsrf": null,
+    "snapshotHasRefresh": false,
+    "responseStatus": 401,
+    "responseBody": "{\"error\":\"missing refresh token\"}",
+    "classification": "missing_refresh_token",
+    "notes": [
+      "snapshot_no_refresh",
+      "snapshot_csrf_missing",
+      "request_cookie_header_missing"
+    ]
+  },
+  {
+    "requestIndex": 760,
+    "requestTs": "2025-10-29T09:37:20.784Z",
+    "requestUrl": "http://localhost:5173/auth/refresh",
+    "requestMethod": "POST",
+    "xCsrfHeader": "f9f7fafc054612a879c98b6412581021.b5259c242ffb0e401a7bfcf66fb1ae0b5e212f045b1121386191d99a2cde1290",
+    "requestCookieHeaderPresent": false,
+    "snapshotTs": "2025-10-29T09:37:20.784Z",
+    "snapshotCsrf": "f9f7fafc054612a879c98b6412581021.b5259c242ffb0e401a7bfcf66fb1ae0b5e212f045b1121386191d99a2cde1290",
+    "snapshotHasRefresh": true,
+    "responseStatus": 403,
+    "responseBody": "{\"error\":\"CSRF token invalid\"}",
+    "classification": "csrf_inconclusive_equal",
+    "notes": [
+      "snapshot_has_refresh",
+      "snapshot_csrf_present",
+      "request_cookie_header_missing"
+    ]
+  },
+  {
+    "requestIndex": 761,
+    "requestTs": "2025-10-29T09:37:20.784Z",
+    "requestUrl": "http://localhost:5173/auth/refresh",
+    "requestMethod": "POST",
+    "xCsrfHeader": "d85c1c358fc8c763378331540d500310.62aa0db8a8ec8432f68adb99127dd8bd6752224610d89796cc5db4aeab64de82",
+    "requestCookieHeaderPresent": false,
+    "snapshotTs": "2025-10-29T09:37:20.784Z",
+    "snapshotCsrf": "f9f7fafc054612a879c98b6412581021.b5259c242ffb0e401a7bfcf66fb1ae0b5e212f045b1121386191d99a2cde1290",
+    "snapshotHasRefresh": true,
+    "responseStatus": 403,
+    "responseBody": "{\"error\":\"CSRF token invalid\"}",
+    "classification": "csrf_mismatch",
+    "notes": [
+      "snapshot_has_refresh",
+      "snapshot_csrf_present",
+      "request_cookie_header_missing"
+    ]
+  }
+]

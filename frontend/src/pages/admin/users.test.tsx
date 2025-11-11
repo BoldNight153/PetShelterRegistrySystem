@@ -1,15 +1,13 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import AdminUsersPage from './users'
-import { ServicesProvider } from '@/services/provider'
+import { renderWithProviders } from '@/test-utils/renderWithProviders'
 
 // Mock auth as system_admin
 vi.mock('@/lib/auth-context', () => ({ useAuth: () => ({ user: { email: 'admin@example.com', roles: ['system_admin'] } }) }))
 
 const listRolesMock = vi.fn().mockResolvedValue([{ id: '1', name: 'staff_manager', rank: 50 }])
-const searchUsersMock = vi.fn().mockResolvedValue({ items: [
-  { id: 'u1', email: 'user1@example.com', name: 'User One', roles: [], lock: null }
-], total: 1, page: 1, pageSize: 20 })
+const searchUsersMock = vi.fn()
 const assignUserRoleMock = vi.fn().mockResolvedValue({ ok: true })
 const revokeUserRoleMock = vi.fn().mockResolvedValue({ ok: true })
 const lockUserMock = vi.fn().mockResolvedValue({ ok: true })
@@ -29,31 +27,37 @@ describe('AdminUsersPage', () => {
     // Mock window.prompt for lock/unlock dialogs
     const promptSpy = vi.spyOn(window, 'prompt')
 
-    render(
-        <ServicesProvider
-          services={{
-            roles: {
-              listRoles: listRolesMock,
-              upsertRole: async (_input: { name: string; rank?: number; description?: string }) => { void _input; return {} },
-              deleteRole: async (_name: string) => { void _name },
-              listPermissions: async () => [],
-              listRolePermissions: async (_roleName: string) => { void _roleName; return [] },
-              grantPermission: async (_roleName: string, _permission: string) => { void _roleName; void _permission; return {} },
-              revokePermission: async (_roleName: string, _permission: string) => { void _roleName; void _permission; return {} },
-            },
-            users: {
-              searchUsers: searchUsersMock,
-              assignUserRole: assignUserRoleMock,
-              revokeUserRole: revokeUserRoleMock,
-              lockUser: lockUserMock,
-              unlockUser: unlockUserMock,
-              getUser: async () => { throw new Error('not needed') }
-            }
-          }}
-        >
-        <AdminUsersPage />
-      </ServicesProvider>
-    )
+    // Prepare searchUsersMock to return unlocked user initially,
+    // then return locked state after lock, then active after unlock.
+    searchUsersMock
+      .mockResolvedValueOnce({ items: [ { id: 'u1', email: 'user1@example.com', name: 'User One', roles: [], lock: null } ], total: 1, page: 1, pageSize: 20 })
+      .mockResolvedValueOnce({ items: [ { id: 'u1', email: 'user1@example.com', name: 'User One', roles: [], lock: { by: 'admin', reason: 'admin_action', until: null } } ], total: 1, page: 1, pageSize: 20 })
+      .mockResolvedValueOnce({ items: [ { id: 'u1', email: 'user1@example.com', name: 'User One', roles: [], lock: null } ], total: 1, page: 1, pageSize: 20 })
+
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        roles: {
+          listRoles: listRolesMock,
+          upsertRole: async (_input: { name: string; rank?: number; description?: string }) => { void _input; return {} },
+          deleteRole: async (_name: string) => { void _name },
+          listPermissions: async () => [],
+          listRolePermissions: async (_roleName: string) => { void _roleName; return [] },
+          grantPermission: async (_roleName: string, _permission: string) => { void _roleName; void _permission; return {} },
+          revokePermission: async (_roleName: string, _permission: string) => { void _roleName; void _permission; return {} },
+        },
+        users: {
+          searchUsers: searchUsersMock,
+          assignUserRole: assignUserRoleMock,
+          revokeUserRole: revokeUserRoleMock,
+          lockUser: lockUserMock,
+          unlockUser: unlockUserMock,
+          getUser: async () => { throw new Error('not needed') }
+        }
+      },
+      withRouter: true,
+    })
+
+    render(<AdminUsersPage />, { wrapper })
 
     // wait for initial search
     await waitFor(() => expect(searchUsersMock).toHaveBeenCalled())

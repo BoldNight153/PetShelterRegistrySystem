@@ -31,7 +31,39 @@ export async function login(input: LoginInput) {
     const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || null);
     throw new Error(msg || `Login failed (${res.status})`);
   }
-  return res.json();
+  const body = await res.json();
+
+  // Option A: post-login CSRF sync — ensure browser has processed Set-Cookie and
+  // the server sees the session cookies before callers continue. This reduces
+  // races where a subsequent reload or automatic refresh happens before the
+  // refreshToken/accessToken cookies are present server-side.
+  // We do a small retry loop against GET /auth/csrf which is cheap and returns
+  // the server-side CSRF value (and also sets the cookie). If it succeeds we
+  // assume the session cookies are active.
+  try {
+    const maxAttempts = 5;
+    const delayMs = 200;
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        await getCsrfToken();
+  // success — cookies are visible to server
+  // Dev-only log
+        if ((import.meta as any)?.env?.DEV) console.debug('[auth.login] post-login csrf sync ok (attempt)', i + 1);
+        break;
+      } catch (e) {
+        // last attempt -> rethrow so outer catch handles logging below
+        if (i === maxAttempts - 1) throw e;
+        // wait a short while and retry
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  } catch (e) {
+    // Don't fail the login flow for non-fatal timing issues; log in dev so
+    // we can iterate if stable failures remain.
+    if ((import.meta as any)?.env?.DEV) console.warn('[auth.login] post-login csrf sync failed, proceeding anyway', e);
+  }
+
+  return body;
 }
 
 export async function register(input: RegisterInput) {
@@ -64,12 +96,67 @@ export async function logout() {
 }
 
 export async function refresh() {
-  const csrf = await getCsrfToken();
-  const res = await fetch(`${API_BASE}auth/refresh`, {
-    method: "POST",
-    headers: { "X-CSRF-Token": csrf },
-    credentials: "include",
-  });
+  // Defensive: fetch a fresh CSRF token, then wait until the browser's
+  // document.cookie contains the corresponding csrfToken cookie before
+  // issuing the refresh POST. This reduces races where the client sends
+  // an X-CSRF-Token header but the Cookie header isn't yet attached by
+  // the browser (observed in dev with rapid back-to-back requests).
+  // We still retry once if the server rejects with 403.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const csrf = await getCsrfToken();
+
+    // Wait for the browser to expose the csrfToken cookie in document.cookie.
+    // Use a short polling loop — if the cookie appears we proceed; otherwise
+    // we still send the request after the timeout to avoid hanging forever.
+    try {
+      if ((import.meta as any)?.env?.DEV) console.debug('[auth.refresh] pre-flight csrf', csrf, 'attempt', attempt + 1);
+    } catch {}
+
+    const maxWaitMs = 500; // total time to wait for cookie to appear
+    const pollIntervalMs = 50;
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+      try {
+        // If running in a browser, check document.cookie. In non-browser
+        // environments this will throw; ignore there.
+        if (typeof document !== 'undefined' && document.cookie && document.cookie.indexOf('csrfToken=') !== -1) {
+          // Quick heuristic: check that some fragment of the token appears in the cookie
+          if (document.cookie.indexOf(csrf.split('.')[0]) !== -1 || document.cookie.indexOf(csrf.split('.').pop() || '') !== -1) {
+            // cookie observed and appears to contain our token
+            if ((import.meta as any)?.env?.DEV) console.debug('[auth.refresh] cookie visible before request');
+            break;
+          }
+        }
+      } catch {
+        // Non-browser environment; skip waiting
+        break;
+      }
+      await new Promise((r) => setTimeout(r, pollIntervalMs));
+    }
+
+    // Dev-only debug: log the csrf token used for the refresh so it can be
+    // correlated with server logs and recorder traces.
+    try {
+      if ((import.meta as any)?.env?.DEV) console.debug('[auth.refresh] attempt', attempt + 1, 'csrf', csrf);
+    } catch {}
+
+    const res = await fetch(`${API_BASE}auth/refresh`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrf },
+      credentials: 'include',
+    });
+    if (res.ok) return res.json();
+    // If first attempt failed due to CSRF, try once more after re-fetching token
+    if (res.status === 403 && attempt === 0) {
+      continue;
+    }
+    return null;
+  }
+  return null;
+}
+
+export async function me() {
+  const res = await fetch(`${API_BASE}auth/me`, { credentials: 'include' });
   if (!res.ok) return null;
   return res.json();
 }
@@ -259,4 +346,51 @@ export async function listUserSessions(userId: string) {
   if (res.status === 404) throw { status: 404 };
   if (!res.ok) throw new Error('Failed to load user sessions');
   return res.json();
+}
+
+// ----------------------
+// Navigation menu API
+// ----------------------
+
+export type NavigationMenuItemResponse = {
+  id: string;
+  parentId?: string | null;
+  title: string;
+  url?: string | null;
+  icon?: string | null;
+  target?: string | null;
+  external?: boolean | null;
+  order?: number | null;
+  meta?: JsonValue;
+  isVisible?: boolean | null;
+  isPublished?: boolean | null;
+  locale?: string | null;
+  children?: NavigationMenuItemResponse[];
+};
+
+export type NavigationMenuResponse = {
+  id: string;
+  name: string;
+  title?: string | null;
+  description?: string | null;
+  locale?: string | null;
+  isActive?: boolean | null;
+  items: NavigationMenuItemResponse[];
+};
+
+export async function fetchMenus(locale?: string): Promise<NavigationMenuResponse[]> {
+  const url = locale ? `/menus?locale=${encodeURIComponent(locale)}` : '/menus';
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load menus');
+  const data = await res.json();
+  if (Array.isArray(data)) return data as NavigationMenuResponse[];
+  if (Array.isArray((data as any)?.menus)) return (data as any).menus as NavigationMenuResponse[];
+  return [];
+}
+
+export async function fetchMenuByName(name: string): Promise<NavigationMenuResponse | null> {
+  const res = await fetch(`/menus/${encodeURIComponent(name)}`, { credentials: 'include' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('Failed to load menu');
+  return res.json() as Promise<NavigationMenuResponse>;
 }

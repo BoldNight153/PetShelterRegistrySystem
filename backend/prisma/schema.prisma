@@ -336,3 +336,40 @@ model RateLimit {
   @@unique([scope, key, windowStart])
   @@index([scope, key, windowStart])
 }
+
+// Navigation / CMS models for frontend menus
+model Menu {
+  id          String     @id @default(uuid())
+  name        String     @unique // machine-name, e.g. "main", "footer"
+  title       String?
+  description String?
+  locale      String?    // optional locale tag
+  isActive    Boolean    @default(true)
+  items       MenuItem[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model MenuItem {
+  id         String    @id @default(uuid())
+  menu       Menu      @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  menuId     String
+  parent     MenuItem? @relation("MenuItemToParent", fields: [parentId], references: [id])
+  parentId   String?
+  children   MenuItem[] @relation("MenuItemToParent")
+  title      String
+  url        String?
+  icon       String?   // optional icon identifier stored as string
+  target     String?   // link target, e.g. _blank
+  external   Boolean   @default(false)
+  order      Int       @default(0)
+  meta       Json?
+  isVisible  Boolean   @default(true)
+  isPublished Boolean  @default(true)
+  locale     String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([menuId])
+  @@index([parentId])
+}

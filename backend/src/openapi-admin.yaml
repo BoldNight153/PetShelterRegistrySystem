@@ -262,6 +262,82 @@ components:
         lastCleanupAt: { type: ['string','null'], format: date-time }
         lastCleanupDeleted: { type: ['number','null'] }
       required: [ok]
+    MenuItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        menuId: { type: string, format: uuid }
+        parentId: { type: [string, 'null'] }
+        title: { type: string }
+        url: { type: [string, 'null'] }
+        order: { type: integer }
+        icon: { type: [string, 'null'] }
+        isVisible: { type: boolean }
+        isPublished: { type: boolean }
+        meta: { type: [object, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/MenuItem'
+      required: [id, menuId, title, order, isVisible, isPublished, createdAt, updatedAt]
+    Menu:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        title: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        locale: { type: [string, 'null'] }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MenuItem'
+      required: [id, name, isActive, createdAt, updatedAt]
+    CreateMenuInput:
+      type: object
+      properties:
+        name: { type: string }
+        title: { type: string }
+        description: { type: string }
+        locale: { type: string }
+        isActive: { type: boolean }
+      required: [name]
+    UpdateMenuInput:
+      type: object
+      properties:
+        title: { type: [string,'null'] }
+        description: { type: [string,'null'] }
+        locale: { type: [string,'null'] }
+        isActive: { type: boolean }
+    CreateMenuItemInput:
+      type: object
+      properties:
+        menuId: { type: string, format: uuid }
+        parentId: { type: [string, 'null'] }
+        title: { type: string }
+        url: { type: [string, 'null'] }
+        order: { type: integer }
+        icon: { type: [string, 'null'] }
+        isVisible: { type: boolean }
+        isPublished: { type: boolean }
+        meta: { type: [object, 'null'] }
+      required: [menuId, title]
+    UpdateMenuItemInput:
+      type: object
+      properties:
+        parentId: { type: [string, 'null'] }
+        title: { type: [string, 'null'] }
+        url: { type: [string, 'null'] }
+        order: { type: integer }
+        icon: { type: [string, 'null'] }
+        isVisible: { type: boolean }
+        isPublished: { type: boolean }
+        meta: { type: [object, 'null'] }
   responses:
     BadRequest:
       description: Bad request
@@ -765,3 +841,190 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /admin/menus:
+    get:
+      summary: List menus
+      description: Returns all configured menus with nested items.
+      tags: [Settings]
+      operationId: listAdminMenus
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Menu'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+    post:
+      summary: Create a menu
+      description: Creates a new menu (admin only).
+      tags: [Settings]
+      operationId: createAdminMenu
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMenuInput'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Menu'
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/menus/{menuId}:
+    parameters:
+      - name: menuId
+        in: path
+        required: true
+        description: Menu identifier; accepts a menu UUID or unique menu name.
+        schema: { type: string }
+    get:
+      summary: Get a menu by id or name
+      description: Returns a single menu with nested items. When a menu name is supplied it must be unique.
+      tags: [Settings]
+      operationId: getAdminMenu
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Menu'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      summary: Update a menu
+      description: Update fields on an existing menu. A menu ID is required.
+      tags: [Settings]
+      operationId: updateAdminMenu
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMenuInput'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Menu'
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    delete:
+      summary: Delete a menu
+      description: Removes the menu and its items. A menu ID is required.
+      tags: [Settings]
+      operationId: deleteAdminMenu
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/menus/{menuId}/items:
+    parameters:
+      - name: menuId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      summary: Create a menu item
+      description: Adds a menu item under the given menu.
+      tags: [Settings]
+      operationId: createAdminMenuItem
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMenuItemInput'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuItem'
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/menu-items/{itemId}:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Update a menu item
+      description: Update fields on an existing menu item.
+      tags: [Settings]
+      operationId: updateAdminMenuItem
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMenuItemInput'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuItem'
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    delete:
+      summary: Delete a menu item
+      description: Removes the menu item.
+      tags: [Settings]
+      operationId: deleteAdminMenuItem
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "204": { description: No Content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }

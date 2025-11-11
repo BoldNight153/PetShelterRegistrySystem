@@ -24,7 +24,7 @@ export default function ServerInfoPlaceholder() {
       </ul>
       <div className="rounded border p-4">
         <p className="text-sm">While under development, you can check API health at <code>/health</code> and auth diagnostics at <code>/auth/mode</code>.</p>
-        <p className="text-sm mt-2">Preview charts: <a className="underline" href="/admin/server-info/charts">Server Info Charts</a></p>
+  <p className="text-sm mt-2">Preview charts: <a className="underline" href="/server-info/charts">Server Info Charts</a></p>
       </div>
     </div>
   )

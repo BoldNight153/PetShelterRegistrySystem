@@ -1,41 +1,22 @@
-import { useEffect, useState, useCallback } from 'react'
-import { useServices } from '@/services/hooks'
-import type { Role } from '@/services/interfaces/role.interface'
+import { useState } from 'react'
+import { useRoles, useUpsertRole, useDeleteRole } from '@/services/hooks/admin'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 export default function AdminRolesPage() {
-  const [roles, setRoles] = useState<Role[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<{ name: string; rank: number; description: string }>({ name: '', rank: 0, description: '' })
 
-  const services = useServices()
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await services.roles?.listRoles?.() ?? []
-      setRoles(data)
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Failed to load roles'
-      setError(msg)
-    } finally {
-      setLoading(false)
-    }
-  }, [services.roles])
-
-  useEffect(() => { load() }, [load])
+  const { data: roles = [], isLoading, isError, error } = useRoles()
+  const upsert = useUpsertRole()
+  const del = useDeleteRole()
 
   async function onUpsert(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) return
     try {
-      await services.roles?.upsertRole?.({ name: form.name.trim(), rank: Number(form.rank) || 0, description: form.description || undefined })
+      await upsert.mutateAsync({ name: form.name.trim(), rank: Number(form.rank) || 0, description: form.description || undefined })
       setForm({ name: '', rank: 0, description: '' })
-      await load()
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to save role')
     }
@@ -44,8 +25,7 @@ export default function AdminRolesPage() {
   async function onDelete(name: string) {
     if (!confirm(`Delete role "${name}"?`)) return
     try {
-      await services.roles?.deleteRole?.(name)
-      await load()
+      await del.mutateAsync(name)
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to delete role')
     }
@@ -74,8 +54,8 @@ export default function AdminRolesPage() {
         <Button type="submit">Save</Button>
       </form>
 
-      {error && <div className="text-destructive text-sm">{error}</div>}
-      {loading ? (
+      {isError && <div className="text-destructive text-sm">{error?.message ?? 'Failed to load roles'}</div>}
+      {isLoading ? (
         <div className="text-sm">Loading…</div>
       ) : (
         <Table>

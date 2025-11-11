@@ -10,7 +10,7 @@ function useJson<T>(url: string | null, intervalMs = 15000) {
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let cancel = false
-    let timer: any
+    let timer: ReturnType<typeof setInterval> | undefined
     async function load() {
       if (!url) return
       setLoading(true); setError(null)
@@ -19,8 +19,8 @@ function useJson<T>(url: string | null, intervalMs = 15000) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const d = await r.json()
         if (!cancel) setData(d)
-      } catch (e: any) {
-        if (!cancel) setError(String(e?.message || e))
+      } catch (e: unknown) {
+        if (!cancel) setError(String((e as Error)?.message || String(e)))
       } finally {
         if (!cancel) setLoading(false)
       }
@@ -52,14 +52,18 @@ export default function ServerInfoCharts() {
     return () => { cancel = true }
   }, [services])
 
-  const { data: metrics, loading: loadingSnap } = useJson<any>('/admin/monitoring/metrics', refreshMs)
-  const { data: p99Series } = useJson<any>('/admin/monitoring/series?metric=http.p99&minutes=120', refreshMs)
-  const { data: errSeries } = useJson<any>('/admin/monitoring/series?metric=http.error_rate&minutes=120', refreshMs)
-  const { data: lagSeries } = useJson<any>('/admin/monitoring/series?metric=eventloop.lag.mean&minutes=120', refreshMs)
+  type Metrics = { requests?: { count?: number; errors?: number; p99?: number } }
+  type SeriesPoint = { createdAt: string; value: number }
+  type Series = { points?: SeriesPoint[] }
 
-  const p99 = useMemo(() => (p99Series?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [p99Series])
-  const err = useMemo(() => (errSeries?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [errSeries])
-  const lag = useMemo(() => (lagSeries?.points || []).map((p: any) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [lagSeries])
+  const { data: metrics, loading: loadingSnap } = useJson<Metrics>('/admin/monitoring/metrics', refreshMs)
+  const { data: p99Series } = useJson<Series>('/admin/monitoring/series?metric=http.p99&minutes=120', refreshMs)
+  const { data: errSeries } = useJson<Series>('/admin/monitoring/series?metric=http.error_rate&minutes=120', refreshMs)
+  const { data: lagSeries } = useJson<Series>('/admin/monitoring/series?metric=eventloop.lag.mean&minutes=120', refreshMs)
+
+  const p99 = useMemo(() => (p99Series?.points || []).map((p: SeriesPoint) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [p99Series])
+  const err = useMemo(() => (errSeries?.points || []).map((p: SeriesPoint) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [errSeries])
+  const lag = useMemo(() => (lagSeries?.points || []).map((p: SeriesPoint) => ({ t: new Date(p.createdAt).toLocaleTimeString(), v: p.value })), [lagSeries])
 
   const isSystemAdmin = !!user?.roles?.includes('system_admin')
   if (!isSystemAdmin) {

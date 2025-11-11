@@ -26,29 +26,28 @@ export async function parseAuth(req: Request, _res: Response, next: NextFunction
     const token = getTokenFromRequest(req);
     if (!token) return next();
     const secret = process.env.JWT_ACCESS_SECRET || 'dev-access-secret';
-    const payload = jwt.verify(token, secret) as Record<string, any> | null;
-    const userId = payload?.sub as string | undefined;
+    const payload = jwt.verify(token, secret) as unknown;
+    // narrow payload shape safely
+    const maybePayload = typeof payload === 'object' && payload !== null ? (payload as { sub?: unknown }) : null;
+    const userId = maybePayload?.sub && typeof maybePayload.sub === 'string' ? maybePayload.sub : undefined;
     if (!userId) return next();
     // Prefer role/user service from DI for lookups to enable test/mockability
     let roles: string[] = [];
     let permissions: string[] = [];
     try {
-      const maybeRoleSvc = (req as any).container?.resolve?.('roleService') as RoleService | undefined | null;
-      const maybeUserSvc = (req as any).container?.resolve?.('userService') as UserService | undefined | null;
+  const _maybeRoleSvc = (req as any).container?.resolve?.('roleService') as RoleService | undefined | null;
+  const maybeUserSvc = (req as any).container?.resolve?.('userService') as UserService | undefined | null;
       if (maybeUserSvc) {
         const u = await maybeUserSvc.getUser(userId);
         roles = u?.roles ?? [];
       } else {
         const userRoles = await prisma.userRole.findMany({ where: { userId }, include: { role: true } });
-        roles = userRoles.map((ur: any) => ur.role?.name).filter(Boolean) as string[];
+  roles = userRoles.map(ur => ur.role?.name ?? '').filter(Boolean);
       }
-      if (maybeRoleSvc && roles.length) {
-        // roleService can list permissions, but for efficiency we'll query rolePermission via prisma for now
+      if (roles.length) {
+        // query permissions for roles
         const rp = await prisma.rolePermission.findMany({ where: { role: { name: { in: roles } } }, include: { permission: true } });
-        permissions = rp.map((x: any) => x.permission?.name).filter(Boolean) as string[];
-      } else if (roles.length) {
-        const rp = await prisma.rolePermission.findMany({ where: { role: { name: { in: roles } } }, include: { permission: true } });
-        permissions = rp.map((x: any) => x.permission?.name).filter(Boolean) as string[];
+  permissions = rp.map(x => x.permission?.name ?? '').filter(Boolean);
       }
     } catch {
       // best-effort; leave roles/permissions empty on error

@@ -32,23 +32,23 @@ export default function NavAdmin() {
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
-            <Link to="/admin/roles"><BadgeCheck className="h-4 w-4" /><span>Roles</span></Link>
+            <Link to="/settings/roles"><BadgeCheck className="h-4 w-4" /><span>Roles</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
-            <Link to="/admin/permissions"><KeyRound className="h-4 w-4" /><span>Permissions</span></Link>
+            <Link to="/settings/permissions"><KeyRound className="h-4 w-4" /><span>Permissions</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
-            <Link to="/admin/users"><Users className="h-4 w-4" /><span>Users</span></Link>
+            <Link to="/settings/users"><Users className="h-4 w-4" /><span>Users</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
         {isAdmin && (
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
-              <Link to="/admin/audit-logs"><Shield className="h-4 w-4" /><span>Audit Logs</span></Link>
+              <Link to="/audit-logs"><Shield className="h-4 w-4" /><span>Audit Logs</span></Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         )}
@@ -243,12 +243,12 @@ export default function NavAdmin() {
                 <SidebarMenuSub>
                   <SidebarMenuSubItem>
                     <SidebarMenuSubButton asChild>
-                      <Link to="/admin/server-info"><span>Dashboards</span></Link>
+                      <Link to="/server-info"><span>Dashboards</span></Link>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
                   <SidebarMenuSubItem>
                     <SidebarMenuSubButton asChild>
-                      <Link to="/admin/server-info/charts"><span>Charts</span></Link>
+                      <Link to="/server-info/charts"><span>Charts</span></Link>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
                 </SidebarMenuSub>
@@ -260,7 +260,7 @@ export default function NavAdmin() {
         {isSystemAdmin && (
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Settings">
-              <Link to="/admin/settings">
+              <Link to="/settings">
                 <Settings className="h-4 w-4" />
                 <span>Settings</span>
               </Link>
@@ -270,7 +270,7 @@ export default function NavAdmin() {
         {isSystemAdmin && (
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
-              <Link to="/admin/about">
+              <Link to="/system/about">
                 <BadgeCheck className="h-4 w-4" />
                 <span>About / Version</span>
               </Link>

@@ -113,7 +113,7 @@ ReDoc is mounted in `frontend/src/docs/redoc-page.tsx` via dynamic import. The t
 - Backend exposes `GET /admin/version` (RBAC: `admin` or `system_admin`) with:
   - `backend.version` and optional `backend.commit`
   - OpenAPI versions for `pets`, `auth`, and `admin` specs
-- Frontend adds an Admin page at `/admin/about` that surfaces:
+- Frontend adds a console page at `/system/about` that surfaces:
   - Frontend app version (from `package.json` via `__APP_VERSION__` define)
   - Backend version/commit and OpenAPI spec versions
   - Note: In dev, the Vite proxy forwards `/admin/version` to the backend.

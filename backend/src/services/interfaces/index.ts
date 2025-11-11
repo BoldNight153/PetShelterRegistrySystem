@@ -8,3 +8,4 @@ export { default as IOwnerService } from './ownerService.interface';
 export { default as IUserService } from './userService.interface';
 
 export * from './rateLimitService.interface';
+export { default as IMenuService } from './menuService.interface';

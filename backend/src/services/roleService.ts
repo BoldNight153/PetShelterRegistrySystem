@@ -9,11 +9,13 @@ export class RoleService implements IRoleService {
   }
 
   async listRoles(): Promise<RoleRow[]> {
-    return this.prisma.role.findMany({ orderBy: { rank: 'desc' } }) as Promise<RoleRow[]>;
+    const rows = await this.prisma.role.findMany({ orderBy: { rank: 'desc' } });
+    return rows;
   }
 
   async upsertRole(name: string, rank: number, description?: string | null): Promise<RoleRow> {
-    return this.prisma.role.upsert({ where: { name }, update: { rank, description }, create: { name, rank, description } }) as Promise<RoleRow>;
+    const r = await this.prisma.role.upsert({ where: { name }, update: { rank, description }, create: { name, rank, description } });
+    return r;
   }
 
   async deleteRole(name: string): Promise<void> {
@@ -21,7 +23,8 @@ export class RoleService implements IRoleService {
   }
 
   async listPermissions(): Promise<PermissionRow[]> {
-    return this.prisma.permission.findMany({ orderBy: { name: 'asc' } }) as Promise<PermissionRow[]>;
+    const rows = await this.prisma.permission.findMany({ orderBy: { name: 'asc' } });
+    return rows;
   }
 
   async grantPermissionToRole(roleName: string, permission: string): Promise<void> {
@@ -46,7 +49,7 @@ export class RoleService implements IRoleService {
     const role = await this.prisma.role.findUnique({ where: { name: roleName } });
     if (!role) return [];
     const rp = await this.prisma.rolePermission.findMany({ where: { roleId: role.id }, include: { permission: true } });
-    return (rp as any[]).map(r => r.permission).sort((a, b) => a.name.localeCompare(b.name));
+    return rp.map(r => r.permission).sort((a, b) => a.name.localeCompare(b.name));
   }
 }
 

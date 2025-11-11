@@ -6,16 +6,37 @@ import type { IAuthService } from '../interfaces/auth.interface';
 
 export class AuthAdapter implements IAuthService {
   async login(input: { email: string; password: string }) {
-    return api.login(input);
+    const basic = await api.login(input);
+    try {
+      const detailed = await api.me();
+      return detailed ?? basic;
+    } catch {
+      return basic;
+    }
   }
   async register(input: { email: string; password: string; name?: string }) {
-    return api.register(input);
+    const basic = await api.register(input);
+    try {
+      const detailed = await api.me();
+      return detailed ?? basic;
+    } catch {
+      return basic;
+    }
   }
   async logout() {
     return api.logout();
   }
   async refresh() {
-    return api.refresh();
+    try {
+      const refreshed = await api.refresh();
+      if (!refreshed) return null;
+      return await api.me();
+    } catch {
+      return null;
+    }
+  }
+  async me() {
+    return api.me();
   }
 }
 

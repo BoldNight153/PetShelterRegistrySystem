@@ -1,8 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { useAppDispatch, useAppSelector } from '@/store/hooks'
+import { login as loginThunk, register as registerThunk, logout as logoutThunk, refresh as refreshThunk, setUser as setUserAction, setInitializing as setInitializingAction, selectAuthUser, selectAuthInitializing } from '@/store/slices/authSlice'
+import type { UserDetail } from '@/services/interfaces/types'
+import { ReactReduxContext, Provider as ReduxProvider } from 'react-redux'
 import { useServices } from '@/services/hooks'
-import { refresh as apiRefresh } from './api'
+import { createStoreWithServices } from '@/store/store'
+import { refresh as apiRefresh } from '@/lib/api'
 
-type User = { id?: string; email?: string; name?: string; emailVerified?: string | null; roles?: string[]; permissions?: string[] } | null;
+type User = UserDetail | null;
 
 type AuthContextValue = {
   user: User;
@@ -17,77 +22,87 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User>(null);
-  const [initializing, setInitializing] = useState<boolean>(true);
+  // Ensure we have access to Services so that created local stores are DI-enabled in tests
   const services = useServices()
+  const reduxCtx = useContext(ReactReduxContext as any)
+  const needsLocalStore = !reduxCtx || !(reduxCtx as any).store
+  const localStore = useMemo(() => createStoreWithServices(services), [services])
+
+  if (needsLocalStore) {
+    return (
+      <ReduxProvider store={localStore}>
+        <AuthInner>{children}</AuthInner>
+      </ReduxProvider>
+    )
+  }
+
+  return <AuthInner>{children}</AuthInner>
+}
+
+function AuthInner({ children }: { children: React.ReactNode }) {
+  const dispatch = useAppDispatch()
+  const user = useAppSelector(selectAuthUser)
+  const initializing = useAppSelector(selectAuthInitializing)
 
   const authenticated = !!user;
 
   const login = useCallback(async (email: string, password: string) => {
-    const data = await services.auth.login({ email, password });
-    // Set immediately so UI can reflect basic identity
-    setUser(data);
-    // Hydrate roles/permissions and any server-side fields
-    try {
-      const res = await fetch('/auth/me', { credentials: 'include' });
-      if (res.ok) {
-        const me = await res.json();
-        setUser(me);
-      }
-  } catch { /* ignore */ }
-  }, [services]);
+    const action = await dispatch(loginThunk({ email, password }))
+    return action.payload
+  }, [dispatch])
 
   const register = useCallback(async (email: string, password: string, name: string) => {
-    const data = await services.auth.register({ email, password, name });
-    setUser(data);
-    try {
-      const res = await fetch('/auth/me', { credentials: 'include' });
-      if (res.ok) {
-        const me = await res.json();
-        setUser(me);
-      }
-  } catch { /* ignore */ }
-  }, [services]);
+    const action = await dispatch(registerThunk({ email, password, name }))
+    return action.payload
+  }, [dispatch])
 
   const logout = useCallback(async () => {
-    try { await services.auth.logout(); } finally { setUser(null); }
-  }, [services]);
+    await dispatch(logoutThunk())
+  }, [dispatch])
 
-  // Auto-refresh access token periodically; also attempt on mount
+  // Periodically refresh token only while authenticated
   useEffect(() => {
-    const attempt = async () => {
+    if (!authenticated) return
+    const timer = window.setInterval(() => {
+      void dispatch(refreshThunk())
+    }, 12 * 60 * 1000)
+    return () => { window.clearInterval(timer) }
+  }, [authenticated, dispatch])
+
+  const setUser = useCallback((u: User) => { dispatch(setUserAction(u)) }, [dispatch])
+
+  const value = useMemo(() => ({ user, authenticated, login, register, logout, setUser, initializing }), [user, authenticated, login, register, logout, initializing, setUser]);
+
+  // Hydrate from /auth/me on mount via refresh thunk and clear initializing flag
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
       try {
-        const res = await services.auth.refresh();
-        if (res && authenticated) {
-          // refresh success – keep user; server sets cookies
-        }
+        await dispatch(refreshThunk())
       } catch {
         // ignore
+      } finally {
+        if (!cancelled) dispatch(setInitializingAction(false))
       }
-    };
-    attempt();
-    const timer = window.setInterval(attempt, 12 * 60 * 1000); // every 12 minutes
-    return () => { window.clearInterval(timer); };
-  }, [authenticated, services]);
-
-  const value = useMemo(() => ({ user, authenticated, login, register, logout, setUser, initializing }), [user, authenticated, login, register, logout, initializing]);
-  // Hydrate from /auth/me on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/auth/me', { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.email) setUser(data);
+    })()
+    // Dev helper: fetch /auth/mode and log backend-visible cookie/state to aid debugging
+    if (import.meta.env.DEV) {
+      void (async () => {
+        try {
+          const r = await fetch('/auth/mode', { credentials: 'include' })
+          try {
+            const j = await r.json()
+            console.info('DEBUG /auth/mode ->', r.status, j)
+          } catch {
+            console.info('DEBUG /auth/mode -> non-json', r.status)
+          }
+        } catch (err) {
+          console.warn('DEBUG /auth/mode fetch failed', err)
         }
-      } catch {
-        // ignore
-      }
-      finally {
-        setInitializing(false);
-      }
-    })();
-  }, []);
+      })()
+    }
+    return () => { cancelled = true }
+  }, [dispatch])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

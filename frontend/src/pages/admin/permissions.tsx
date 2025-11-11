@@ -1,55 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useServices } from '@/services/hooks'
-import type { Permission } from '@/services/interfaces/role.interface'
-import type { Role } from '@/services/interfaces/role.interface'
+import { useMemo, useState } from 'react'
+import { usePermissions, useRoles, useRolePermissions, useGrantPermission, useRevokePermission } from '@/services/hooks/admin'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export default function AdminPermissionsPage() {
-  const [permissions, setPermissions] = useState<Permission[]>([])
-  const [roles, setRoles] = useState<Role[]>([])
   const [selectedRole, setSelectedRole] = useState<string>('')
-  const [rolePerms, setRolePerms] = useState<Record<string, boolean>>({})
   const [q, setQ] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
-  const services = useServices()
+  const { data: permissions = [], isLoading: permsLoading, isError: permsError, error: permsErrorObj } = usePermissions()
+  const { data: roles = [] } = useRoles()
+  const { data: rolePermsList = [], isLoading: rolePermsLoading } = useRolePermissions(selectedRole)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      // listPermissions is exposed by the roles service implementation
-      const [perms, r] = await Promise.all([services.roles?.listPermissions?.() ?? [], services.roles?.listRoles?.() ?? []])
-      setPermissions(perms)
-      setRoles(r)
-      if (!selectedRole && r.length) setSelectedRole(r[0].name)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load')
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedRole, services.roles])
+  const grant = useGrantPermission()
+  const revoke = useRevokePermission()
 
-  useEffect(() => { void load() }, [load])
-
-  useEffect(() => {
-    async function loadRolePerms(name: string) {
-      if (!name) return
-      try {
-        const rp = await services.roles?.listRolePermissions?.(name) ?? []
-        const map: Record<string, boolean> = {}
-        for (const p of rp) map[p.name] = true
-        setRolePerms(map)
-      } catch {
-        // ignore errors on role perms load
-      }
-    }
-    if (selectedRole) loadRolePerms(selectedRole)
-  }, [selectedRole, services.roles])
+  const rolePerms: Record<string, boolean> = useMemo(() => {
+    const map: Record<string, boolean> = {}
+    for (const p of rolePermsList ?? []) map[p.name] = true
+    return map
+  }, [rolePermsList])
 
   const filtered = useMemo(() => (
     permissions.filter(p => !q || p.name.toLowerCase().includes(q.toLowerCase()))
@@ -58,9 +29,8 @@ export default function AdminPermissionsPage() {
   async function onToggle(p: string, enabled: boolean) {
     try {
       if (!selectedRole) return
-      if (enabled) await services.roles?.grantPermission?.(selectedRole, p)
-      else await services.roles?.revokePermission?.(selectedRole, p)
-      setRolePerms(prev => ({ ...prev, [p]: enabled }))
+      if (enabled) await grant.mutateAsync({ roleName: selectedRole, permission: p })
+      else await revoke.mutateAsync({ roleName: selectedRole, permission: p })
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to update')
     }
@@ -94,8 +64,8 @@ export default function AdminPermissionsPage() {
         </div>
       </div>
 
-      {error && <div className="text-sm text-destructive">{error}</div>}
-      {loading ? (
+      {permsError && <div className="text-sm text-destructive">{permsErrorObj?.message ?? 'Failed to load'}</div>}
+      {permsLoading || rolePermsLoading ? (
         <div className="text-sm">Loading…</div>
       ) : (
         <Table>

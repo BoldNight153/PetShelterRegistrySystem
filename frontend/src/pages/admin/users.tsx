@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useServices } from '@/services/hooks'
+import { useMemo, useState } from 'react'
+import { useRoles, useUsers, useAssignRole, useRevokeRole, useLockUser, useUnlockUser } from '@/services/hooks/admin'
 import UserDetailsSheet from '@/components/admin/user-details-sheet'
-import type { Role } from '@/services/interfaces/role.interface'
-import type { UserSummaryWithLock } from '@/services/interfaces/user.interface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -10,80 +8,56 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 
 export default function AdminUsersPage() {
   const [q, setQ] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [users, setUsers] = useState<UserSummaryWithLock[]>([])
-  const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [pageSize] = useState(20)
-  const [roles, setRoles] = useState<Role[]>([])
   const [assign, setAssign] = useState<Record<string, string>>({}) // userId -> roleName
-  const services = useServices()
+  const { data: roles = [] } = useRoles()
+  const usersQuery = useUsers(q, page, pageSize)
+  const users = usersQuery.data?.items ?? []
+  const total = usersQuery.data?.total ?? 0
 
-  useEffect(() => {
-    async function init() {
-      try {
-        const r = await services.roles?.listRoles?.() ?? []
-        setRoles(r)
-      } catch {
-        // ignore roles load error
-      }
-      await runSearch()
-    }
-    void init()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const loading = usersQuery.isLoading || usersQuery.isFetching || false
 
   async function runSearch() {
-    setLoading(true)
-    try {
-      const res = await services.users?.searchUsers(q || undefined, page, pageSize) ?? { items: [], total: 0 }
-      setUsers(res.items)
-      setTotal(res.total)
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to search users')
-    } finally {
-      setLoading(false)
-    }
+    await usersQuery.refetch()
   }
 
+  const assignMutation = useAssignRole()
   async function onAssign(userId: string) {
     const roleName = assign[userId]
     if (!roleName) return
     try {
-      await services.users?.assignUserRole(userId, roleName)
-      // optimistic: update list
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, roles: Array.from(new Set([...u.roles, roleName])) } : u))
+      await assignMutation.mutateAsync({ userId, roleName })
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to assign role')
     }
   }
 
+  const revokeMutation = useRevokeRole()
   async function onRevoke(userId: string, roleName: string) {
     try {
-      await services.users?.revokeUserRole(userId, roleName)
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, roles: u.roles.filter(r => r !== roleName) } : u))
+      await revokeMutation.mutateAsync({ userId, roleName })
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to revoke role')
     }
   }
 
+  const lockMutation = useLockUser()
   async function onLock(userId: string) {
     const reason = prompt('Lock reason (e.g., admin_action, security_suspicious):', 'admin_action') || 'admin_action'
     const until = prompt('Optional lock until (ISO timestamp), or leave blank for indefinite:', '')
     try {
-      await services.users?.lockUser(userId, reason, until ? until : null)
-      // reflect lock status
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, lock: { reason, until: until || null } } : u))
+      await lockMutation.mutateAsync({ userId, reason, until: until || null })
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to lock user')
     }
   }
 
+  const unlockMutation = useUnlockUser()
   async function onUnlock(userId: string) {
     const unlockReason = prompt('Optional unlock note (will be saved with audit):', '') || undefined
     try {
-      await services.users?.unlockUser(userId, unlockReason)
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, lock: null } : u))
+      await unlockMutation.mutateAsync({ userId, note: unlockReason })
       alert('User unlocked. A password reset email has been sent to the user.')
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to unlock user')
