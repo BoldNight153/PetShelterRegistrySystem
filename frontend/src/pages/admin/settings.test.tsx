@@ -3,6 +3,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 import AdminSettingsPage from './settings'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('@/lib/auth-context', () => {
   return {
@@ -24,14 +25,61 @@ const loadSettingsMock = vi.fn().mockResolvedValue({
   },
 })
 
+const navigationMenuMock = {
+  id: 'settings_main',
+  name: 'Settings',
+  items: [
+    {
+      id: 'security-group',
+      title: 'Security',
+      isPublished: true,
+      isVisible: true,
+      children: [
+        {
+          id: 'security-core',
+          title: 'Security',
+          url: '/settings/security',
+          isPublished: true,
+          isVisible: true,
+          meta: { settingsCategory: 'security' },
+        },
+      ],
+    },
+  ],
+}
+
+const navigationServiceStub = {
+  listMenus: vi.fn().mockResolvedValue([navigationMenuMock]),
+  getMenu: vi.fn().mockResolvedValue(navigationMenuMock),
+  createMenu: vi.fn().mockResolvedValue(null),
+  updateMenu: vi.fn().mockResolvedValue(null),
+  deleteMenu: vi.fn().mockResolvedValue(undefined),
+  createMenuItem: vi.fn().mockResolvedValue(null),
+  updateMenuItem: vi.fn().mockResolvedValue(null),
+  deleteMenuItem: vi.fn().mockResolvedValue(undefined),
+}
+
 describe('AdminSettingsPage (Security)', () => {
   beforeEach(() => {
     saveSettingsMock.mockClear()
     loadSettingsMock.mockClear()
+    navigationServiceStub.listMenus.mockClear()
+    navigationServiceStub.listMenus.mockResolvedValue([navigationMenuMock])
+    navigationServiceStub.getMenu.mockClear()
+    navigationServiceStub.getMenu.mockResolvedValue(navigationMenuMock)
   })
 
   it('saves security settings including new thresholds', async () => {
-  const { wrapper } = renderWithProviders(<div />, { services: { admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }, withRouter: true })
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: {
+          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+          navigation: navigationServiceStub,
+        },
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
     render(<AdminSettingsPage />, { wrapper })
 
     // Wait for settings to load
@@ -61,18 +109,27 @@ describe('AdminSettingsPage (Security)', () => {
 
   it('toggles a security flag and saves the changed value', async () => {
     // Start with requireEmailVerification = true from loadSettingsMock
-  const { wrapper } = renderWithProviders(<div />, { services: { admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }, withRouter: true })
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: {
+          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+          navigation: navigationServiceStub,
+        },
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
     render(<AdminSettingsPage />, { wrapper })
 
     // Wait for settings to load
     await waitFor(() => expect(loadSettingsMock).toHaveBeenCalledTimes(1))
 
-  // Toggle the Require email verification checkbox (control text is the inline label)
-  const checkbox = await screen.findByRole('checkbox', { name: /Enforce verification/i })
-  // initial should be checked
-  expect((checkbox as HTMLInputElement).checked).toBe(true)
-  fireEvent.click(checkbox)
-  expect((checkbox as HTMLInputElement).checked).toBe(false)
+    // Toggle the Require email verification checkbox (control text is the inline label)
+    const checkbox = await screen.findByRole('checkbox', { name: /Enforce verification/i })
+    // initial should be checked
+    expect((checkbox as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(checkbox)
+    expect((checkbox as HTMLInputElement).checked).toBe(false)
 
     // Click Save Security
     const saveBtn = await screen.findByRole('button', { name: /save security/i })
@@ -100,9 +157,19 @@ describe('AdminSettingsPage (Access control)', () => {
     const qc = new QueryClient()
     render(
       <QueryClientProvider client={qc}>
-        <FreshServicesProvider services={{ admin: { settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock } } }}>
-          <NonAdminSettings />
-        </FreshServicesProvider>
+        <MemoryRouter>
+          <FreshServicesProvider
+            services={{
+              admin: {
+                settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+                navigation: navigationServiceStub,
+              },
+              navigation: navigationServiceStub,
+            }}
+          >
+            <NonAdminSettings />
+          </FreshServicesProvider>
+        </MemoryRouter>
       </QueryClientProvider>
     )
     expect(await screen.findByText(/access denied/i)).toBeInTheDocument()
