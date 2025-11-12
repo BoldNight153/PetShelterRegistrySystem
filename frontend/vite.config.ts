@@ -85,6 +85,12 @@ export default defineConfig({
         cookieDomainRewrite: "",
         cookiePathRewrite: '/',
       },
+      "/admin/menus": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+        cookieDomainRewrite: "",
+        cookiePathRewrite: '/',
+      },
       "/api-docs": {
         target: "http://localhost:4000",
         changeOrigin: true,
@@ -98,6 +104,12 @@ export default defineConfig({
         cookiePathRewrite: '/',
       },
       "/admin/monitoring": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+        cookieDomainRewrite: "",
+        cookiePathRewrite: '/',
+      },
+      "/admin/settings": {
         target: "http://localhost:4000",
         changeOrigin: true,
         cookieDomainRewrite: "",

@@ -33,6 +33,7 @@ import AboutPage from './pages/about'
 import NotFoundPage from './pages/not-found'
 import StatusPageRoute from './pages/errors/status-route'
 import UnderConstructionPage from './pages/under-construction'
+import NavigationBuilderPage from './pages/admin/navigation-builder'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -63,7 +64,6 @@ const adminPlaceholderRoutes = [
   { path: 'projects/active', feature: 'Active projects' },
   { path: 'projects/new', feature: 'New project wizard' },
   { path: 'projects/archived', feature: 'Archived projects' },
-  { path: 'settings/navigation', feature: 'Navigation builder' },
   { path: 'settings/integrations', feature: 'Integrations hub' },
 ]
 
@@ -127,6 +127,11 @@ const router = createBrowserRouter([
       { path: 'settings/permissions', element: (
         <ProtectedRoute>
           <AdminPermissionsPage />
+        </ProtectedRoute>
+      ) },
+      { path: 'settings/navigation', element: (
+        <ProtectedRoute>
+          <NavigationBuilderPage />
         </ProtectedRoute>
       ) },
       { path: 'settings/logs', element: (

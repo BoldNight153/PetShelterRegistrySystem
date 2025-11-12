@@ -21,6 +21,7 @@ import AuthDrawer from "@/components/auth/AuthDrawer"
 import { useNavigationMenu } from "@/services/hooks/navigation"
 import { filterNavigationTree, resolveIcon } from "@/lib/navigation-map"
 import { useNavigate } from "react-router-dom"
+import type { NavigationMenuItem } from "@/services/interfaces/navigation.interface"
 
 type SettingsCategory = "general" | "monitoring" | "auth" | "docs" | "security"
 
@@ -77,7 +78,7 @@ export default function NavUser({ placement = "header" }: NavUserProps) {
 
     for (const item of visibleItems) {
       if (!userHasAccess(item.meta, userRoles)) continue
-      const children = item.children ?? []
+      const children: NavigationMenuItem[] = item.children ? [...item.children] : []
       const eligibleChild = children.find((child) => child.url && userHasAccess(child.meta, userRoles))
       const targetNode = item.url ? item : eligibleChild
       if (!targetNode || !targetNode.url) continue

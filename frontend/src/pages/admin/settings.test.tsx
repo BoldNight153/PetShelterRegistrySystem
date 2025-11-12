@@ -74,7 +74,6 @@ describe('AdminSettingsPage (Security)', () => {
       services: {
         admin: {
           settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
-          navigation: navigationServiceStub,
         },
         navigation: navigationServiceStub,
       },
@@ -113,7 +112,6 @@ describe('AdminSettingsPage (Security)', () => {
       services: {
         admin: {
           settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
-          navigation: navigationServiceStub,
         },
         navigation: navigationServiceStub,
       },
@@ -162,7 +160,6 @@ describe('AdminSettingsPage (Access control)', () => {
             services={{
               admin: {
                 settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
-                navigation: navigationServiceStub,
               },
               navigation: navigationServiceStub,
             }}
