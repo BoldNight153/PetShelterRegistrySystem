@@ -37,8 +37,22 @@ export function resolveIcon(identifier?: string | null): LucideIcon | undefined 
   return iconRegistry[pascal];
 }
 
+export function filterNavigationTree(items: NavigationMenuItem[]): NavigationMenuItem[] {
+  return items
+    .filter((item) => {
+      const published = item.isPublished !== false;
+      const visible = item.isVisible !== false;
+      return published && visible;
+    })
+    .map((item) => ({
+      ...item,
+      children: item.children ? filterNavigationTree(item.children) : undefined,
+    }));
+}
+
 export function mapMenuToNavMain(items: NavigationMenuItem[]): NavMainItem[] {
-  return items.map((item) => ({
+  const visibleItems = filterNavigationTree(items);
+  return visibleItems.map((item) => ({
     ...toNavLink(item, true),
     items: (item.children ?? []).map((child) => toNavLink(child, true)),
   }));
