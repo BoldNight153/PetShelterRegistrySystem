@@ -394,3 +394,186 @@ export async function fetchMenuByName(name: string): Promise<NavigationMenuRespo
   if (!res.ok) throw new Error('Failed to load menu');
   return res.json() as Promise<NavigationMenuResponse>;
 }
+
+// ----------------------
+// Admin navigation API
+// ----------------------
+
+export type AdminMenuRecord = {
+  id: string;
+  name: string;
+  title?: string | null;
+  description?: string | null;
+  locale?: string | null;
+  isActive?: boolean | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type AdminMenuItemResponse = NavigationMenuItemResponse & {
+  menuId: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  children?: AdminMenuItemResponse[];
+};
+
+export type AdminMenuResponse = AdminMenuRecord & {
+  items: AdminMenuItemResponse[];
+};
+
+export type CreateAdminMenuInput = {
+  name: string;
+  title?: string | null;
+  description?: string | null;
+  locale?: string | null;
+  isActive?: boolean | null;
+};
+
+export type UpdateAdminMenuInput = Partial<{
+  title: string | null;
+  description: string | null;
+  locale: string | null;
+  isActive: boolean | null;
+}>;
+
+export type CreateAdminMenuItemInput = {
+  title: string;
+  url?: string | null;
+  icon?: string | null;
+  target?: string | null;
+  external?: boolean | null;
+  order?: number | null;
+  meta?: JsonValue;
+  parentId?: string | null;
+  isVisible?: boolean | null;
+  isPublished?: boolean | null;
+  locale?: string | null;
+};
+
+export type UpdateAdminMenuItemInput = Partial<CreateAdminMenuItemInput>;
+
+export type AdminMenuItemRecord = {
+  id: string;
+  menuId: string;
+  parentId?: string | null;
+  title: string;
+  url?: string | null;
+  icon?: string | null;
+  target?: string | null;
+  external?: boolean | null;
+  order?: number | null;
+  meta?: JsonValue;
+  isVisible?: boolean | null;
+  isPublished?: boolean | null;
+  locale?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export async function fetchAdminMenus(): Promise<AdminMenuResponse[]> {
+  const res = await fetch('/admin/menus', { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load admin menus');
+  const data = await res.json();
+  if (Array.isArray(data)) return data as AdminMenuResponse[];
+  if (Array.isArray((data as any)?.menus)) return (data as any).menus as AdminMenuResponse[];
+  return [];
+}
+
+export async function fetchAdminMenuByName(name: string): Promise<AdminMenuResponse | null> {
+  const res = await fetch(`/admin/menus/${encodeURIComponent(name)}`, { credentials: 'include' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('Failed to load admin menu');
+  return res.json() as Promise<AdminMenuResponse>;
+}
+
+export async function createAdminMenu(input: CreateAdminMenuInput): Promise<AdminMenuRecord> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/admin/menus', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to create menu');
+  }
+  return res.json() as Promise<AdminMenuRecord>;
+}
+
+export async function updateAdminMenu(id: string, input: UpdateAdminMenuInput): Promise<AdminMenuRecord> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/menus/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to update menu');
+  }
+  return res.json() as Promise<AdminMenuRecord>;
+}
+
+export async function deleteAdminMenu(id: string): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/menus/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to delete menu');
+  }
+}
+
+export async function fetchAdminMenuItems(menuId: string): Promise<AdminMenuItemResponse[]> {
+  const res = await fetch(`/admin/menus/${encodeURIComponent(menuId)}/items`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load menu items');
+  return res.json() as Promise<AdminMenuItemResponse[]>;
+}
+
+export async function createAdminMenuItem(menuId: string, input: CreateAdminMenuItemInput): Promise<AdminMenuItemRecord> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/menus/${encodeURIComponent(menuId)}/items`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to create menu item');
+  }
+  return res.json() as Promise<AdminMenuItemRecord>;
+}
+
+export async function updateAdminMenuItem(id: string, input: UpdateAdminMenuItemInput): Promise<AdminMenuItemRecord> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/menus/items/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to update menu item');
+  }
+  return res.json() as Promise<AdminMenuItemRecord>;
+}
+
+export async function deleteAdminMenuItem(id: string): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/menus/items/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to delete menu item');
+  }
+}
