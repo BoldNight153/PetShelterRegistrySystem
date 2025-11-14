@@ -1,3 +1,5 @@
+import type { UserProfileUpdateInput } from './types';
+
 export interface IAuthService {
   login(input: { email: string; password: string }): Promise<any>;
   register(input: { email: string; password: string; name?: string }): Promise<any>;
@@ -8,4 +10,5 @@ export interface IAuthService {
    * This encapsulates the runtime '/auth/me' call so callers don't use fetch directly.
    */
   me(): Promise<any | null>;
+  updateProfile(input: UserProfileUpdateInput): Promise<any>;
 }

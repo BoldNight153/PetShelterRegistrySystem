@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router, type Request, type Response, type NextFunction, type RequestHandler } from 'express';
 import crypto from 'crypto';
 import { prismaClient as prisma } from '../prisma/client';
 import argon2 from 'argon2';
@@ -7,7 +7,9 @@ import { resetPasswordEmailTemplate, sendMail, verificationEmailTemplate } from 
 import { getCount as libGetCount, incrementAndCheck as libIncrementAndCheck, resetWindow as libResetWindow } from '../lib/rateLimit';
 import type { RateLimitService } from '../services/rateLimitService';
 import type { AuthService } from '../services/authService';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { z } from 'zod';
+import { requireAuth } from '../middleware/auth';
 
 // uses centralized prisma client from /src/prisma/client.ts
 
@@ -20,6 +22,41 @@ const AUDIT_LOGIN_LOCKED = 'auth.login.locked_user';
 const DIAG_VALIDATE_CSRF_MISSING = 'diagnostic /validateCsrf missing';
 
 const router = Router();
+
+const UpdateProfileSchema = z.object({
+  name: z.string().min(1).max(120).trim().optional().nullable(),
+  avatarUrl: z.string().url().max(2048).optional().nullable(),
+  title: z.string().trim().max(120).optional().nullable(),
+  department: z.string().trim().max(120).optional().nullable(),
+  pronouns: z.string().trim().max(60).optional().nullable(),
+  timezone: z.string().trim().max(80).optional().nullable(),
+  locale: z.string().trim().max(20).optional().nullable(),
+  phone: z.string().trim().max(40).optional().nullable(),
+  bio: z.string().trim().max(1000).optional().nullable(),
+});
+
+function parseUserMetadata(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // ignore malformed JSON stored in legacy rows
+    }
+  }
+  return null;
+}
+
+function cloneUserMetadata(value: unknown): Record<string, unknown> {
+  const parsed = parseUserMetadata(value);
+  return parsed ? { ...parsed } : {};
+}
 
 function resolveAuthService(req: any): AuthService | null {
   try { const v = req.container?.resolve('authService'); return v ? (v as AuthService) : null; } catch { return null; }
@@ -454,8 +491,7 @@ router.post('/refresh', validateCsrf, async (req: Request, res: Response) => {
 
   const access = signAccessToken(String(existing.userId));
     setAuthCookies(res, access, created.token, created.maxAgeMs);
-    await logAudit(String(existing.userId), 'auth.refresh', req, { rotatedFrom: rt });
-  await logAudit(String(existing.userId), 'auth.refresh', { ip: req.ip, get: req.get.bind(req) }, { rotatedFrom: rt });
+    await logAudit(String(existing.userId), 'auth.refresh', { ip: req.ip, get: req.get.bind(req) }, { rotatedFrom: rt });
     return res.json({ ok: true });
   } catch (err: any) {
     try { (req as any).log?.error({ err }, 'refresh failed'); } catch {}
@@ -477,7 +513,6 @@ router.post('/request-email-verification', validateCsrf, async (req: Request, re
     const authSvc2 = resolveAuthService(req);
     if (authSvc2) await authSvc2.createVerificationToken(email, token, 'email_verify', expiresAt);
     else await prisma.verificationToken.create({ data: { identifier: email, token, type: 'email_verify', expiresAt } });
-    await logAudit(user.id, 'auth.email_verification.request', req);
   await logAudit(user.id, 'auth.email_verification.request', { ip: req.ip, get: req.get.bind(req) });
     try {
       const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173';
@@ -518,7 +553,6 @@ router.post('/verify-email', validateCsrf, async (req: Request, res: Response) =
       await prisma.verificationToken.update({ where: { id: vt.id }, data: { consumedAt: new Date() } });
       await revokeAllRefreshTokens(user.id);
     }
-    await logAudit(String(user.id), 'auth.email_verification.verified', req);
   await logAudit(String(user.id), 'auth.email_verification.verified', { ip: req.ip, get: req.get.bind(req) });
     // issue fresh session
   const access = signAccessToken(user.id);
@@ -544,7 +578,6 @@ router.post('/request-password-reset', validateCsrf, async (req: Request, res: R
     const authSvc4 = resolveAuthService(req);
     if (authSvc4) await authSvc4.createVerificationToken(email, token, 'password_reset', expiresAt);
     else await prisma.verificationToken.create({ data: { identifier: email, token, type: 'password_reset', expiresAt } });
-    await logAudit(String(user.id), 'auth.password_reset.request', req);
   await logAudit(String(user.id), 'auth.password_reset.request', { ip: req.ip, get: req.get.bind(req) });
     try {
       const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173';
@@ -622,8 +655,7 @@ router.post('/reset-password', validateCsrf, async (req: Request, res: Response)
       try { await revokeAllRefreshTokens(user.id); } catch {}
     }
 
-    await logAudit(String(user.id), 'auth.password_reset.reset', req);
-    await logAudit(String(user.id), 'auth.password_reset.reset', { ip: req.ip, get: req.get.bind(req) });
+  await logAudit(String(user.id), 'auth.password_reset.reset', { ip: req.ip, get: req.get.bind(req) });
     // issue new session cookies
     const access = signAccessToken(user.id);
     const rt = await createRefreshToken(req, user.id);
@@ -643,7 +675,115 @@ router.get('/me', async (req: any, res: Response) => {
     if (!user) return res.status(401).json({ authenticated: false });
     const roles: string[] = Array.isArray(req.user?.roles) ? req.user.roles : [];
     const permissions: string[] = Array.isArray(req.user?.permissions) ? req.user.permissions : [];
-    return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified, roles, permissions });
+  const metadata = parseUserMetadata((user as any).metadata);
+    return res.json({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      image: user.image,
+      emailVerified: user.emailVerified,
+      roles,
+      permissions,
+      metadata: metadata ?? null,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
+  }
+});
+
+router.put('/me', requireAuth as unknown as RequestHandler, validateCsrf, async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+
+    const parsed = UpdateProfileSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.format() });
+    }
+
+    const input = parsed.data;
+  const existing = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existing) return res.status(404).json({ error: 'user not found' });
+
+  // Use a loose type for update payload so we can conditionally assign JSON/JsonNull
+  const updateData: any = {};
+
+    const normalize = (value: string | null | undefined): string | null => {
+      if (typeof value !== 'string') return null;
+      const trimmed = value.trim();
+      return trimmed.length ? trimmed : null;
+    };
+
+    if (input.name !== undefined) {
+      const normalizedName = normalize(input.name);
+      const currentName = typeof existing.name === 'string' ? normalize(existing.name) : null;
+      if (normalizedName !== currentName) {
+        updateData.name = normalizedName;
+      }
+    }
+    if (input.avatarUrl !== undefined) {
+      const normalizedAvatar = normalize(input.avatarUrl);
+      const currentImage = typeof existing.image === 'string' ? normalize(existing.image) : null;
+      if (normalizedAvatar !== currentImage) {
+        updateData.image = normalizedAvatar;
+      }
+    }
+
+  const metadata = cloneUserMetadata((existing as any).metadata);
+    let metadataTouched = false;
+    const applyMeta = (key: string, value: string | null | undefined) => {
+      if (value === undefined) return;
+      const normalized = normalize(value);
+      const existingValue = typeof metadata[key] === 'string' ? normalize(String(metadata[key])) : null;
+      if (normalized === null) {
+        if (existingValue !== null) {
+          metadataTouched = true;
+          delete metadata[key];
+        }
+        return;
+      }
+      if (existingValue === normalized) {
+        return;
+      }
+      metadataTouched = true;
+      metadata[key] = normalized;
+    };
+
+    applyMeta('avatarUrl', input.avatarUrl);
+    applyMeta('title', input.title);
+    applyMeta('department', input.department);
+    applyMeta('pronouns', input.pronouns);
+    applyMeta('timezone', input.timezone);
+    applyMeta('locale', input.locale);
+    applyMeta('phone', input.phone);
+    applyMeta('bio', input.bio);
+
+    if (metadataTouched) {
+      updateData.metadata = Object.keys(metadata).length ? metadata : Prisma.JsonNull;
+    }
+
+  const shouldUpdate = Object.keys(updateData as Record<string, unknown>).length > 0;
+    const updated = shouldUpdate
+      ? await prisma.user.update({ where: { id: userId }, data: updateData })
+      : existing;
+    const roles: string[] = Array.isArray(req.user?.roles) ? req.user.roles : [];
+    const permissions: string[] = Array.isArray(req.user?.permissions) ? req.user.permissions : [];
+  const responseMetadata = parseUserMetadata((updated as any).metadata);
+
+    return res.json({
+      id: updated.id,
+      email: updated.email,
+      name: updated.name,
+      image: updated.image,
+      emailVerified: updated.emailVerified,
+      roles,
+      permissions,
+      metadata: responseMetadata ?? null,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    });
   } catch (err: any) {
     return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
   }
@@ -812,7 +952,7 @@ router.get('/oauth/:provider/start', async (req: any, res: Response) => {
     }
   } catch (err: any) {
     try { req.log?.error({ err }, 'oauth start failed'); } catch {}
-    return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : 'internal error' });
+  return res.status(500).json({ error: process.env.NODE_ENV === 'test' ? String(err?.message || err) : INTERNAL_ERROR });
   }
 });
 
@@ -840,7 +980,6 @@ router.get('/oauth/:provider/start', async (req: any, res: Response) => {
     res.cookie('oauth_state', '', { ...cookieBase(), httpOnly: true, maxAge: 0 });
     if (!cookieState || cookieState !== state) {
     await logAudit(null, `auth.oauth.${provider}.state_mismatch`, { ip: req.ip, get: req.get.bind(req) });
-  await logAudit(null, `auth.oauth.${provider}.state_mismatch`, { ip: req.ip, get: req.get.bind(req) });
       return res.redirect(302, `${failureRedirect}&reason=state_mismatch`);
     }
 

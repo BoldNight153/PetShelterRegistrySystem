@@ -14,7 +14,18 @@ const meMock = vi.fn(async () => null)
 
 describe('Header switches after login', () => {
   it('shows NavUser after successful login submission', async () => {
-    const { wrapper } = renderWithProviders(<div />, { services: { auth: { login: loginMock, refresh: refreshMock, logout: logoutMock, register: registerMock, me: meMock } } })
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        auth: {
+          login: loginMock,
+          refresh: refreshMock,
+          logout: logoutMock,
+          register: registerMock,
+          me: meMock,
+          updateProfile: async () => ({})
+        },
+      },
+    })
 
     render(
       <MemoryRouter initialEntries={["/login"]}>

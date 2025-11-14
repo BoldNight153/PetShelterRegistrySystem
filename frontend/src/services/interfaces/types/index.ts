@@ -8,7 +8,22 @@ export type UserSummary = { id: string; email: string; name?: string | null; rol
 export type UserSummaryWithLock = UserSummary & { lock: { reason: string; until: string | null } | null };
 
 export type UserDetail = UserSummaryWithLock & {
+  image?: string | null;
+  permissions?: string[];
   createdAt?: string | null;
   lastLoginAt?: string | null;
+  updatedAt?: string | null;
   metadata?: Record<string, unknown> | null;
+};
+
+export type UserProfileUpdateInput = {
+  name?: string | null;
+  avatarUrl?: string | null;
+  title?: string | null;
+  department?: string | null;
+  pronouns?: string | null;
+  timezone?: string | null;
+  locale?: string | null;
+  phone?: string | null;
+  bio?: string | null;
 };

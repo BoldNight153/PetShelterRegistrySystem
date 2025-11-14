@@ -29,6 +29,7 @@ import {
 } from '@/services/hooks/navigationAdmin'
 import type {
   AdminMenu,
+  AdminMenuRecord,
   AdminMenuItem,
   CreateAdminMenuInput,
   UpdateAdminMenuInput,
@@ -184,18 +185,26 @@ function AdminNavigationBuilderPage() {
     error: selectedMenuError,
   } = useAdminMenu(menuParam)
 
-  const createMenuMutation = useMutation((input: CreateAdminMenuInput) => services.admin.navigation.createMenu(input))
-  const updateMenuMutation = useMutation((args: { id: string; input: UpdateAdminMenuInput }) =>
-    services.admin.navigation.updateMenu(args.id, args.input),
-  )
-  const deleteMenuMutation = useMutation((id: string) => services.admin.navigation.deleteMenu(id))
-  const createItemMutation = useMutation((args: { menuId: string; input: CreateAdminMenuItemInput }) =>
-    services.admin.navigation.createMenuItem(args.menuId, args.input),
-  )
-  const updateItemMutation = useMutation((args: { id: string; input: UpdateAdminMenuItemInput }) =>
-    services.admin.navigation.updateMenuItem(args.id, args.input),
-  )
-  const deleteItemMutation = useMutation((id: string) => services.admin.navigation.deleteMenuItem(id))
+  const createMenuMutation = useMutation<AdminMenuRecord, Error, CreateAdminMenuInput>({
+    mutationFn: (input: CreateAdminMenuInput) => services.admin.navigation.createMenu(input),
+  })
+  const updateMenuMutation = useMutation<AdminMenuRecord, Error, { id: string; input: UpdateAdminMenuInput }>({
+    mutationFn: (args: { id: string; input: UpdateAdminMenuInput }) => services.admin.navigation.updateMenu(args.id, args.input),
+  })
+  const deleteMenuMutation = useMutation<void, Error, string>({
+    mutationFn: (id: string) => services.admin.navigation.deleteMenu(id),
+  })
+  const createItemMutation = useMutation<AdminMenuItem, Error, { menuId: string; input: CreateAdminMenuItemInput }>({
+    mutationFn: (args: { menuId: string; input: CreateAdminMenuItemInput }) =>
+      services.admin.navigation.createMenuItem(args.menuId, args.input),
+  })
+  const updateItemMutation = useMutation<AdminMenuItem, Error, { id: string; input: UpdateAdminMenuItemInput }>({
+    mutationFn: (args: { id: string; input: UpdateAdminMenuItemInput }) =>
+      services.admin.navigation.updateMenuItem(args.id, args.input),
+  })
+  const deleteItemMutation = useMutation<void, Error, string>({
+    mutationFn: (id: string) => services.admin.navigation.deleteMenuItem(id),
+  })
 
   const canManageNavigation = React.useMemo(
     () => Boolean(user?.roles?.some((role) => role === 'admin' || role === 'system_admin')),

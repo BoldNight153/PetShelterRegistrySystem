@@ -3,6 +3,7 @@
 // instead use the service interfaces under `services/interfaces`.
 import * as api from '../../lib/api';
 import type { IAuthService } from '../interfaces/auth.interface';
+import type { UserProfileUpdateInput } from '../interfaces/types';
 
 export class AuthAdapter implements IAuthService {
   async login(input: { email: string; password: string }) {
@@ -37,6 +38,9 @@ export class AuthAdapter implements IAuthService {
   }
   async me() {
     return api.me();
+  }
+  async updateProfile(input: UserProfileUpdateInput) {
+    return api.updateProfile(input);
   }
 }
 
