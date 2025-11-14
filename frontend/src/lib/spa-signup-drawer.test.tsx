@@ -14,7 +14,18 @@ const meMock = vi.fn(async () => null)
 
 describe('SPA /signup opens Register drawer', () => {
   it('keeps URL at /signup, opens register drawer, and hides duplicate route content', async () => {
-    const { wrapper } = renderWithProviders(<div />, { services: { auth: { login: loginMock, refresh: refreshMock, logout: logoutMock, register: registerMock, me: meMock } } })
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        auth: {
+          login: loginMock,
+          refresh: refreshMock,
+          logout: logoutMock,
+          register: registerMock,
+          me: meMock,
+          updateProfile: async () => ({})
+        },
+      },
+    })
 
     render(
       <MemoryRouter initialEntries={["/signup"]}>

@@ -161,6 +161,33 @@ export async function me() {
   return res.json();
 }
 
+export type UpdateProfileInput = {
+  name?: string | null;
+  avatarUrl?: string | null;
+  title?: string | null;
+  department?: string | null;
+  pronouns?: string | null;
+  timezone?: string | null;
+  locale?: string | null;
+  phone?: string | null;
+  bio?: string | null;
+};
+
+export async function updateProfile(input: UpdateProfileInput) {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`${API_BASE}auth/me`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof (err as any)?.error === 'string' ? (err as any).error : 'Failed to update profile');
+  }
+  return res.json();
+}
+
 // ----------------------
 // Admin Settings API
 // ----------------------

@@ -4,6 +4,8 @@ import AdminSettingsPage from './settings'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
+import type { IAdminNavigationService } from '@/services/interfaces/admin.interface'
+import type { INavigationService } from '@/services/interfaces/navigation.interface'
 
 vi.mock('@/lib/auth-context', () => {
   return {
@@ -48,25 +50,87 @@ const navigationMenuMock = {
   ],
 }
 
-const navigationServiceStub = {
-  listMenus: vi.fn().mockResolvedValue([navigationMenuMock]),
-  getMenu: vi.fn().mockResolvedValue(navigationMenuMock),
-  createMenu: vi.fn().mockResolvedValue(null),
-  updateMenu: vi.fn().mockResolvedValue(null),
-  deleteMenu: vi.fn().mockResolvedValue(undefined),
-  createMenuItem: vi.fn().mockResolvedValue(null),
-  updateMenuItem: vi.fn().mockResolvedValue(null),
-  deleteMenuItem: vi.fn().mockResolvedValue(undefined),
+const listNavigationMenusMock = vi.fn().mockResolvedValue([navigationMenuMock])
+const getNavigationMenuMock = vi.fn().mockResolvedValue(navigationMenuMock)
+
+const navigationServiceStub: INavigationService = {
+  listMenus: listNavigationMenusMock,
+  getMenu: getNavigationMenuMock,
+}
+
+const adminListMenusMock = vi.fn().mockResolvedValue([])
+const adminGetMenuMock = vi.fn().mockResolvedValue(null)
+const adminCreateMenuMock = vi.fn().mockResolvedValue({ id: 'menu-id', name: 'Menu' })
+const adminUpdateMenuMock = vi.fn().mockResolvedValue({ id: 'menu-id', name: 'Menu' })
+const adminDeleteMenuMock = vi.fn().mockResolvedValue(undefined)
+const adminListMenuItemsMock = vi.fn().mockResolvedValue([])
+const adminCreateMenuItemMock = vi.fn().mockResolvedValue({
+    id: 'item-id',
+    menuId: 'menu-id',
+    parentId: null,
+    title: 'Item',
+    url: null,
+    icon: null,
+    target: null,
+    external: null,
+    order: 0,
+    meta: null,
+    isVisible: true,
+    isPublished: true,
+    locale: null,
+    createdAt: null,
+    updatedAt: null,
+    children: [],
+  }),
+const adminUpdateMenuItemMock = vi.fn().mockResolvedValue({
+    id: 'item-id',
+    menuId: 'menu-id',
+    parentId: null,
+    title: 'Item',
+    url: null,
+    icon: null,
+    target: null,
+    external: null,
+    order: 0,
+    meta: null,
+    isVisible: true,
+    isPublished: true,
+    locale: null,
+    createdAt: null,
+    updatedAt: null,
+    children: [],
+  }),
+const adminDeleteMenuItemMock = vi.fn().mockResolvedValue(undefined)
+
+const adminNavigationServiceStub: IAdminNavigationService = {
+  listMenus: adminListMenusMock,
+  getMenu: adminGetMenuMock,
+  createMenu: adminCreateMenuMock,
+  updateMenu: adminUpdateMenuMock,
+  deleteMenu: adminDeleteMenuMock,
+  listMenuItems: adminListMenuItemsMock,
+  createMenuItem: adminCreateMenuItemMock,
+  updateMenuItem: adminUpdateMenuItemMock,
+  deleteMenuItem: adminDeleteMenuItemMock,
 }
 
 describe('AdminSettingsPage (Security)', () => {
   beforeEach(() => {
     saveSettingsMock.mockClear()
     loadSettingsMock.mockClear()
-    navigationServiceStub.listMenus.mockClear()
-    navigationServiceStub.listMenus.mockResolvedValue([navigationMenuMock])
-    navigationServiceStub.getMenu.mockClear()
-    navigationServiceStub.getMenu.mockResolvedValue(navigationMenuMock)
+    listNavigationMenusMock.mockClear()
+    listNavigationMenusMock.mockResolvedValue([navigationMenuMock])
+    getNavigationMenuMock.mockClear()
+    getNavigationMenuMock.mockResolvedValue(navigationMenuMock)
+    adminListMenusMock.mockClear()
+    adminGetMenuMock.mockClear()
+    adminCreateMenuMock.mockClear()
+    adminUpdateMenuMock.mockClear()
+    adminDeleteMenuMock.mockClear()
+    adminListMenuItemsMock.mockClear()
+    adminCreateMenuItemMock.mockClear()
+    adminUpdateMenuItemMock.mockClear()
+    adminDeleteMenuItemMock.mockClear()
   })
 
   it('saves security settings including new thresholds', async () => {
@@ -74,6 +138,7 @@ describe('AdminSettingsPage (Security)', () => {
       services: {
         admin: {
           settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+          navigation: adminNavigationServiceStub,
         },
         navigation: navigationServiceStub,
       },
@@ -112,6 +177,7 @@ describe('AdminSettingsPage (Security)', () => {
       services: {
         admin: {
           settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+          navigation: adminNavigationServiceStub,
         },
         navigation: navigationServiceStub,
       },
@@ -160,6 +226,7 @@ describe('AdminSettingsPage (Access control)', () => {
             services={{
               admin: {
                 settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+                navigation: adminNavigationServiceStub,
               },
               navigation: navigationServiceStub,
             }}

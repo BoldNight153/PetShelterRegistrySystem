@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { login as loginThunk, register as registerThunk, logout as logoutThunk, refresh as refreshThunk, setUser as setUserAction, setInitializing as setInitializingAction, selectAuthUser, selectAuthInitializing } from '@/store/slices/authSlice'
-import type { UserDetail } from '@/services/interfaces/types'
+import type { UserDetail, UserProfileUpdateInput } from '@/services/interfaces/types'
 import { ReactReduxContext, Provider as ReduxProvider } from 'react-redux'
 import { useServices } from '@/services/hooks'
 import { createStoreWithServices } from '@/store/store'
@@ -17,6 +17,7 @@ type AuthContextValue = {
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (u: User) => void;
+  updateProfile: (input: UserProfileUpdateInput) => Promise<User>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -43,6 +44,7 @@ function AuthInner({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch()
   const user = useAppSelector(selectAuthUser)
   const initializing = useAppSelector(selectAuthInitializing)
+  const services = useServices()
 
   const authenticated = !!user;
 
@@ -60,6 +62,13 @@ function AuthInner({ children }: { children: React.ReactNode }) {
     await dispatch(logoutThunk())
   }, [dispatch])
 
+  const updateProfile = useCallback(async (input: UserProfileUpdateInput) => {
+    const updated = await services.auth.updateProfile(input)
+    const normalized = (updated ?? null) as User
+    dispatch(setUserAction(normalized))
+    return normalized
+  }, [dispatch, services])
+
   // Periodically refresh token only while authenticated
   useEffect(() => {
     if (!authenticated) return
@@ -71,7 +80,10 @@ function AuthInner({ children }: { children: React.ReactNode }) {
 
   const setUser = useCallback((u: User) => { dispatch(setUserAction(u)) }, [dispatch])
 
-  const value = useMemo(() => ({ user, authenticated, login, register, logout, setUser, initializing }), [user, authenticated, login, register, logout, initializing, setUser]);
+  const value = useMemo(
+    () => ({ user, authenticated, login, register, logout, setUser, updateProfile, initializing }),
+    [user, authenticated, login, register, logout, setUser, updateProfile, initializing]
+  );
 
   // Hydrate from /auth/me on mount via refresh thunk and clear initializing flag
   useEffect(() => {

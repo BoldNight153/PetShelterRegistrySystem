@@ -34,6 +34,7 @@ import NotFoundPage from './pages/not-found'
 import StatusPageRoute from './pages/errors/status-route'
 import UnderConstructionPage from './pages/under-construction'
 import NavigationBuilderPage from './pages/admin/navigation-builder'
+import ProfileSettingsPage from './pages/settings/account/profile'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -132,6 +133,11 @@ const router = createBrowserRouter([
       { path: 'settings/navigation', element: (
         <ProtectedRoute>
           <NavigationBuilderPage />
+        </ProtectedRoute>
+      ) },
+      { path: 'settings/account/profile', element: (
+        <ProtectedRoute>
+          <ProfileSettingsPage />
         </ProtectedRoute>
       ) },
       { path: 'settings/logs', element: (

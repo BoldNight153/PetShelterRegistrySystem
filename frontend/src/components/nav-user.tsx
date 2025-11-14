@@ -120,6 +120,33 @@ export default function NavUser({ placement = "header" }: NavUserProps) {
 
   const effectiveQuickLinks = quickLinks.length > 0 ? quickLinks : fallbackQuickLinks
 
+  const avatarSrc = React.useMemo(() => {
+    if (user && typeof user === 'object') {
+      const img = (user as any).image
+      if (typeof img === 'string' && img.trim().length > 0) {
+        return img.trim()
+      }
+      const meta = user?.metadata as Record<string, unknown> | null | undefined
+      if (meta && typeof meta === 'object') {
+        const candidate = (meta as Record<string, unknown>)?.['avatarUrl']
+        if (typeof candidate === 'string' && candidate.trim().length > 0) {
+          return candidate.trim()
+        }
+      }
+    }
+    return '/avatars/shadcn.jpg'
+  }, [user])
+
+  const avatarFallbackText = React.useMemo(() => {
+    const source = (user?.name || user?.email || 'User').trim()
+    if (!source) return 'U'
+    const parts = source.split(/\s+/)
+    if (parts.length >= 2) {
+      return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase() || 'U'
+    }
+    return source.slice(0, 2).toUpperCase() || 'U'
+  }, [user?.name, user?.email])
+
   const handleLink = React.useCallback(
     (link: QuickLink) => {
       if (link.external) {
@@ -205,8 +232,8 @@ export default function NavUser({ placement = "header" }: NavUserProps) {
               }
             >
               <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src="/avatars/shadcn.jpg" alt={user.name || user.email || "User"} />
-                <AvatarFallback className="rounded-lg">U</AvatarFallback>
+                <AvatarImage src={avatarSrc} alt={user?.name || user?.email || "User"} />
+                <AvatarFallback className="rounded-lg">{avatarFallbackText}</AvatarFallback>
               </Avatar>
               {!condensed && (
                 <>
@@ -228,8 +255,8 @@ export default function NavUser({ placement = "header" }: NavUserProps) {
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src="/avatars/shadcn.jpg" alt={user.name || user.email || "User"} />
-                  <AvatarFallback className="rounded-lg">U</AvatarFallback>
+                  <AvatarImage src={avatarSrc} alt={user?.name || user?.email || "User"} />
+                  <AvatarFallback className="rounded-lg">{avatarFallbackText}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{user.name || user.email || 'User'}</span>
