@@ -7,9 +7,12 @@ import { resetPasswordEmailTemplate, sendMail, verificationEmailTemplate } from 
 import { getCount as libGetCount, incrementAndCheck as libIncrementAndCheck, resetWindow as libResetWindow } from '../lib/rateLimit';
 import type { RateLimitService } from '../services/rateLimitService';
 import type { AuthService } from '../services/authService';
+import { PasswordChangeError, SecurityService } from '../services/securityService';
+import { NotificationService } from '../services/notificationService';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
+import { meetsRegistrationPasswordRequirements } from '../lib/passwordPolicy';
 
 // uses centralized prisma client from /src/prisma/client.ts
 
@@ -33,6 +36,113 @@ const UpdateProfileSchema = z.object({
   locale: z.string().trim().max(20).optional().nullable(),
   phone: z.string().trim().max(40).optional().nullable(),
   bio: z.string().trim().max(1000).optional().nullable(),
+});
+
+const RecoveryChannelSchema = z.object({
+  type: z.enum(['email', 'sms']),
+  value: z.string().trim().min(1).max(320),
+  verified: z.boolean().optional(),
+  lastVerifiedAt: z.string().datetime().optional().nullable(),
+});
+
+const BreakGlassContactSchema = z.object({
+  id: z.string().trim().min(1).max(120).optional(),
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(320),
+  phone: z.string().trim().min(3).max(40).optional().nullable(),
+  verified: z.boolean().optional(),
+});
+
+const AlertPreferenceSchema = z.object({
+  event: z.string().trim().min(1).max(120),
+  label: z.string().trim().min(1).max(160),
+  enabled: z.boolean(),
+  channels: z.array(z.enum(['email', 'sms', 'push', 'in_app'])).min(1).max(4),
+});
+
+const UpdateRecoverySchema = z.object({
+  primaryEmail: RecoveryChannelSchema.extend({ type: z.literal('email'), value: z.string().trim().email().max(320) }),
+  backupEmail: RecoveryChannelSchema.extend({ type: z.literal('email'), value: z.string().trim().email().max(320) }).optional().nullable(),
+  sms: RecoveryChannelSchema.extend({
+    type: z.literal('sms'),
+    value: z.string().trim().min(6).max(40),
+  }).optional().nullable(),
+  backupCodesRemaining: z.number().int().min(0).max(50).optional(),
+  lastCodesGeneratedAt: z.string().datetime().optional().nullable(),
+  contacts: z.array(BreakGlassContactSchema).max(5).optional(),
+});
+
+const UpdateAlertsSchema = z.object({
+  preferences: z.array(AlertPreferenceSchema).min(1).max(25),
+  defaultChannels: z.array(z.enum(['email', 'sms', 'push', 'in_app'])).min(1).max(4),
+});
+
+const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'current password is required').max(256),
+  newPassword: z.string().min(8, 'new password must be at least 8 characters').max(256),
+  signOutOthers: z.boolean().optional().default(true),
+});
+
+const NotificationChannelSchema = z.enum(['email', 'sms', 'push', 'in_app']);
+const NotificationTopicCategorySchema = z.enum(['account', 'animals', 'operations', 'security', 'system']);
+const NotificationDevicePlatformSchema = z.enum(['ios', 'android', 'web', 'unknown']);
+
+const NotificationTopicSchema = z.object({
+  id: z.string().trim().min(1).max(160),
+  label: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(240).optional().nullable(),
+  category: NotificationTopicCategorySchema,
+  enabled: z.boolean(),
+  channels: z.array(NotificationChannelSchema).min(1).max(4),
+  critical: z.boolean().optional(),
+  muteUntil: z.string().datetime().optional().nullable(),
+});
+
+const NotificationDigestSchema = z.object({
+  enabled: z.boolean(),
+  frequency: z.enum(['daily', 'weekly']),
+  sendHourLocal: z.number().int().min(0).max(23),
+  timezone: z.string().trim().min(2).max(60).optional().nullable(),
+  includeSummary: z.boolean(),
+});
+
+const NotificationQuietHoursSchema = z.object({
+  enabled: z.boolean(),
+  startHour: z.number().int().min(0).max(23),
+  endHour: z.number().int().min(0).max(23),
+  timezone: z.string().trim().min(2).max(60).optional().nullable(),
+});
+
+const NotificationEscalationsSchema = z.object({
+  smsFallback: z.boolean(),
+  backupEmail: z.string().trim().email().optional().nullable(),
+  pagerDutyWebhook: z.string().trim().url().optional().nullable(),
+});
+
+const NotificationDeviceSchema = z.object({
+  id: z.string().trim().min(1).max(160),
+  label: z.string().trim().min(1).max(160),
+  platform: NotificationDevicePlatformSchema,
+  enabled: z.boolean(),
+  lastUsedAt: z.string().datetime().optional().nullable(),
+});
+
+const NotificationSettingsSchema = z.object({
+  defaultChannels: z.array(NotificationChannelSchema).min(1).max(4),
+  topics: z.array(NotificationTopicSchema).min(1).max(50),
+  digests: NotificationDigestSchema,
+  quietHours: NotificationQuietHoursSchema,
+  criticalEscalations: NotificationEscalationsSchema,
+  devices: z.array(NotificationDeviceSchema).max(25),
+});
+
+const NotificationSettingsUpdateSchema = z.object({
+  defaultChannels: z.array(NotificationChannelSchema).min(1).max(4).optional(),
+  topics: z.array(NotificationTopicSchema).min(1).max(50).optional(),
+  digests: NotificationDigestSchema.optional(),
+  quietHours: NotificationQuietHoursSchema.optional(),
+  criticalEscalations: NotificationEscalationsSchema.optional(),
+  devices: z.array(NotificationDeviceSchema).max(25).optional(),
 });
 
 function parseUserMetadata(value: unknown): Record<string, unknown> | null {
@@ -69,6 +179,24 @@ function resolveRateLimitService(req: any): RateLimitService | null {
     return v ? (v as RateLimitService) : null;
   } catch (err) {
     try { (req).log?.warn?.({ err }, 'rateLimit service resolution failed'); } catch {}
+    return null;
+  }
+}
+
+function resolveSecurityService(req: any): SecurityService | null {
+  try {
+    const svc = req.container?.resolve?.('securityService');
+    return svc ? (svc as SecurityService) : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveNotificationService(req: any): NotificationService | null {
+  try {
+    const svc = req.container?.resolve?.('notificationService');
+    return svc ? (svc as NotificationService) : null;
+  } catch {
     return null;
   }
 }
@@ -251,13 +379,9 @@ router.post('/register', validateCsrf, async (req: Request, res: Response) => {
   try {
     const { email, password, name } = (req.body || {}) as { email?: string; password?: string; name?: string };
     if (!email || !password || !name) return res.status(400).json({ error: 'name, email and password are required' });
-    // Basic server-side password policy: 8+ chars, upper, lower, digit, special
-    const strong = password.length >= 8
-      && /[A-Z]/.test(password)
-      && /[a-z]/.test(password)
-      && /[0-9]/.test(password)
-      && /[^A-Za-z0-9]/.test(password);
-    if (!strong) return res.status(400).json({ error: 'password does not meet complexity requirements' });
+    if (!meetsRegistrationPasswordRequirements(password)) {
+      return res.status(400).json({ error: 'password does not meet complexity requirements' });
+    }
   const authSvc = resolveAuthService(req);
   const existing = authSvc ? await authSvc.findUserByEmail(email) : await prisma.user.findUnique({ where: { email } });
   if (existing) return res.status(409).json({ error: 'account already exists' });
@@ -265,13 +389,13 @@ router.post('/register', validateCsrf, async (req: Request, res: Response) => {
       ? { type: argon2.argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
       : { type: argon2.argon2id };
   const passwordHash = await argon2.hash(password, hashOpts);
-  const createPayload: Prisma.UserCreateInput | Prisma.UserUncheckedCreateInput = { email, passwordHash, name };
+  const createPayload: Prisma.UserCreateInput | Prisma.UserUncheckedCreateInput = { email, passwordHash, name, lastLoginAt: new Date() };
   const user = authSvc ? await authSvc.createUser(createPayload) : await prisma.user.create({ data: createPayload });
   await logAudit(String(user.id), 'auth.register', { ip: req.ip, get: req.get.bind(req) });
     const access = signAccessToken(String(user.id));
   const rt = await createRefreshToken(req, String(user.id));
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
-    return res.status(201).json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
+    return res.status(201).json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified, lastLoginAt: user.lastLoginAt });
   } catch (err: any) {
     // Log detailed error but avoid leaking internals in production
     try {
@@ -408,6 +532,8 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
       }
       return res.status(401).json({ error: 'invalid credentials' });
     }
+  const loginAt = new Date();
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: loginAt } }).catch(() => {});
     await logAudit(user.id, 'auth.login', { ip: req.ip, get: req.get.bind(req) });
     // Success: reset failure window
   if (!rateSvc) {
@@ -423,7 +549,7 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
     const access = signAccessToken(user.id);
   const rt = await createRefreshToken(req, user.id);
     setAuthCookies(res, access, rt.token, rt.maxAgeMs);
-    return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified });
+    return res.json({ id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified, lastLoginAt: loginAt });
   } catch (err: any) {
     try {
       (req as any).log?.error({ err }, 'login failed');
@@ -685,6 +811,7 @@ router.get('/me', async (req: any, res: Response) => {
       roles,
       permissions,
       metadata: metadata ?? null,
+      lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     });
@@ -781,6 +908,7 @@ router.put('/me', requireAuth as unknown as RequestHandler, validateCsrf, async 
       roles,
       permissions,
       metadata: responseMetadata ?? null,
+      lastLoginAt: updated.lastLoginAt,
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
     });
@@ -1139,6 +1267,141 @@ router.get('/oauth/:provider/start', async (req: any, res: Response) => {
   } catch (err: any) {
     try { req.log?.error({ err }, 'oauth callback failed'); } catch {}
     return res.redirect(302, `${failureRedirect}&reason=exception`);
+  }
+});
+
+router.get('/security', requireAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const svc = resolveSecurityService(req) ?? new SecurityService({ prisma });
+  try {
+    const snapshot = await svc.getAccountSecuritySnapshot(userId);
+    if (!snapshot) return res.status(404).json({ error: 'user not found' });
+    return res.json({ snapshot });
+  } catch (err) {
+    try { (req as any).log?.error?.({ err }, 'security snapshot failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.post('/security/password', requireAuth, validateCsrf, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const parse = ChangePasswordSchema.safeParse(req.body || {});
+  if (!parse.success) {
+    return res.status(400).json({ error: 'invalid payload', details: parse.error.flatten() });
+  }
+  const svc = resolveSecurityService(req) ?? new SecurityService({ prisma });
+  try {
+    await svc.changePassword(userId, parse.data, {
+      currentRefreshToken: req.cookies?.refreshToken as string | undefined,
+      requestMeta: { ipAddress: req.ip, userAgent: req.get(HEADER_UA) || undefined },
+    });
+    return res.status(204).send();
+  } catch (err) {
+    if (err instanceof PasswordChangeError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    try { (req as any).log?.error?.({ err }, 'security password change failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.put('/security/recovery', requireAuth, validateCsrf, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const parse = UpdateRecoverySchema.safeParse(req.body || {});
+  if (!parse.success) {
+    return res.status(400).json({ error: 'invalid payload', details: parse.error.flatten() });
+  }
+  const svc = resolveSecurityService(req) ?? new SecurityService({ prisma });
+  try {
+    const updated = await svc.updateRecoverySettings(userId, parse.data);
+    if (!updated) return res.status(404).json({ error: 'user not found' });
+    return res.json({ recovery: updated });
+  } catch (err) {
+    try { (req as any).log?.error?.({ err }, 'security recovery update failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.put('/security/alerts', requireAuth, validateCsrf, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const parse = UpdateAlertsSchema.safeParse(req.body || {});
+  if (!parse.success) {
+    return res.status(400).json({ error: 'invalid payload', details: parse.error.flatten() });
+  }
+  const svc = resolveSecurityService(req) ?? new SecurityService({ prisma });
+  try {
+    const updated = await svc.updateAlertSettings(userId, parse.data);
+    if (!updated) return res.status(404).json({ error: 'user not found' });
+    return res.json({ alerts: updated });
+  } catch (err) {
+    try { (req as any).log?.error?.({ err }, 'security alerts update failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.get('/security/sessions', requireAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const svc = resolveSecurityService(req) ?? new SecurityService({ prisma });
+  try {
+    const sessions = await svc.listSessions(userId);
+    return res.json({ summary: sessions.summary, sessions: sessions.list });
+  } catch (err) {
+    try { (req as any).log?.error?.({ err }, 'security sessions failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.get('/notifications', requireAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const svc = resolveNotificationService(req) ?? new NotificationService();
+  try {
+    const settings = await svc.getNotificationSettings(userId);
+    if (!settings) return res.status(404).json({ error: 'user not found' });
+    const parsed = NotificationSettingsSchema.safeParse(settings);
+    if (!parsed.success) {
+      try { (req as any).log?.error?.({ issues: parsed.error.issues }, 'notifications schema validation failed'); } catch {}
+      return res.status(500).json({ error: INTERNAL_ERROR });
+    }
+    return res.json({ settings: parsed.data });
+  } catch (err) {
+    try { (req as any).log?.error?.({ err }, 'notifications fetch failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.put('/notifications', requireAuth, validateCsrf, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const parse = NotificationSettingsUpdateSchema.safeParse(req.body || {});
+  if (!parse.success) {
+    return res.status(400).json({ error: 'invalid payload', details: parse.error.flatten() });
+  }
+  const svc = resolveNotificationService(req) ?? new NotificationService();
+  try {
+    const updated = await svc.updateNotificationSettings(userId, parse.data);
+    if (!updated) return res.status(404).json({ error: 'user not found' });
+    const parsed = NotificationSettingsSchema.safeParse(updated);
+    if (!parsed.success) {
+      try { (req as any).log?.error?.({ issues: parsed.error.issues }, 'notifications schema validation failed'); } catch {}
+      return res.status(500).json({ error: INTERNAL_ERROR });
+    }
+    return res.json({ settings: parsed.data });
+  } catch (err) {
+    try { (req as any).log?.error?.({ err }, 'notifications update failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
   }
 });
 

@@ -15,6 +15,8 @@ import { LocationService } from './services/locationService';
 import { EventService } from './services/eventService';
 import { AuthService } from './services/authService';
 import { RateLimitService } from './services/rateLimitService';
+import { SecurityService } from './services/securityService';
+import { NotificationService } from './services/notificationService';
 
 export const container: AwilixContainer = createContainer();
 
@@ -34,6 +36,8 @@ container.register({
   eventService: asClass(EventService).singleton(),
   rateLimitService: asClass(RateLimitService).singleton(),
   authService: asClass(AuthService).singleton(),
+  securityService: asClass(SecurityService).singleton(),
+  notificationService: asClass(NotificationService).singleton(),
   // register other services here as needed
 });
 

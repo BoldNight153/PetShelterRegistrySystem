@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { passwordSchema, registerSchema } from './validation'
+import { passwordChangeSchema, passwordSchema, registerSchema } from './validation'
 
 describe('passwordSchema', () => {
   it('accepts a strong password', () => {
@@ -39,6 +39,48 @@ describe('registerSchema', () => {
       email: 'alice@example.com',
       password: 'Admin123!@#',
       confirm: 'Admin123!@#',
+    })
+    expect(res.success).toBe(true)
+  })
+})
+
+describe('passwordChangeSchema', () => {
+  it('requires the current password', () => {
+    const res = passwordChangeSchema.safeParse({
+      currentPassword: '',
+      newPassword: 'Admin123!@#',
+      confirmPassword: 'Admin123!@#',
+    })
+    expect(res.success).toBe(false)
+    if (!res.success) {
+      expect(res.error.issues.some(issue => issue.path.join('.') === 'currentPassword')).toBe(true)
+    }
+  })
+
+  it('enforces password requirements and matching confirmation', () => {
+    const weak = passwordChangeSchema.safeParse({
+      currentPassword: 'oldpassword',
+      newPassword: 'short',
+      confirmPassword: 'short',
+    })
+    expect(weak.success).toBe(false)
+
+    const mismatch = passwordChangeSchema.safeParse({
+      currentPassword: 'oldpassword',
+      newPassword: 'Admin123!@#',
+      confirmPassword: 'Mismatch123!@#',
+    })
+    expect(mismatch.success).toBe(false)
+    if (!mismatch.success) {
+      expect(mismatch.error.issues.some(issue => issue.path.join('.') === 'confirmPassword')).toBe(true)
+    }
+  })
+
+  it('accepts valid input', () => {
+    const res = passwordChangeSchema.safeParse({
+      currentPassword: 'OldPassword123!@#',
+      newPassword: 'NewPassword123!@#',
+      confirmPassword: 'NewPassword123!@#',
     })
     expect(res.success).toBe(true)
   })

@@ -16,6 +16,37 @@ export type UserDetail = UserSummaryWithLock & {
   metadata?: Record<string, unknown> | null;
 };
 
+export type Page<T> = { items: T[]; total: number; page: number; pageSize: number };
+
+export type AuditSeverity = 'info' | 'warning' | 'critical';
+
+export type AuditActor = {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+  initials?: string | null;
+};
+
+export type AuditTarget = {
+  type: string;
+  id?: string | null;
+  label?: string | null;
+};
+
+export type AuditTimelineEntry = {
+  id: string;
+  action: string;
+  createdAt: string;
+  description: string;
+  severity: AuditSeverity;
+  actor: AuditActor;
+  target?: AuditTarget;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  metadata?: JsonValue;
+  tags: string[];
+};
+
 export type UserProfileUpdateInput = {
   name?: string | null;
   avatarUrl?: string | null;

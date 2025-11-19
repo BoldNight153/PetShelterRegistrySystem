@@ -49,7 +49,7 @@ async function main() {
         // Account & Profile
         const accountGroup = await prisma.menuItem.create({ data: { menuId: settingsMenu.id, title: 'Account & Profile', order: 0, isPublished: true, isVisible: true } });
         await prisma.menuItem.createMany({ data: [
-            { menuId: settingsMenu.id, parentId: accountGroup.id, title: 'Profile', url: '/settings/account/profile', order: 0, isPublished: true, isVisible: true },
+            { menuId: settingsMenu.id, parentId: accountGroup.id, title: 'Profile', url: '/settings/account/profile', order: 0, isPublished: true, isVisible: true, meta: { settingsRoute: '/settings/account/profile' } },
             { menuId: settingsMenu.id, parentId: accountGroup.id, title: 'Security', url: '/settings/account/security', order: 1, isPublished: true, isVisible: true },
             { menuId: settingsMenu.id, parentId: accountGroup.id, title: 'Notifications', url: '/settings/account/notifications', order: 2, isPublished: true, isVisible: true },
             { menuId: settingsMenu.id, parentId: accountGroup.id, title: 'Connected Apps', url: '/settings/account/connected-apps', order: 3, isPublished: true, isVisible: true },
@@ -58,7 +58,7 @@ async function main() {
         // Organization
         const orgGroup = await prisma.menuItem.create({ data: { menuId: settingsMenu.id, title: 'Organization', order: 100, isPublished: true, isVisible: true } });
         await prisma.menuItem.createMany({ data: [
-            { menuId: settingsMenu.id, parentId: orgGroup.id, title: 'Organization Settings', url: '/settings/organization', order: 0, isPublished: true, isVisible: true },
+            { menuId: settingsMenu.id, parentId: orgGroup.id, title: 'Organization Settings', url: '/settings/organization', order: 0, isPublished: true, isVisible: true, meta: { settingsCategory: 'general', requiresRoles: ['admin', 'system_admin'] } },
             { menuId: settingsMenu.id, parentId: orgGroup.id, title: 'Branding', url: '/settings/organization/branding', order: 1, isPublished: true, isVisible: true },
             { menuId: settingsMenu.id, parentId: orgGroup.id, title: 'Locations', url: '/settings/organization/locations', order: 2, isPublished: true, isVisible: true },
             { menuId: settingsMenu.id, parentId: orgGroup.id, title: 'Teams & Departments', url: '/settings/organization/teams', order: 3, isPublished: true, isVisible: true },
@@ -67,8 +67,8 @@ async function main() {
         // Security & Access
         const securityGroup = await prisma.menuItem.create({ data: { menuId: settingsMenu.id, title: 'Security & Access', order: 200, isPublished: true, isVisible: true } });
         await prisma.menuItem.createMany({ data: [
-            { menuId: settingsMenu.id, parentId: securityGroup.id, title: 'Authentication', url: '/settings/security/authentication', order: 0, isPublished: true, isVisible: true },
-            { menuId: settingsMenu.id, parentId: securityGroup.id, title: 'Session Policies', url: '/settings/security/sessions', order: 1, isPublished: true, isVisible: true },
+            { menuId: settingsMenu.id, parentId: securityGroup.id, title: 'Authentication', url: '/settings/security/authentication', order: 0, isPublished: true, isVisible: true, meta: { settingsCategory: 'auth', requiresRoles: ['admin', 'system_admin'] } },
+            { menuId: settingsMenu.id, parentId: securityGroup.id, title: 'Session Policies', url: '/settings/security/sessions', order: 1, isPublished: true, isVisible: true, meta: { settingsCategory: 'security', requiresRoles: ['admin', 'system_admin'] } },
             { menuId: settingsMenu.id, parentId: securityGroup.id, title: 'Roles & Permissions', url: '/settings/security/roles', order: 2, isPublished: true, isVisible: true },
             { menuId: settingsMenu.id, parentId: securityGroup.id, title: 'Audit Logs', url: '/settings/security/audit-logs', order: 3, isPublished: true, isVisible: true },
         ] });
@@ -93,7 +93,7 @@ async function main() {
         // Monitoring & Reliability
         const monitoringGroup = await prisma.menuItem.create({ data: { menuId: settingsMenu.id, title: 'Monitoring & Reliability', order: 500, isPublished: true, isVisible: true } });
         await prisma.menuItem.createMany({ data: [
-            { menuId: settingsMenu.id, parentId: monitoringGroup.id, title: 'System Health', url: '/settings/monitoring/health', order: 0, isPublished: true, isVisible: true },
+            { menuId: settingsMenu.id, parentId: monitoringGroup.id, title: 'System Health', url: '/settings/monitoring/health', order: 0, isPublished: true, isVisible: true, meta: { settingsCategory: 'monitoring', requiresRoles: ['admin', 'system_admin'] } },
             { menuId: settingsMenu.id, parentId: monitoringGroup.id, title: 'Alerting', url: '/settings/monitoring/alerting', order: 1, isPublished: true, isVisible: true },
             { menuId: settingsMenu.id, parentId: monitoringGroup.id, title: 'Data Retention', url: '/settings/monitoring/data-retention', order: 2, isPublished: true, isVisible: true },
         ] });
@@ -101,7 +101,7 @@ async function main() {
         // Documentation & Support
         const docsGroup = await prisma.menuItem.create({ data: { menuId: settingsMenu.id, title: 'Documentation & Support', order: 600, isPublished: true, isVisible: true } });
         await prisma.menuItem.createMany({ data: [
-            { menuId: settingsMenu.id, parentId: docsGroup.id, title: 'Knowledge Base', url: '/settings/docs/knowledge-base', order: 0, isPublished: true, isVisible: true },
+            { menuId: settingsMenu.id, parentId: docsGroup.id, title: 'Knowledge Base', url: '/settings/docs/knowledge-base', order: 0, isPublished: true, isVisible: true, meta: { settingsCategory: 'docs', requiresRoles: ['admin', 'system_admin'] } },
             { menuId: settingsMenu.id, parentId: docsGroup.id, title: 'Release Notes', url: '/settings/docs/release-notes', order: 1, isPublished: true, isVisible: true },
             { menuId: settingsMenu.id, parentId: docsGroup.id, title: 'Support Center', url: '/settings/docs/support', order: 2, isPublished: true, isVisible: true },
         ] });

@@ -7,6 +7,7 @@ client_secret_*.json
 prisma/dev.db-journal
 node_modules/
 dev.db
+!prisma/dev.db
 .env
 .env.local
 /.idea

@@ -3,10 +3,14 @@ import { vi, test, expect } from 'vitest'
 import { ServicesProvider } from '@/services/provider'
 import { useServices } from '@/services/hooks'
 import type { Services } from '@/services/defaults'
+import type { IAdminNavigationService, AdminMenuRecord, AdminMenuItem } from '@/services/interfaces/admin.interface'
 
 function Consumer() {
   const s = useServices()
-  return <div data-testid="has-services">{typeof s.admin?.settings?.loadSettings === 'function' ? 'ok' : 'no'}</div>
+  const hasAdminSettings = typeof s.admin?.settings?.loadSettings === 'function'
+  const hasSecurity = typeof s.security?.loadSnapshot === 'function'
+  const hasNotifications = typeof s.notifications?.loadSettings === 'function'
+  return <div data-testid="has-services">{hasAdminSettings && hasSecurity && hasNotifications ? 'ok' : 'no'}</div>
 }
 
 test('ServicesProvider provides default services and allows overrides', () => {
@@ -22,8 +26,21 @@ test('ServicesProvider provides default services and allows overrides', () => {
 
   const fakeLoad = vi.fn(async () => ({}))
   const fakeSave = vi.fn(async () => ({}))
+  const fakeMenuRecord: AdminMenuRecord = { id: 'menu-id', name: 'settings-main' }
+  const fakeMenuItem: AdminMenuItem = { id: 'item-id', menuId: 'menu-id', title: 'Settings' }
+  const fakeNavigation: IAdminNavigationService = {
+    listMenus: vi.fn(async () => []),
+    getMenu: vi.fn(async () => null),
+    createMenu: vi.fn(async (input) => ({ ...fakeMenuRecord, name: input.name })),
+    updateMenu: vi.fn(async () => fakeMenuRecord),
+    deleteMenu: vi.fn(async () => undefined),
+    listMenuItems: vi.fn(async () => []),
+    createMenuItem: vi.fn(async () => fakeMenuItem),
+    updateMenuItem: vi.fn(async () => fakeMenuItem),
+    deleteMenuItem: vi.fn(async () => undefined),
+  }
   const override = {
-    admin: { settings: { loadSettings: fakeLoad, saveSettings: fakeSave } },
+    admin: { settings: { loadSettings: fakeLoad, saveSettings: fakeSave }, navigation: fakeNavigation },
   } satisfies Partial<Services>
   render(
     <ServicesProvider services={override}>

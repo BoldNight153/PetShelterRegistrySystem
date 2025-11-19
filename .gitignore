@@ -1,5 +1,5 @@
 ### Local DBs
-backend/prisma/dev.db
+# Prisma dev DB stays committed so dummy data syncs across machines
 
 ### Node modules
 /node_modules/
@@ -38,3 +38,4 @@ test-frontend/
 ### Misc
 *.sqlite
 *.db
+!backend/prisma/dev.db

@@ -159,6 +159,7 @@ model User {
   locks         UserLock[]
   passwordHistory PasswordHistory[]
   metadata      Json?
+  lastLoginAt   DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }

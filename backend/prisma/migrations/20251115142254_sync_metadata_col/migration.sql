@@ -1,0 +1,5 @@
+-- This migration intentionally left blank.
+-- The metadata column was added by `20251113090000_add_user_metadata`, and
+-- we no longer need to rewrite the User table. Keeping this file as a no-op
+-- preserves the migration history without introducing invalid SQL on other
+-- database engines.

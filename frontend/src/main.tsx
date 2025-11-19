@@ -1,7 +1,7 @@
 import React, { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import RootLayout from './layout/root-layout'
 import DashboardPage from './dashboard/page'
 import RedocPage from './docs/redoc-page'
@@ -25,6 +25,7 @@ import DocsClientSDKs from './pages/docs/client-sdks'
 import AdminDocsExamples from './pages/admin/docs/examples'
 import AdminSettingsPage from './pages/admin/settings'
 import AuditLogsPage from './pages/admin/audit-logs'
+import SystemLogsPage from './pages/admin/system-logs'
 import AdminUsersPage from './pages/admin/users'
 import AdminRolesPage from './pages/admin/roles'
 import AdminPermissionsPage from './pages/admin/permissions'
@@ -35,6 +36,9 @@ import StatusPageRoute from './pages/errors/status-route'
 import UnderConstructionPage from './pages/under-construction'
 import NavigationBuilderPage from './pages/admin/navigation-builder'
 import ProfileSettingsPage from './pages/settings/account/profile'
+import AccountSecuritySettingsPage from './pages/settings/account/security'
+import SecurityAuditLogsSettingsPage from './pages/settings/security/audit-logs'
+import NotificationsSettingsPage from './pages/settings/account/notifications'
 
 // Do not force a default theme here; theme is initialized in index.html before React mounts.
 
@@ -65,7 +69,7 @@ const adminPlaceholderRoutes = [
   { path: 'projects/active', feature: 'Active projects' },
   { path: 'projects/new', feature: 'New project wizard' },
   { path: 'projects/archived', feature: 'Archived projects' },
-  { path: 'settings/integrations', feature: 'Integrations hub' },
+  { path: 'admin/integrations', feature: 'Integrations hub' },
 ]
 
 const router = createBrowserRouter([
@@ -100,11 +104,20 @@ const router = createBrowserRouter([
           <ServerInfoCharts />
         </ProtectedRoute>
       ) },
-      { path: 'settings', element: (
-        <ProtectedRoute>
-          <AdminSettingsPage />
-        </ProtectedRoute>
-      ) },
+      {
+        path: 'settings',
+        element: (
+          <ProtectedRoute>
+            <AdminSettingsPage />
+          </ProtectedRoute>
+        ),
+        children: [
+          { path: 'account/profile', element: <ProfileSettingsPage /> },
+          { path: 'account/security', element: <AccountSecuritySettingsPage /> },
+              { path: 'account/notifications', element: <NotificationsSettingsPage /> },
+          { path: 'security/audit-logs', element: <SecurityAuditLogsSettingsPage /> },
+        ],
+      },
       { path: 'settings/general', element: (
         <ProtectedRoute>
           <AdminSettingsPage />
@@ -115,31 +128,36 @@ const router = createBrowserRouter([
           <AuditLogsPage />
         </ProtectedRoute>
       ) },
-      { path: 'settings/users', element: (
+      { path: 'admin/system-logs', element: (
+        <ProtectedRoute>
+          <SystemLogsPage />
+        </ProtectedRoute>
+      ) },
+      { path: 'system-logs', element: <Navigate to="/admin/system-logs" replace /> },
+      { path: 'admin/users', element: (
         <ProtectedRoute>
           <AdminUsersPage />
         </ProtectedRoute>
       ) },
-      { path: 'settings/roles', element: (
+      { path: 'admin/roles', element: (
         <ProtectedRoute>
           <AdminRolesPage />
         </ProtectedRoute>
       ) },
-      { path: 'settings/permissions', element: (
+      { path: 'admin/permissions', element: (
         <ProtectedRoute>
           <AdminPermissionsPage />
         </ProtectedRoute>
       ) },
-      { path: 'settings/navigation', element: (
+      { path: 'settings/users', element: <Navigate to="/admin/users" replace /> },
+      { path: 'settings/roles', element: <Navigate to="/admin/roles" replace /> },
+      { path: 'settings/permissions', element: <Navigate to="/admin/permissions" replace /> },
+      { path: 'admin/navigation-builder', element: (
         <ProtectedRoute>
           <NavigationBuilderPage />
         </ProtectedRoute>
       ) },
-      { path: 'settings/account/profile', element: (
-        <ProtectedRoute>
-          <ProfileSettingsPage />
-        </ProtectedRoute>
-      ) },
+      { path: 'settings/navigation', element: <Navigate to="/admin/navigation-builder" replace /> },
       { path: 'settings/logs', element: (
         <ProtectedRoute>
           <AuditLogsPage />
@@ -160,7 +178,12 @@ const router = createBrowserRouter([
   { path: 'docs/introduction', element: <DocsIntroduction /> },
   { path: 'docs/get-started', element: <DocsGetStarted /> },
   { path: 'docs/tutorials', element: <DocsTutorials /> },
-      { path: 'docs/examples', element: <AdminDocsExamples /> },
+      { path: 'admin/docs', element: (
+        <ProtectedRoute>
+          <AdminDocsExamples />
+        </ProtectedRoute>
+      ) },
+      { path: 'docs/examples', element: <Navigate to="/admin/docs" replace /> },
   { path: 'docs/changelog', element: <DocsChangelog /> },
       ...adminPlaceholderRoutes.map(({ path, feature }) => ({
         path,

@@ -6,6 +6,7 @@ export { default as IMedicalRecordService } from './medicalRecordService.interfa
 export { default as IPetOwnerService } from './petOwnerService.interface';
 export { default as IOwnerService } from './ownerService.interface';
 export { default as IUserService } from './userService.interface';
+export { default as INotificationService } from './notificationService.interface';
 
 export * from './rateLimitService.interface';
 export { default as IMenuService } from './menuService.interface';

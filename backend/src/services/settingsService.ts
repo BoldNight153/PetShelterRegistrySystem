@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { ISettingsService } from './interfaces/settingsService.interface';
+import { normalizeAuditSettings } from '../types/auditSettings';
 
 export class SettingsService implements ISettingsService {
   private prisma: PrismaClient;
@@ -14,6 +15,9 @@ export class SettingsService implements ISettingsService {
     for (const r of rows) {
       result[r.category] ||= {};
       result[r.category][r.key] = r.value;
+    }
+    if (!category || category === 'audit') {
+      result.audit = normalizeAuditSettings(result.audit as Record<string, unknown> | null | undefined);
     }
     return result;
   }

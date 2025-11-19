@@ -18,6 +18,32 @@ if (!window.matchMedia) {
 	}))
 }
 
+// Provide a lightweight ResizeObserver polyfill for Radix/UI components under test
+if (typeof window !== 'undefined' && !('ResizeObserver' in window)) {
+	class ResizeObserver {
+		readonly callback: ResizeObserverCallback
+
+		constructor(callback: ResizeObserverCallback) {
+			this.callback = callback
+		}
+
+		observe(): void {
+			// invoke immediately to mimic synchronous measurement in tests
+			this.callback([], this)
+		}
+
+		unobserve(): void {
+			// no-op
+		}
+
+		disconnect(): void {
+			// no-op
+		}
+	}
+	Object.assign(window, { ResizeObserver })
+	Object.assign(globalThis, { ResizeObserver })
+}
+
 // Safe no-op scrollIntoView for jsdom environment to avoid errors from UI libraries
 if (typeof window !== 'undefined' && typeof window.HTMLElement !== 'undefined') {
 	window.HTMLElement.prototype.scrollIntoView = vi.fn(() => {}) as unknown as typeof window.HTMLElement.prototype.scrollIntoView

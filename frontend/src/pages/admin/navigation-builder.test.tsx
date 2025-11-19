@@ -97,7 +97,7 @@ describe('AdminNavigationBuilderPage', () => {
         },
       },
       withRouter: true,
-      initialEntries: ['/settings/navigation'],
+  initialEntries: ['/admin/navigation-builder'],
     })
 
     render(<AdminNavigationBuilderPage />, { wrapper })
@@ -118,9 +118,8 @@ describe('AdminNavigationBuilderPage', () => {
     fireEvent.click(saveBtn)
 
     await waitFor(() => expect(createMenuItemMock).toHaveBeenCalled())
-    expect(createMenuItemMock.mock.calls[0][0]).toEqual({
-      menuId: 'menu-1',
-      input: expect.objectContaining({ title: 'New Item', url: '/settings/new' }),
-    })
+    const [menuIdArg, inputArg] = createMenuItemMock.mock.calls[0]
+    expect(menuIdArg).toBe('menu-1')
+    expect(inputArg).toEqual(expect.objectContaining({ title: 'New Item', url: '/settings/new' }))
   })
 })
