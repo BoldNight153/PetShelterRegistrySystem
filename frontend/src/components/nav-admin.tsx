@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Shield, Users, KeyRound, BadgeCheck, LayoutDashboard, BookOpen, Settings, ChevronRight, FileText } from 'lucide-react'
+import { Shield, ShieldCheck, Users, KeyRound, BadgeCheck, LayoutDashboard, BookOpen, Settings, ChevronRight, FileText } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -32,23 +32,30 @@ export default function NavAdmin() {
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
-            <Link to="/settings/roles"><BadgeCheck className="h-4 w-4" /><span>Roles</span></Link>
+            <Link to="/admin/roles"><BadgeCheck className="h-4 w-4" /><span>Roles</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
-            <Link to="/settings/permissions"><KeyRound className="h-4 w-4" /><span>Permissions</span></Link>
+            <Link to="/admin/permissions"><KeyRound className="h-4 w-4" /><span>Permissions</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton asChild>
-            <Link to="/settings/users"><Users className="h-4 w-4" /><span>Users</span></Link>
+            <Link to="/admin/users"><Users className="h-4 w-4" /><span>Users</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
         {isAdmin && (
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
               <Link to="/audit-logs"><Shield className="h-4 w-4" /><span>Audit Logs</span></Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )}
+        {isSystemAdmin && (
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild>
+              <Link to="/admin/system-logs"><ShieldCheck className="h-4 w-4" /><span>System Logs</span></Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         )}

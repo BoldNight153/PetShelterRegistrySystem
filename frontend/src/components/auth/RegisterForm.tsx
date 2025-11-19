@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { evaluatePasswordRules } from "@/lib/passwordRules";
 import { registerSchema, type RegisterValues } from "@/lib/validation";
 import { toast } from "sonner";
 import { Check, X } from "lucide-react";
@@ -23,13 +24,7 @@ export function RegisterForm({ onSuccess, switchToLogin }: { onSuccess?: () => v
 
   const pwd = form.watch("password") || ""
   const confirm = form.watch("confirm") || ""
-  const rules = useMemo(() => ([
-    { id: "len", label: "At least 8 characters", pass: pwd.length >= 8 },
-    { id: "upper", label: "One uppercase letter", pass: /[A-Z]/.test(pwd) },
-    { id: "lower", label: "One lowercase letter", pass: /[a-z]/.test(pwd) },
-    { id: "digit", label: "One number", pass: /[0-9]/.test(pwd) },
-    { id: "special", label: "One special character", pass: /[^A-Za-z0-9]/.test(pwd) },
-  ]), [pwd]);
+  const rules = useMemo(() => evaluatePasswordRules(pwd), [pwd]);
 
   const onSubmit = form.handleSubmit(async (values) => {
     setLoading(true);

@@ -1,73 +1,40 @@
-# React + TypeScript + Vite
+# PetShelter Registry — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite power the admin console for the PetShelter Registry backend. Components talk to typed service interfaces (see `src/services/interfaces/*`) so UI code never fetches data directly—it always goes through `src/lib/api.ts` via the `ServicesProvider`.
 
-Currently, two official plugins are available:
+## Development workflow
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+1. Install dependencies once:
+   ```bash
+   npm install
+   ```
+2. Start the Vite dev server on port 5173:
+   ```bash
+   npm run dev
+   ```
+3. Run the backend (`npm run dev` from `/backend`) against the same SQLite DB so settings routes return data.
+4. Keep the CI gates green before opening a PR:
+   ```bash
+   npm run typecheck
+   npm test
+   ```
 
-## React Compiler
+## Account settings surfaces
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Account → Security (`src/pages/settings/account/security.tsx`)
 
-## Expanding the ESLint configuration
+- Drives password, MFA, trusted session, and recovery controls by calling the `security` service hooks (`src/services/hooks/security.ts`).
+- Alert preferences are now **read-only** in this view. The card shows your current defaults plus a preview of the most important topics, then deep links into Notifications for editing so every delivery control lives in one workspace.
+- Tests live in `src/pages/settings/account/security.test.tsx` and stub the `security` service via `renderWithProviders`.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Account → Notifications (`src/pages/settings/account/notifications.tsx`)
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- Uses the `notifications` service to load/save the full notification payload—default channels, per-topic overrides, digests, quiet hours, critical escalations, and trusted devices.
+- Security alert delivery moved here, so this page is the single source of truth for alert channels. Saving updates mirrors the relevant topics back into `metadata.security.alerts` for the Account → Security snapshot.
+- Dedicated Vitest coverage lives in `src/pages/settings/account/notifications.test.tsx`, and normalization utilities are covered in `src/types/notifications.test.ts`.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Testing tips
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- Prefer `renderWithProviders` from `src/test-utils/renderWithProviders.tsx` when mounting pages so you get Redux, React Query, router context, and mocked services.
+- Run focused suites while iterating (e.g., `npm test -- notifications security`) and finish with `npm run typecheck` + `npm test` for parity with CI.
+- VS Code task **Typecheck & test both apps** mirrors the release pipeline by running backend build/tests and the frontend checks in one go.

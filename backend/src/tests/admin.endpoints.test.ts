@@ -162,4 +162,53 @@ describe('Admin endpoints', () => {
     const a2 = await agent.post('/admin/users/revoke-role').send({});
     expect(a2.status).toBe(400);
   });
+
+  it('returns enriched audit feed entries with derived metadata', async () => {
+    const action = `admin.timeline.test.${Date.now()}`;
+    await prisma.auditLog.create({
+      data: {
+        userId: adminUserId,
+        action,
+        ipAddress: '127.0.0.1',
+        metadata: { label: 'timeline smoke test' },
+      },
+    });
+    const res = await agent.get('/admin/audit').query({ action, pageSize: 5 });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(res.body.total).toBeGreaterThanOrEqual(1);
+    const entry = res.body.items[0];
+    expect(entry).toBeDefined();
+    expect(entry.action).toContain(action);
+    expect(typeof entry.description).toBe('string');
+    expect(['info', 'warning', 'critical']).toContain(entry.severity);
+    expect(entry.actor).toBeTruthy();
+    expect(entry.actor.id).toBe(adminUserId);
+    expect(Array.isArray(entry.tags)).toBe(true);
+    expect(entry.createdAt).toBeTruthy();
+    expect(res.body.stats).toBeDefined();
+    expect(res.body.stats.severity).toBeDefined();
+    expect(res.body.stats.range).toBeDefined();
+    expect(typeof res.body.stats.uniqueActors).toBe('number');
+  });
+
+  it('filters audit logs by actor search query and reports stats metadata', async () => {
+    const markerAction = `admin.audit.search.${Date.now()}`;
+    await prisma.auditLog.create({
+      data: {
+        userId: adminUserId,
+        action: markerAction,
+        ipAddress: '10.0.0.5',
+        metadata: { marker: 'search_test' },
+      },
+    });
+    const lookup = _adminEmail ?? 'admin@example.com';
+    const res = await agent.get('/admin/audit').query({ q: lookup, pageSize: 10 });
+    expect(res.status).toBe(200);
+    expect(res.body.items.some((item: any) => item.action === markerAction)).toBe(true);
+    expect(res.body.stats).toBeDefined();
+    expect(res.body.stats.severity.info).toBeGreaterThan(0);
+    expect(typeof res.body.stats.uniqueActions).toBe('number');
+    expect(res.body.stats.range.to).toBeTruthy();
+  });
 });

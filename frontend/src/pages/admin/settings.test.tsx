@@ -3,7 +3,8 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 import AdminSettingsPage from './settings'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import NotificationsSettingsPage from '@/pages/settings/account/notifications'
 import type { IAdminNavigationService } from '@/services/interfaces/admin.interface'
 import type { INavigationService } from '@/services/interfaces/navigation.interface'
 
@@ -45,6 +46,29 @@ const navigationMenuMock = {
           isVisible: true,
           meta: { settingsCategory: 'security' },
         },
+        {
+          id: 'profile-link',
+          title: 'Profile',
+          url: '/settings/account/profile',
+          isPublished: true,
+          isVisible: true,
+          meta: { settingsRoute: '/settings/account/profile' },
+        },
+        {
+          id: 'legacy-profile-link',
+          title: 'Account Overview',
+          url: '/settings/account/overview',
+          isPublished: true,
+          isVisible: true,
+        },
+        {
+          id: 'organization-settings',
+          title: 'Organization Settings',
+          url: '/settings/organization',
+          isPublished: true,
+          isVisible: true,
+          meta: { settingsCategory: 'general' },
+        },
       ],
     },
   ],
@@ -81,7 +105,7 @@ const adminCreateMenuItemMock = vi.fn().mockResolvedValue({
     createdAt: null,
     updatedAt: null,
     children: [],
-  }),
+  })
 const adminUpdateMenuItemMock = vi.fn().mockResolvedValue({
     id: 'item-id',
     menuId: 'menu-id',
@@ -99,7 +123,7 @@ const adminUpdateMenuItemMock = vi.fn().mockResolvedValue({
     createdAt: null,
     updatedAt: null,
     children: [],
-  }),
+  })
 const adminDeleteMenuItemMock = vi.fn().mockResolvedValue(undefined)
 
 const adminNavigationServiceStub: IAdminNavigationService = {
@@ -207,6 +231,84 @@ describe('AdminSettingsPage (Security)', () => {
     expect(changed).toBeDefined()
     expect(changed!.value).toBe(false)
   })
+
+  it('renders route-based items as links', async () => {
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: {
+          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+          navigation: adminNavigationServiceStub,
+        },
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
+
+    render(<AdminSettingsPage />, { wrapper })
+
+    await waitFor(() => expect(getNavigationMenuMock).toHaveBeenCalled())
+
+    const profileLink = await screen.findByRole('link', { name: /profile/i })
+    expect(profileLink).toHaveAttribute('href', '/settings/account/profile')
+
+    // Fallback to plain menu url still renders as link
+    const overviewLink = await screen.findByRole('link', { name: /account overview/i })
+    expect(overviewLink).toHaveAttribute('href', '/settings/account/overview')
+  })
+
+  it('keeps headings aligned with the selected nav item even when categories repeat', async () => {
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: {
+          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+          navigation: adminNavigationServiceStub,
+        },
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
+
+    render(<AdminSettingsPage />, { wrapper })
+
+    await waitFor(() => expect(getNavigationMenuMock).toHaveBeenCalled())
+
+    const orgButton = await screen.findByRole('button', { name: /organization settings/i })
+    fireEvent.click(orgButton)
+
+    const heading = await screen.findByRole('heading', { level: 2, name: /organization settings/i })
+    expect(heading).toBeInTheDocument()
+  })
+
+  it('renders the notifications outlet even when navigation metadata is unavailable', async () => {
+    const emptyNavigationService: INavigationService = {
+      listMenus: vi.fn().mockResolvedValue([]),
+      getMenu: vi.fn().mockResolvedValue(null),
+    }
+
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: {
+          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+          navigation: adminNavigationServiceStub,
+        },
+        navigation: emptyNavigationService,
+      },
+      withRouter: true,
+      initialEntries: ['/settings/account/notifications'],
+    })
+
+    render(
+      <Routes>
+        <Route path="/settings" element={<AdminSettingsPage />}>
+          <Route path="account/notifications" element={<NotificationsSettingsPage />} />
+        </Route>
+      </Routes>,
+      { wrapper }
+    )
+
+    expect(await screen.findByRole('heading', { name: /notifications & alerts/i })).toBeInTheDocument()
+  })
+
 })
 
 describe('AdminSettingsPage (Access control)', () => {

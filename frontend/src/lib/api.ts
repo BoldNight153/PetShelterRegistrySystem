@@ -1,3 +1,15 @@
+import type {
+  AccountSecuritySnapshot,
+  SecurityAlertSettings,
+  SecurityMfaEnrollmentPrompt,
+  SecurityMfaEnrollmentResult,
+  SecurityRecoverySettings,
+  SecuritySession,
+} from '@/types/security-settings'
+import { normalizeAccountSecuritySnapshot } from '@/types/security-settings'
+import type { NotificationSettings, NotificationSettingsInput } from '@/types/notifications'
+import { normalizeNotificationSettings } from '@/types/notifications'
+
 // Minimal API client for auth with CSRF double-submit and cookie-based session
 type LoginInput = { email: string; password: string };
 type RegisterInput = { email: string; password: string; name?: string };
@@ -375,6 +387,32 @@ export async function listUserSessions(userId: string) {
   return res.json();
 }
 
+export type AuditTimelineQuery = {
+  q?: string;
+  action?: string;
+  userId?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export async function fetchAuditTimeline(params: AuditTimelineQuery = {}) {
+  const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost:4000';
+  const url = new URL('/admin/audit', origin);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    url.searchParams.set(key, String(value));
+  });
+  const relativeUrl = url.pathname + url.search;
+  const res = await fetch(relativeUrl, { credentials: 'include' });
+  if (!res.ok) {
+    const message = await res.text().catch(() => '') || `Failed to load audit timeline (${res.status})`;
+    throw new Error(message);
+  }
+  return res.json();
+}
+
 // ----------------------
 // Navigation menu API
 // ----------------------
@@ -603,4 +641,221 @@ export async function deleteAdminMenuItem(id: string): Promise<void> {
     const err = await res.json().catch(() => ({}));
     throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to delete menu item');
   }
+}
+
+// ----------------------
+// Account security API
+// ----------------------
+
+type SecuritySessionsResponse = {
+  summary?: Record<string, unknown> | null;
+  sessions?: unknown[];
+  list?: unknown[];
+};
+
+export async function fetchAccountSecuritySnapshot(): Promise<AccountSecuritySnapshot> {
+  const res = await fetch('/auth/security', { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load account security');
+  const data = await res.json().catch(() => ({}));
+  const raw = data && typeof data === 'object' && 'snapshot' in data ? (data as Record<string, unknown>).snapshot : data;
+  return normalizeAccountSecuritySnapshot(raw as Record<string, unknown> | null | undefined);
+}
+
+export async function listAccountSecuritySessions(): Promise<SecuritySession[]> {
+  const res = await fetch('/auth/security/sessions', { credentials: 'include' });
+  if (res.status === 404) {
+    const snapshot = await fetchAccountSecuritySnapshot();
+    return snapshot.sessions.list;
+  }
+  if (!res.ok) throw new Error('Failed to load sessions');
+  const data = (await res.json().catch(() => ({}))) as SecuritySessionsResponse | unknown[];
+  const sessionsRecord: Record<string, unknown> = {};
+  if (Array.isArray((data as SecuritySessionsResponse)?.sessions)) {
+    sessionsRecord.list = (data as SecuritySessionsResponse).sessions;
+  } else if (Array.isArray((data as SecuritySessionsResponse)?.list)) {
+    sessionsRecord.list = (data as SecuritySessionsResponse).list;
+  } else if (Array.isArray(data)) {
+    sessionsRecord.list = data;
+  } else {
+    sessionsRecord.list = [];
+  }
+  if (
+    data &&
+    typeof data === 'object' &&
+    'summary' in data &&
+    data.summary &&
+    typeof data.summary === 'object'
+  ) {
+    sessionsRecord.summary = data.summary as Record<string, unknown>;
+  }
+  const normalized = normalizeAccountSecuritySnapshot({ sessions: sessionsRecord } as Record<string, unknown>);
+  return normalized.sessions.list;
+}
+
+export async function revokeAccountSecuritySession(sessionId: string): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/sessions/revoke', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify({ sessionId }),
+  });
+  if (!res.ok) throw new Error('Failed to revoke session');
+}
+
+export async function revokeAllAccountSecuritySessions(): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/sessions/revoke-all', {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error('Failed to revoke sessions');
+}
+
+export async function trustAccountSecuritySession(sessionId: string, trust: boolean): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/sessions/trust', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify({ sessionId, trust }),
+  });
+  if (!res.ok) throw new Error('Failed to update session trust');
+}
+
+type ChangeAccountPasswordInput = {
+  currentPassword: string;
+  newPassword: string;
+  signOutOthers?: boolean;
+};
+
+export async function changeAccountPassword(input: ChangeAccountPasswordInput): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to change password');
+  }
+}
+
+export async function startTotpEnrollment(input?: { label?: string; issuer?: string }): Promise<SecurityMfaEnrollmentPrompt> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/mfa/totp/enroll', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input ?? {}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to start enrollment');
+  }
+  return res.json() as Promise<SecurityMfaEnrollmentPrompt>;
+}
+
+export async function confirmTotpEnrollment(input: { ticket: string; code: string }): Promise<SecurityMfaEnrollmentResult> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/mfa/totp/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to confirm MFA enrollment');
+  }
+  return res.json() as Promise<SecurityMfaEnrollmentResult>;
+}
+
+export async function disableMfaFactor(factorId: string): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/auth/security/mfa/${encodeURIComponent(factorId)}/disable`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to disable factor');
+  }
+}
+
+export async function regenerateRecoveryCodes(): Promise<{ codes: string[]; expiresAt?: string | null }> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/mfa/backup-codes/regenerate', {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to regenerate codes');
+  }
+  return res.json().catch(() => ({ codes: [] }));
+}
+
+export async function updateSecurityAlertPreferences(input: SecurityAlertSettings): Promise<SecurityAlertSettings> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/alerts', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to update alerts');
+  }
+  return res.json().catch(() => input);
+}
+
+export async function updateSecurityRecoveryContacts(input: SecurityRecoverySettings): Promise<SecurityRecoverySettings> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/recovery', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to update recovery settings');
+  }
+  return res.json().catch(() => input);
+}
+
+// ----------------------
+// Notifications API
+// ----------------------
+
+export async function fetchNotificationSettings(): Promise<NotificationSettings> {
+  const res = await fetch('/auth/notifications', { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load notification settings');
+  const data = await res.json().catch(() => ({}));
+  const payload = data && typeof data === 'object' && 'settings' in data ? (data as Record<string, unknown>).settings : data;
+  return normalizeNotificationSettings(payload as Record<string, unknown> | null | undefined);
+}
+
+export async function updateNotificationSettings(input: NotificationSettingsInput): Promise<NotificationSettings> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/notifications', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to update notifications');
+  }
+  const data = await res.json().catch(() => ({}));
+  const payload = data && typeof data === 'object' && 'settings' in data ? (data as Record<string, unknown>).settings : data;
+  return normalizeNotificationSettings(payload as Record<string, unknown> | null | undefined);
 }

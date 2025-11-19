@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { prismaClient as prisma } from '../prisma/client';
 import { requireRole } from '../middleware/auth';
 import { resetPasswordEmailTemplate, sendMail } from '../lib/email';
+import { AuditService } from '../services/auditService';
+import { normalizeAuditSettings } from '../types/auditSettings';
 
 const router = express.Router();
 // use centralized prisma client
@@ -589,6 +591,9 @@ router.get('/settings', settingsGuard, async (req: any, res) => {
     result[r.category] ||= {};
     result[r.category][r.key] = r.value;
   }
+  if (!category || category === 'audit') {
+    result.audit = normalizeAuditSettings(result.audit as Record<string, unknown> | null | undefined);
+  }
   res.json({ settings: result });
 });
 
@@ -627,50 +632,51 @@ router.put('/settings', settingsGuard, async (req: any, res) => {
 // ----------------------
 
 const auditGuard = requireRole('admin', 'system_admin');
+const fallbackAuditService = new AuditService({ prisma });
 router.get('/audit', auditGuard, async (req: any, res) => {
+  const params = normalizeAuditQueryParams(req.query || {});
   const maybeAudit = req.container?.resolve?.('auditService') as import('../services/interfaces/auditService.interface').IAuditService | undefined;
   if (maybeAudit && typeof maybeAudit.listAudit === 'function') {
-    const params = {
-      q: (req.query.q ?? '').toString().trim(),
-      action: (req.query.action ?? '').toString().trim(),
-      userId: (req.query.userId ?? '').toString().trim(),
-      from: req.query.from ? new Date(String(req.query.from)) : null,
-      to: req.query.to ? new Date(String(req.query.to)) : null,
-      page: Math.max(1, Number(req.query.page ?? 1)),
-      pageSize: Math.min(200, Math.max(1, Number(req.query.pageSize ?? 25))),
-    };
     const result = await maybeAudit.listAudit(params);
     return res.json(result);
   }
-  const page = Math.max(1, Number(req.query.page ?? 1));
-  const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize ?? 25)));
-  const q = (req.query.q ?? '').toString().trim();
-  const action = (req.query.action ?? '').toString().trim();
-  const userId = (req.query.userId ?? '').toString().trim();
-  const from = req.query.from ? new Date(String(req.query.from)) : null;
-  const to = req.query.to ? new Date(String(req.query.to)) : null;
-
-  const where: any = {};
-  if (action) where.action = { contains: action };
-  if (userId) where.userId = userId;
-  if (from || to) where.createdAt = { gte: from ?? undefined, lte: to ?? undefined };
-  if (q) {
-    where.OR = [
-      { ipAddress: { contains: q } },
-      { userAgent: { contains: q } },
-      { action: { contains: q } },
-    ];
-  }
-
-  const [total, items] = await Promise.all([
-    prisma.auditLog.count({ where }),
-    prisma.auditLog.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-  ]);
-
-  res.json({ items, total, page, pageSize });
+  const result = await fallbackAuditService.listAudit(params);
+  res.json(result);
 });
+
+type QueryRecord = Record<string, unknown> | undefined;
+
+function normalizeAuditQueryParams(query: QueryRecord) {
+  const source = query ?? {};
+  const page = Math.max(1, parseQueryNumber(source.page, 1));
+  const pageSize = Math.min(200, Math.max(1, parseQueryNumber(source.pageSize, 25)));
+  return {
+    q: parseQueryString(source.q),
+    action: parseQueryString(source.action),
+    userId: parseQueryString(source.userId),
+    from: parseQueryDate(source.from),
+    to: parseQueryDate(source.to),
+    page,
+    pageSize,
+  };
+}
+
+function parseQueryString(value: unknown): string {
+  if (Array.isArray(value)) return parseQueryString(value[0]);
+  if (typeof value === 'string') return value.trim();
+  if (value === undefined || value === null) return '';
+  return String(value).trim();
+}
+
+function parseQueryNumber(value: unknown, fallback: number): number {
+  if (Array.isArray(value)) return parseQueryNumber(value[0], fallback);
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function parseQueryDate(value: unknown): Date | null {
+  if (Array.isArray(value)) return parseQueryDate(value[0]);
+  if (value === undefined || value === null || value === '') return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}

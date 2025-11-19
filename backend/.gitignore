@@ -4,9 +4,10 @@
 client_secret_*.json
 
 # Prisma artifacts
-prisma/dev.db-journal
+!prisma/dev.db-journal
 node_modules/
-dev.db
+!dev.db
+!prisma/dev.db
 .env
 .env.local
 /.idea

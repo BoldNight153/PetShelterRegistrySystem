@@ -154,20 +154,16 @@ export default function ProfileSettingsPage() {
 
   if (initializing) {
     return (
-      <div className="p-6">
-        <div className="text-sm text-muted-foreground">Loading profile…</div>
-      </div>
+      <div className="text-sm text-muted-foreground">Loading profile…</div>
     )
   }
 
   if (!user) {
     return (
-      <div className="p-6">
-        <Alert variant="destructive">
-          <AlertTitle>Profile unavailable</AlertTitle>
-          <AlertDescription>We could not load your profile details.</AlertDescription>
-        </Alert>
-      </div>
+      <Alert variant="destructive">
+        <AlertTitle>Profile unavailable</AlertTitle>
+        <AlertDescription>We could not load your profile details.</AlertDescription>
+      </Alert>
     )
   }
 
@@ -180,14 +176,7 @@ export default function ProfileSettingsPage() {
   const lastLoginAt = formatDate((user as any).lastLoginAt)
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
-        <p className="text-sm text-muted-foreground">
-          Keep your contact details and personal preferences up to date.
-        </p>
-      </div>
-
+    <div className="space-y-6">
       {error ? (
         <Alert variant="destructive">
           <AlertTitle>Update failed</AlertTitle>

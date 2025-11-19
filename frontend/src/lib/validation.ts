@@ -10,6 +10,17 @@ export const passwordSchema = z
   .regex(/[0-9]/, "One number")
   .regex(/[^A-Za-z0-9]/, "One special character")
 
+export const passwordChangeSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((vals) => vals.newPassword === vals.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match",
+  })
+
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, "Password is required"),
@@ -29,3 +40,4 @@ export const registerSchema = z
 
 export type LoginValues = z.infer<typeof loginSchema>
 export type RegisterValues = z.infer<typeof registerSchema>
+export type PasswordChangeValues = z.infer<typeof passwordChangeSchema>

@@ -11,7 +11,7 @@ import { filterNavigationTree, resolveIcon } from "@/lib/navigation-map"
 import { useAdminSettings, useSaveAdminSettings } from "@/services/hooks/admin"
 import { useNavigationMenu } from "@/services/hooks/navigation"
 import type { NavigationMenu, NavigationMenuItem } from "@/services/interfaces/navigation.interface"
-import { useSearchParams } from "react-router-dom"
+import { Link, useLocation, useNavigate, useOutlet, useSearchParams } from "react-router-dom"
 
 type SettingsCategory = "general" | "monitoring" | "auth" | "docs" | "security"
 
@@ -19,6 +19,7 @@ type SectionNavItem = {
 	id: string
 	title: string
 	category?: SettingsCategory
+	route?: string
 	icon?: LucideIcon
 	comingSoon: boolean
 	parentTitle: string
@@ -79,6 +80,15 @@ function parseSettingsCategory(meta: NavigationMenuItem["meta"]): SettingsCatego
 	return isSettingsCategory(value) ? value : undefined
 }
 
+function parseSettingsRoute(meta: NavigationMenuItem["meta"]): string | undefined {
+	const record = getMetaRecord(meta)
+	if (!record) return undefined
+	const value = record.settingsRoute
+	if (typeof value !== "string") return undefined
+	const trimmed = value.trim()
+	return trimmed.length ? trimmed : undefined
+}
+
 function extractRequiredRoles(meta: NavigationMenuItem["meta"]): string[] | null {
 	const record = getMetaRecord(meta)
 	if (!record) return null
@@ -93,6 +103,13 @@ function userHasAccess(meta: NavigationMenuItem["meta"], roles: string[]): boole
 	return required.some((role) => roles.includes(role))
 }
 
+function matchesRoute(pathname: string, route: string | undefined): boolean {
+	if (!route) return false
+	const cleanRoute = route.endsWith("/") && route !== "/" ? route.replace(/\/+$/, "") : route
+	const cleanPath = pathname.endsWith("/") && pathname !== "/" ? pathname.replace(/\/+$/, "") : pathname
+	return cleanPath === cleanRoute || cleanPath.startsWith(`${cleanRoute}/`)
+}
+
 function buildSectionGroups(menu: NavigationMenu | null | undefined, roles: string[]): SectionGroup[] {
 	if (!menu) return []
 	const filtered = filterNavigationTree(menu.items ?? [])
@@ -104,12 +121,15 @@ function buildSectionGroups(menu: NavigationMenu | null | undefined, roles: stri
 		for (const child of group.children ?? []) {
 			if (!userHasAccess(child.meta, roles)) continue
 			const category = parseSettingsCategory(child.meta)
+			const settingsRoute = parseSettingsRoute(child.meta)
+			const route = settingsRoute ?? (!category && typeof child.url === "string" ? child.url : undefined)
 			items.push({
 				id: child.id,
 				title: child.title,
 				category,
+				route,
 				icon: resolveIcon(child.icon ?? undefined),
-				comingSoon: !category,
+				comingSoon: !category && !route,
 				parentTitle: group.title,
 			})
 		}
@@ -438,8 +458,10 @@ export default function AdminSettingsPage() {
 	const { data: settingsData, isLoading: settingsLoading, error: settingsError } = useAdminSettings()
 	const saveMutation = useSaveAdminSettings()
 	const settingsMenuQuery = useNavigationMenu("settings_main")
+	const location = useLocation()
+	const navigate = useNavigate()
 	const [searchParams, setSearchParams] = useSearchParams()
-	const sectionParam = searchParams.get("section")
+	const outlet = useOutlet()
 
 	const [general, setGeneral] = React.useState<GeneralState>({ appName: "Pet Shelter Registry", supportEmail: "" })
 	const [monitoring, setMonitoring] = React.useState<MonitoringState>({ chartsRefreshSec: 15, retentionDays: 7 })
@@ -458,6 +480,7 @@ export default function AdminSettingsPage() {
 	const [saving, setSaving] = React.useState<SettingsCategory | null>(null)
 	const [filter, setFilter] = React.useState<string>(() => searchParams.get("q") ?? "")
 	const activeSectionRef = React.useRef<HTMLButtonElement | null>(null)
+	const ignoreRouteSyncRef = React.useRef(false)
 	const commitSearchParams = React.useCallback(
 		(updater: (params: URLSearchParams) => void) => {
 			const params = new URLSearchParams(searchParams)
@@ -565,58 +588,70 @@ export default function AdminSettingsPage() {
 	const candidateCategoryItems = normalizedFilter ? filteredCategoryItems : categoryItems
 	const hasFilter = Boolean(normalizedFilter)
 
-	const [activeCategory, setActiveCategory] = React.useState<SettingsCategory | null>(null)
+	const [activeItemId, setActiveItemId] = React.useState<string | null>(null)
+
+	const matchedRouteItem = React.useMemo(
+		() => flatItems.find((item) => matchesRoute(location.pathname, item.route)) ?? null,
+		[flatItems, location.pathname]
+	)
 
 	React.useEffect(() => {
-		const firstCategory = candidateCategoryItems[0]?.category ?? null
+		if (ignoreRouteSyncRef.current) {
+			if (!matchedRouteItem) {
+				ignoreRouteSyncRef.current = false
+			}
+			return
+		}
+		if (!matchedRouteItem) return
+		if (matchedRouteItem.id === activeItemId) return
+		setActiveItemId(matchedRouteItem.id)
+	}, [matchedRouteItem, activeItemId])
+
+	React.useEffect(() => {
+		const firstCategoryItem = candidateCategoryItems[0] ?? null
+		const activeIsCategory = candidateCategoryItems.some((item) => item.id === activeItemId)
 		if (!candidateCategoryItems.length) {
-			if (activeCategory !== null) {
-				setActiveCategory(null)
+			if (!matchedRouteItem && activeItemId !== null) {
+				setActiveItemId(null)
 			}
 			return
 		}
-		if (!activeCategory && firstCategory) {
-			setActiveCategory(firstCategory)
+		if (!activeItemId && firstCategoryItem) {
+			setActiveItemId(firstCategoryItem.id)
 			return
 		}
-		if (activeCategory && !candidateCategoryItems.some((item) => item.category === activeCategory)) {
-			if (firstCategory && firstCategory !== activeCategory) {
-				setActiveCategory(firstCategory)
-			}
+		if (matchedRouteItem) return
+		if (activeItemId && !activeIsCategory && firstCategoryItem && firstCategoryItem.id !== activeItemId) {
+			setActiveItemId(firstCategoryItem.id)
 		}
-	}, [candidateCategoryItems, activeCategory])
-
-	React.useEffect(() => {
-		if (!sectionParam) return
-		if (!isSettingsCategory(sectionParam)) return
-		const match = categoryItems.find((item) => item.category === sectionParam)
-		if (!match) return
-		if (activeCategory === sectionParam) return
-		setActiveCategory(sectionParam)
-	}, [sectionParam, categoryItems, activeCategory])
-
-	React.useEffect(() => {
-		if (activeCategory) {
-			commitSearchParams((params) => {
-				params.set("section", activeCategory)
-			})
-		} else {
-			commitSearchParams((params) => {
-				params.delete("section")
-			})
-		}
-	}, [activeCategory, commitSearchParams])
-
-	React.useEffect(() => {
-		if (!sectionParam) return
-		if (activeCategory !== sectionParam) return
-		if (!activeSectionRef.current) return
-		activeSectionRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" })
-	}, [sectionParam, activeCategory])
+	}, [candidateCategoryItems, activeItemId, matchedRouteItem])
 
 	const activeNavItem = React.useMemo(
-		() => categoryItems.find((item) => item.category === activeCategory) ?? null,
-		[categoryItems, activeCategory]
+		() => flatItems.find((item) => item.id === activeItemId) ?? null,
+		[flatItems, activeItemId]
+	)
+
+	React.useEffect(() => {
+		if (!activeNavItem) return
+		if (!activeSectionRef.current) return
+		activeSectionRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" })
+	}, [activeNavItem])
+
+	const activeCategory = activeNavItem?.category ?? null
+	const handleSelectNavItem = React.useCallback(
+		(item: SectionNavItem) => {
+			if (!item.category) return
+			if (location.pathname !== "/settings") {
+				ignoreRouteSyncRef.current = true
+			}
+			setActiveItemId(item.id)
+			if (location.pathname !== "/settings") {
+				navigate(`/settings${location.search ?? ""}`)
+			} else {
+				ignoreRouteSyncRef.current = false
+			}
+		},
+		[location.pathname, location.search, navigate]
 	)
 
 	const saveCategory = React.useCallback(
@@ -765,7 +800,20 @@ export default function AdminSettingsPage() {
 					</div>
 				)
 		}
+
 	}
+
+	const routeIsActive = Boolean(activeNavItem?.route && matchesRoute(location.pathname, activeNavItem.route))
+	const hasOutlet = Boolean(outlet)
+	const shouldShowRouteContent = hasOutlet || routeIsActive
+	const routeContent = shouldShowRouteContent
+		? outlet ?? (
+			<div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
+				Section content is loading…
+			</div>
+		)
+		: null
+	const resolvedSectionContent = routeContent ?? sectionContent
 
 	return (
 		<div className="p-6 space-y-6">
@@ -818,18 +866,31 @@ export default function AdminSettingsPage() {
 												{item.category ? (
 													<button
 														type="button"
-														onClick={() => setActiveCategory(item.category!)}
+														onClick={() => handleSelectNavItem(item)}
 														className={cn(
 															"flex w-full items-center gap-2 rounded px-2 py-1 text-sm transition",
-															item.category === activeCategory
+															item.id === activeNavItem?.id
 																? "bg-accent text-accent-foreground"
 																: "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
 														)}
-														ref={item.category === activeCategory ? activeSectionRef : undefined}
+														ref={item.id === activeNavItem?.id ? activeSectionRef : undefined}
 													>
 														{item.icon ? <item.icon className="size-4" /> : null}
 														<span className="flex-1 truncate">{item.title}</span>
 													</button>
+												) : item.route ? (
+													<Link
+														to={item.route}
+														className={cn(
+															"flex w-full items-center gap-2 rounded px-2 py-1 text-sm transition",
+															matchesRoute(location.pathname, item.route)
+																? "bg-accent text-accent-foreground"
+																: "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+														)}
+													>
+														{item.icon ? <item.icon className="size-4" /> : null}
+														<span className="flex-1 truncate">{item.title}</span>
+													</Link>
 												) : (
 													<div className="flex items-center justify-between rounded px-2 py-1 text-sm text-muted-foreground/70">
 														<span className="truncate">{item.title}</span>
@@ -856,7 +917,7 @@ export default function AdminSettingsPage() {
 							{activeNavItem ? `Manage ${activeNavItem.parentTitle.toLowerCase()} preferences.` : "Pick a section from the navigation to begin."}
 						</p>
 					</div>
-					{sectionContent}
+					{resolvedSectionContent}
 				</section>
 			</div>
 		</div>

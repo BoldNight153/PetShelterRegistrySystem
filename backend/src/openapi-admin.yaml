@@ -36,6 +36,8 @@ tags:
     description: Runtime metrics, time series, and retention tasks.
   - name: Settings
     description: System settings grouped by category.
+  - name: Audit
+    description: Timeline of privileged administrative and authentication events.
 components:
   securitySchemes:
     cookieAuth:
@@ -128,6 +130,83 @@ components:
         page: { type: integer }
         pageSize: { type: integer }
       required: [items, total, page, pageSize]
+    AuditActor:
+      type: object
+      properties:
+        id: { type: [string, 'null'] }
+        name: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        initials: { type: [string, 'null'] }
+    AuditTarget:
+      type: object
+      properties:
+        type: { type: string }
+        id: { type: [string, 'null'] }
+        label: { type: [string, 'null'] }
+      required: [type]
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: string }
+        action: { type: string }
+        createdAt: { type: string, format: date-time }
+        description: { type: string }
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        actor:
+          $ref: '#/components/schemas/AuditActor'
+        target:
+          oneOf:
+            - $ref: '#/components/schemas/AuditTarget'
+            - type: 'null'
+        ipAddress: { type: [string, 'null'] }
+        userAgent: { type: [string, 'null'] }
+        metadata:
+          description: Original audit metadata payload (arbitrary JSON)
+          oneOf:
+            - type: 'null'
+            - type: object
+            - type: array
+              items: {}
+            - type: string
+            - type: number
+            - type: boolean
+        tags:
+          type: array
+          items: { type: string }
+      required: [id, action, createdAt, description, severity, actor, tags]
+    AuditLogPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AuditEntry' }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        stats:
+          $ref: '#/components/schemas/AuditTimelineStats'
+      required: [items, total, page, pageSize]
+    AuditTimelineStats:
+      type: object
+      properties:
+        severity:
+          type: object
+          properties:
+            info: { type: integer, minimum: 0 }
+            warning: { type: integer, minimum: 0 }
+            critical: { type: integer, minimum: 0 }
+          required: [info, warning, critical]
+        uniqueActors: { type: integer, minimum: 0 }
+        uniqueActions: { type: integer, minimum: 0 }
+        range:
+          type: object
+          properties:
+            from: { type: ['string','null'], format: date-time }
+            to: { type: ['string','null'], format: date-time }
+          required: [from, to]
+      required: [severity, uniqueActors, uniqueActions, range]
     UpsertRoleInput:
       type: object
       properties:
@@ -711,6 +790,61 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/audit:
+    get:
+      summary: List audit timeline entries
+      description: >-
+        Returns a paginated activity feed combining administrative actions (roles, settings, menus) and
+        authentication events (logins, locks, OAuth attempts). Results are sorted newest-first and include
+        derived descriptions, severity, and actor metadata.
+      tags: [Audit]
+      operationId: listAuditTimeline
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: q
+          required: false
+          schema: { type: string }
+          description: Free-text search across action, actor email/name, metadata, IP address, and user agent strings.
+        - in: query
+          name: action
+          required: false
+          schema: { type: string }
+          description: Filter by action substring (e.g., admin.users).
+        - in: query
+          name: userId
+          required: false
+          schema: { type: string }
+          description: Filter by actor user ID.
+        - in: query
+          name: from
+          required: false
+          schema: { type: string, format: date-time }
+          description: Filter entries on or after this timestamp.
+        - in: query
+          name: to
+          required: false
+          schema: { type: string, format: date-time }
+          description: Filter entries on or before this timestamp.
+        - in: query
+          name: page
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: pageSize
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 25 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogPage'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   # Monitoring endpoints
   /admin/monitoring/metrics:
