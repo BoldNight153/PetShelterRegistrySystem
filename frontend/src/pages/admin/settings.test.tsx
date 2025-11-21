@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import NotificationsSettingsPage from '@/pages/settings/account/notifications'
 import type { IAdminNavigationService } from '@/services/interfaces/admin.interface'
 import type { INavigationService } from '@/services/interfaces/navigation.interface'
+import { DEFAULT_NOTIFICATION_SETTINGS } from '@/types/notifications'
 
 vi.mock('@/lib/auth-context', () => {
   return {
@@ -138,6 +139,9 @@ const adminNavigationServiceStub: IAdminNavigationService = {
   deleteMenuItem: adminDeleteMenuItemMock,
 }
 
+const loadNotificationSettingsMock = vi.fn().mockResolvedValue(DEFAULT_NOTIFICATION_SETTINGS)
+const updateNotificationSettingsMock = vi.fn().mockResolvedValue(DEFAULT_NOTIFICATION_SETTINGS)
+
 describe('AdminSettingsPage (Security)', () => {
   beforeEach(() => {
     saveSettingsMock.mockClear()
@@ -155,6 +159,8 @@ describe('AdminSettingsPage (Security)', () => {
     adminCreateMenuItemMock.mockClear()
     adminUpdateMenuItemMock.mockClear()
     adminDeleteMenuItemMock.mockClear()
+    loadNotificationSettingsMock.mockClear()
+    updateNotificationSettingsMock.mockClear()
   })
 
   it('saves security settings including new thresholds', async () => {
@@ -292,6 +298,10 @@ describe('AdminSettingsPage (Security)', () => {
           navigation: adminNavigationServiceStub,
         },
         navigation: emptyNavigationService,
+        notifications: {
+          loadSettings: loadNotificationSettingsMock,
+          updateSettings: updateNotificationSettingsMock,
+        },
       },
       withRouter: true,
       initialEntries: ['/settings/account/notifications'],

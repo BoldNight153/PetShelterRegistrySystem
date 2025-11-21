@@ -248,6 +248,9 @@ components:
           enum: [totp, sms, push, hardware_key, backup_codes]
         label: { type: string }
         enabled: { type: boolean }
+        status:
+          type: string
+          enum: [pending, active, disabled, revoked]
         enrolledAt:
           type: ["string", "null"]
           format: date-time
@@ -261,7 +264,7 @@ components:
           type: ["integer", "null"]
         metadata:
           description: Arbitrary MFA metadata
-      required: [id, type, label, enabled]
+  required: [id, type, label, enabled, status]
     SecurityMfaRecommendation:
       type: object
       properties:
@@ -439,6 +442,85 @@ components:
           type: array
           items: { $ref: '#/components/schemas/SecuritySession' }
       required: [summary, sessions]
+    SecuritySessionRevokeRequest:
+      type: object
+      properties:
+        sessionId: { type: string, description: Refresh token identifier }
+      required: [sessionId]
+    SecuritySessionTrustRequest:
+      type: object
+      properties:
+        sessionId: { type: string, description: Refresh token identifier }
+        trust:
+          type: boolean
+          description: When true mark device trusted; when false clear trust
+      required: [sessionId]
+    SecurityTotpEnrollRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          description: Friendly label for the authenticator entry
+        issuer:
+          type: string
+          description: Issuer shown in authenticator apps
+        accountName:
+          type: string
+          description: Account identifier for key URI (defaults to email)
+    SecurityTotpConfirmRequest:
+      type: object
+      properties:
+        ticket: { type: string }
+        code:
+          type: string
+          minLength: 6
+          maxLength: 12
+      required: [ticket, code]
+    SecurityTotpEnrollmentPrompt:
+      type: object
+      properties:
+        ticket: { type: string }
+        factorId: { type: string }
+        mode:
+          type: string
+          enum: [create, rotate]
+        type:
+          type: string
+          enum: [totp]
+        secret: { type: string }
+        uri: { type: string }
+        qrCodeDataUrl: { type: string }
+        expiresAt:
+          type: string
+          format: date-time
+      required: [ticket, factorId, mode, type, secret, uri]
+    SecurityTotpEnrollmentResult:
+      type: object
+      properties:
+        factor: { $ref: '#/components/schemas/SecurityMfaFactor' }
+        backupCodes:
+          type: array
+          items: { type: string }
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+      required: [factor, backupCodes]
+    SecurityBackupCodeRegenerateRequest:
+      type: object
+      properties:
+        factorId:
+          type: string
+          description: Optional MFA factor ID to scope code regeneration
+    SecurityBackupCodeResponse:
+      type: object
+      properties:
+        codes:
+          type: array
+          items: { type: string }
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+      required: [codes]
     NotificationChannel:
       type: string
       enum: [email, sms, push, in_app]
@@ -633,6 +715,67 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "429": { $ref: '#/components/responses/TooManyRequests' }
 
+  /auth/security/sessions/revoke:
+    post:
+      tags: [Security]
+      summary: Revoke a specific session
+      description: Revokes a refresh-token session belonging to the signed-in user. Requires CSRF header.
+      operationId: revokeAccountSecuritySession
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecuritySessionRevokeRequest'
+      responses:
+        "204": { description: Session revoked }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/sessions/revoke-all:
+    post:
+      tags: [Security]
+      summary: Revoke all other sessions
+      description: Revokes every refresh-token session for the user (optionally excluding the current cookie holder).
+      operationId: revokeAllAccountSecuritySessions
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "204": { description: Sessions revoked }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/sessions/trust:
+    post:
+      tags: [Security]
+      summary: Mark a session's device as trusted or untrusted
+      description: Updates trust metadata for the device backing a refresh-token session.
+      operationId: trustAccountSecuritySession
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecuritySessionTrustRequest'
+      responses:
+        "204": { description: Session trust updated }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
   /auth/security/password:
     post:
       tags: [Security]
@@ -722,6 +865,191 @@ paths:
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/totp/enroll:
+    post:
+      tags: [Security]
+      summary: Start TOTP enrollment
+      description: Generates a TOTP secret, QR code, and short-lived ticket for the signed-in user.
+      operationId: startTotpEnrollment
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityTotpEnrollRequest'
+      responses:
+        "200":
+          description: Enrollment prompt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityTotpEnrollmentPrompt'
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/totp/confirm:
+    post:
+      tags: [Security]
+      summary: Confirm TOTP enrollment
+      description: Verifies a TOTP code using the pending ticket and persists the factor plus backup codes.
+      operationId: confirmTotpEnrollment
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityTotpConfirmRequest'
+      responses:
+        "200":
+          description: Enrollment confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityTotpEnrollmentResult'
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/totp/{factorId}/regenerate:
+    post:
+      tags: [Security]
+      summary: Rotate an existing TOTP factor
+      description: Creates a new secret and ticket for an existing TOTP factor so the user can re-enroll the authenticator.
+      operationId: regenerateTotpFactor
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          name: factorId
+          required: true
+          schema: { type: string }
+          description: Identifier of the factor returned from the security snapshot
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityTotpEnrollRequest'
+      responses:
+        "200":
+          description: Rotation prompt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityTotpEnrollmentPrompt'
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/backup-codes/regenerate:
+    post:
+      tags: [Security]
+      summary: Regenerate backup codes
+      description: Issues a fresh set of single-use backup codes tied to one of the user's active MFA factors.
+      operationId: regenerateBackupCodes
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityBackupCodeRegenerateRequest'
+      responses:
+        "200":
+          description: Backup codes regenerated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityBackupCodeResponse'
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/{factorId}/disable:
+    post:
+      tags: [Security]
+      summary: Disable an MFA factor
+      description: Marks a specific MFA factor (e.g., TOTP) as disabled for the signed-in user.
+      operationId: disableMfaFactor
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          required: true
+          name: factorId
+          schema: { type: string }
+          description: Identifier returned in the security snapshot
+      responses:
+        "204": { description: Factor disabled }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/{factorId}/enable:
+    post:
+      tags: [Security]
+      summary: Enable an MFA factor
+      description: Reactivates a previously disabled MFA factor for the signed-in user.
+      operationId: enableMfaFactor
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          required: true
+          name: factorId
+          schema: { type: string }
+          description: Identifier returned in the security snapshot
+      responses:
+        "204": { description: Factor enabled }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/{factorId}:
+    delete:
+      tags: [Security]
+      summary: Delete an MFA factor
+      description: Permanently removes an MFA factor and any backup codes linked to it.
+      operationId: deleteMfaFactor
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          required: true
+          name: factorId
+          schema: { type: string }
+          description: Identifier returned in the security snapshot
+      responses:
+        "204": { description: Factor deleted }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
         "429": { $ref: '#/components/responses/TooManyRequests' }
 
   /auth/notifications:

@@ -11,6 +11,7 @@ import {
   RefreshCcw,
   Shield,
   Smartphone,
+  Trash2,
   Wifi,
   X,
 } from 'lucide-react'
@@ -21,6 +22,16 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Dialog,
   DialogContent,
@@ -63,7 +74,9 @@ import {
   useAccountSecuritySnapshot,
   useChangePassword,
   useConfirmTotpEnrollment,
+  useDeleteMfaFactor,
   useDisableMfaFactor,
+  useEnableMfaFactor,
   useRegenerateRecoveryCodes,
   useRevokeAllSessions,
   useRevokeSession,
@@ -71,6 +84,7 @@ import {
   useTrustSession,
   useUpdateSecurityRecovery,
 } from '@/services/hooks/security'
+import type { TotpEnrollmentInput } from '@/services/interfaces/security.interface'
 
 const CHANNEL_LABELS: Record<SecurityAlertChannel, string> = {
   email: 'Email',
@@ -91,6 +105,29 @@ const SEVERITY_VARIANT: Record<SecurityRiskSeverity, 'default' | 'secondary' | '
   info: 'secondary',
   warning: 'default',
   critical: 'destructive',
+}
+
+const DEFAULT_TOTP_ISSUER = 'Pet Shelter Registry'
+
+type TotpAppPreset = {
+  id: string
+  label: string
+  description: string
+  issuer?: string
+  helper?: string
+}
+
+const TOTP_APP_PRESETS: TotpAppPreset[] = [
+  { id: 'google', label: 'Google Authenticator', description: 'Android + iOS code generator', issuer: DEFAULT_TOTP_ISSUER },
+  { id: 'microsoft', label: 'Microsoft Authenticator', description: 'Microsoft Entra + push approvals', issuer: DEFAULT_TOTP_ISSUER },
+  { id: 'authy', label: 'Authy', description: 'Desktop + mobile authenticator with multi-device sync', issuer: DEFAULT_TOTP_ISSUER },
+  { id: '1password', label: '1Password', description: 'Built-in OTP field stored with your vault', issuer: DEFAULT_TOTP_ISSUER },
+]
+
+const CUSTOM_PRESET_ID = 'custom'
+
+function normalizeFactorLabel(label: string | null | undefined): string {
+  return (label ?? '').trim().toLowerCase()
 }
 
 type PasswordFormState = PasswordChangeValues & {
@@ -157,7 +194,9 @@ export default function AccountSecuritySettingsPage() {
   const trustSession = useTrustSession()
   const startTotpEnrollment = useStartTotpEnrollment()
   const confirmTotpEnrollment = useConfirmTotpEnrollment()
+  const enableMfaFactor = useEnableMfaFactor()
   const disableMfaFactor = useDisableMfaFactor()
+  const deleteMfaFactor = useDeleteMfaFactor()
   const regenerateCodes = useRegenerateRecoveryCodes()
   const updateRecovery = useUpdateSecurityRecovery()
 
@@ -173,8 +212,11 @@ export default function AccountSecuritySettingsPage() {
   const [totpPrompt, setTotpPrompt] = useState<SecurityMfaEnrollmentPrompt | null>(null)
   const [totpCode, setTotpCode] = useState('')
   const [totpDialogOpen, setTotpDialogOpen] = useState(false)
+  const [totpNamingDialogOpen, setTotpNamingDialogOpen] = useState(false)
   const [codesModal, setCodesModal] = useState<CodesModalState>(() => ({ ...INITIAL_CODES_MODAL }))
   const [sessionAction, setSessionAction] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<SecurityMfaFactor | null>(null)
   const [recoveryDraft, setRecoveryDraft] = useState<SecurityRecoverySettings>(() => cloneRecovery(undefined))
 
   useEffect(() => {
@@ -260,12 +302,13 @@ export default function AccountSecuritySettingsPage() {
     }
   }
 
-  const handleStartTotp = async () => {
+  const handleStartTotp = async (input?: TotpEnrollmentInput) => {
     try {
-      const prompt = await startTotpEnrollment.mutateAsync(undefined)
+      const prompt = await startTotpEnrollment.mutateAsync(input)
       setTotpPrompt(prompt)
       setTotpDialogOpen(true)
       setTotpCode('')
+      setTotpNamingDialogOpen(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to start MFA enrollment'
       toast.error(message)
@@ -293,6 +336,34 @@ export default function AccountSecuritySettingsPage() {
       toast.success(`${factor.label} disabled`)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to disable factor'
+      toast.error(message)
+    }
+  }
+
+  const handleEnableFactor = async (factor: SecurityMfaFactor) => {
+    try {
+      await enableMfaFactor.mutateAsync(factor.id)
+      toast.success(`${factor.label} enabled`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to enable factor'
+      toast.error(message)
+    }
+  }
+
+  const handleRequestDeleteFactor = (factor: SecurityMfaFactor) => {
+    setDeleteTarget(factor)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteFactor = async () => {
+    if (!deleteTarget) return
+    try {
+      await deleteMfaFactor.mutateAsync(deleteTarget.id)
+      toast.success(`${deleteTarget.label} removed`)
+      setDeleteDialogOpen(false)
+      setDeleteTarget(null)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to delete factor'
       toast.error(message)
     }
   }
@@ -438,10 +509,14 @@ export default function AccountSecuritySettingsPage() {
           <MfaCard
             factors={snapshot.mfa.factors}
             recommendations={snapshot.mfa.recommendations}
-            onStartTotp={handleStartTotp}
+            onStartTotp={() => setTotpNamingDialogOpen(true)}
             onRegenerateCodes={handleRegenerateCodes}
+            onEnableFactor={handleEnableFactor}
             onDisableFactor={handleDisableFactor}
+            onDeleteFactor={handleRequestDeleteFactor}
+            enablePending={enableMfaFactor.isPending}
             disablePending={disableMfaFactor.isPending}
+            deletePending={deleteMfaFactor.isPending}
             regeneratePending={regenerateCodes.isPending}
             startPending={startTotpEnrollment.isPending}
           />
@@ -480,6 +555,27 @@ export default function AccountSecuritySettingsPage() {
         onCodeChange={setTotpCode}
         onOpenChange={setTotpDialogOpen}
         onSubmit={handleConfirmTotp}
+      />
+
+      <TotpPresetDialog
+        open={totpNamingDialogOpen}
+        factors={snapshot.mfa.factors}
+        onOpenChange={setTotpNamingDialogOpen}
+        onSubmit={handleStartTotp}
+        submitting={startTotpEnrollment.isPending}
+      />
+
+      <DeleteFactorDialog
+        open={deleteDialogOpen}
+        factor={deleteTarget}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) {
+            setDeleteTarget(null)
+          }
+        }}
+        onConfirm={handleDeleteFactor}
+        submitting={deleteMfaFactor.isPending}
       />
 
       <BackupCodesDialog
@@ -655,8 +751,12 @@ function MfaCard({
   recommendations,
   onStartTotp,
   onRegenerateCodes,
+  onEnableFactor,
   onDisableFactor,
+  onDeleteFactor,
+  enablePending,
   disablePending,
+  deletePending,
   regeneratePending,
   startPending,
 }: {
@@ -664,8 +764,12 @@ function MfaCard({
   recommendations: AccountSecuritySnapshot['mfa']['recommendations']
   onStartTotp: () => void
   onRegenerateCodes: () => void
+  onEnableFactor: (factor: SecurityMfaFactor) => void
   onDisableFactor: (factor: SecurityMfaFactor) => void
+  onDeleteFactor: (factor: SecurityMfaFactor) => void
+  enablePending: boolean
   disablePending: boolean
+  deletePending: boolean
   regeneratePending: boolean
   startPending: boolean
 }) {
@@ -689,6 +793,9 @@ function MfaCard({
             </AlertDescription>
           </Alert>
         ) : null}
+        <div className="rounded border bg-muted/40 p-3 text-xs text-muted-foreground">
+          One authenticator preset can hold only one secret at a time. Selecting an existing name rotates its QR code, and deleting a factor frees that slot for later.
+        </div>
         <div className="space-y-3">
           {factors.length === 0 ? (
             <p className="text-sm text-muted-foreground">No MFA factors enrolled yet. Start with an authenticator app.</p>
@@ -701,15 +808,26 @@ function MfaCard({
                 <span className="text-xs text-muted-foreground ml-auto">Last used {relativeTime(factor.lastUsedAt)}</span>
               </div>
               {factor.type !== 'backup_codes' ? (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => onDisableFactor(factor)}
-                    disabled={disablePending}
+                    onClick={() => (factor.enabled ? onDisableFactor(factor) : onEnableFactor(factor))}
+                    disabled={factor.enabled ? disablePending : enablePending}
                   >
-                    Disable
+                    {factor.enabled ? 'Disable' : 'Enable'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => onDeleteFactor(factor)}
+                    disabled={deletePending}
+                  >
+                    <Trash2 className="mr-1.5 h-4 w-4" />
+                    Delete
                   </Button>
                 </div>
               ) : (
@@ -731,7 +849,7 @@ function MfaCard({
       </CardContent>
       <CardFooter className="flex flex-wrap gap-3">
         <Button type="button" onClick={onStartTotp} disabled={startPending}>
-          {startPending ? 'Preparing…' : 'Add authenticator app'}
+          {startPending ? 'Preparing…' : 'Select authenticator app'}
         </Button>
         <Button type="button" variant="outline" onClick={onRegenerateCodes} disabled={regeneratePending}>
           <RefreshCcw className="mr-2 h-4 w-4" />
@@ -1033,6 +1151,155 @@ function EventsCard({ events }: { events: SecurityEventEntry[] }) {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function TotpPresetDialog({
+  open,
+  factors,
+  onOpenChange,
+  onSubmit,
+  submitting,
+}: {
+  open: boolean
+  factors: SecurityMfaFactor[]
+  onOpenChange: (open: boolean) => void
+  onSubmit: (input: TotpEnrollmentInput) => Promise<void>
+  submitting: boolean
+}) {
+  const [customLabel, setCustomLabel] = useState('')
+  const [pendingChoice, setPendingChoice] = useState<string | null>(null)
+
+  const totpLabels = useMemo(() => {
+    return new Set(
+      factors
+        .filter((factor) => factor.type === 'totp')
+        .map((factor) => normalizeFactorLabel(factor.label))
+    )
+  }, [factors])
+
+  useEffect(() => {
+    if (!open) {
+      setPendingChoice(null)
+      setCustomLabel('')
+    }
+  }, [open])
+
+  const isSubmitting = (choiceId: string) => pendingChoice === choiceId && submitting
+
+  const handlePresetClick = async (preset: TotpAppPreset) => {
+    setPendingChoice(preset.id)
+    await onSubmit({ label: preset.label, issuer: preset.issuer })
+    setPendingChoice(null)
+  }
+
+  const handleCustomSubmit = async () => {
+    const label = customLabel.trim()
+    if (!label) return
+    setPendingChoice(CUSTOM_PRESET_ID)
+    await onSubmit({ label, issuer: DEFAULT_TOTP_ISSUER })
+    setPendingChoice(null)
+  }
+
+  const labelStatus = (label: string) => totpLabels.has(normalizeFactorLabel(label))
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Select authenticator app</DialogTitle>
+          <DialogDescription>
+            Each preset maintains a single secret. Picking an app that's already connected rotates its QR code instead of adding duplicates.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {TOTP_APP_PRESETS.map((preset) => {
+            const connected = labelStatus(preset.label)
+            return (
+              <div key={preset.id} className="rounded border p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div>
+                    <p className="font-medium">{preset.label}</p>
+                    <p className="text-xs text-muted-foreground">{preset.description}</p>
+                  </div>
+                  {connected ? <Badge variant="secondary">Connected</Badge> : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handlePresetClick(preset)}
+                    disabled={submitting}
+                    data-testid={`totp-preset-${preset.id}`}
+                  >
+                    {isSubmitting(preset.id) ? 'Preparing…' : connected ? 'Rotate secret' : 'Connect app'}
+                  </Button>
+                  {preset.helper ? <p className="text-xs text-muted-foreground">{preset.helper}</p> : null}
+                </div>
+              </div>
+            )
+          })}
+          <div className="rounded border p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="custom-auth-label" className="font-medium">Custom label</Label>
+              {labelStatus(customLabel) && customLabel.trim() ? <Badge variant="outline">Will rotate</Badge> : null}
+            </div>
+            <Input
+              id="custom-auth-label"
+              value={customLabel}
+              onChange={(event) => setCustomLabel(event.target.value)}
+              placeholder="e.g., Okta Verify"
+            />
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <span>Use this for desktop managers or alternate authenticator names.</span>
+            </div>
+            <Button
+              type="button"
+              onClick={handleCustomSubmit}
+              disabled={!customLabel.trim() || submitting}
+              data-testid="totp-preset-custom"
+            >
+              {isSubmitting(CUSTOM_PRESET_ID) ? 'Preparing…' : labelStatus(customLabel) && customLabel.trim() ? 'Rotate secret' : 'Connect app'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DeleteFactorDialog({
+  open,
+  factor,
+  onOpenChange,
+  onConfirm,
+  submitting,
+}: {
+  open: boolean
+  factor: SecurityMfaFactor | null
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+  submitting: boolean
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove {factor?.label ?? 'authenticator'}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes the {factor ? MFA_TYPE_LABELS[factor.type] : 'MFA'} factor and invalidates its secrets. You can re-enroll the same app later if needed.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction asChild>
+            <Button type="button" variant="destructive" onClick={onConfirm} disabled={submitting}>
+              {submitting ? 'Deleting…' : 'Delete factor'}
+            </Button>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

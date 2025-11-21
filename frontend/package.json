@@ -5,7 +5,9 @@
   "type": "module",
   "vitest": {
     "environment": "jsdom",
-    "setupFiles": []
+    "setupFiles": [
+      "./vitest.setup.ts"
+    ]
   },
   "scripts": {
     "dev": "vite",

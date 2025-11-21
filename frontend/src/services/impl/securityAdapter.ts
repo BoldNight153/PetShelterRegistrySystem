@@ -48,8 +48,16 @@ export class AccountSecurityAdapter implements IAccountSecurityService {
     return api.confirmTotpEnrollment(input)
   }
 
+  enableFactor(factorId: string): Promise<void> {
+    return api.enableMfaFactor(factorId)
+  }
+
   disableFactor(factorId: string): Promise<void> {
     return api.disableMfaFactor(factorId)
+  }
+
+  deleteFactor(factorId: string): Promise<void> {
+    return api.deleteMfaFactor(factorId)
   }
 
   regenerateRecoveryCodes(): Promise<{ codes: string[]; expiresAt?: string | null }> {

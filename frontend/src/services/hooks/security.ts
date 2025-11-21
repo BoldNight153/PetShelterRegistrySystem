@@ -99,11 +99,33 @@ export function useConfirmTotpEnrollment() {
   })
 }
 
+export function useEnableMfaFactor() {
+  const services = useServices()
+  const qc = useQueryClient()
+  return useMutation<void, Error, string>({
+    mutationFn: (factorId) => services.security.enableFactor(factorId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ACCOUNT_SECURITY_KEY })
+    },
+  })
+}
+
 export function useDisableMfaFactor() {
   const services = useServices()
   const qc = useQueryClient()
   return useMutation<void, Error, string>({
     mutationFn: (factorId) => services.security.disableFactor(factorId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ACCOUNT_SECURITY_KEY })
+    },
+  })
+}
+
+export function useDeleteMfaFactor() {
+  const services = useServices()
+  const qc = useQueryClient()
+  return useMutation<void, Error, string>({
+    mutationFn: (factorId) => services.security.deleteFactor(factorId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ACCOUNT_SECURITY_KEY })
     },

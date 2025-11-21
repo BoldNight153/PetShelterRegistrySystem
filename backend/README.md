@@ -22,6 +22,13 @@ npx prisma migrate dev --name init
 npm run seed
 ```
 
+## Default admin credentials
+
+- Email: `admin@example.com`
+- Password: `Admin123!@#`
+
+Re-running the seed script now upgrades existing admin accounts that were created with older bcrypt hashes so they authenticate without server errors. To force-reset the admin password (for example, after changing the default), set `SEED_ADMIN_FORCE_RESET=true` when running `npm run seed`.
+
 1. Run in dev mode:
 
 ```bash

@@ -6,6 +6,7 @@ import { ReactReduxContext, Provider as ReduxProvider } from 'react-redux'
 import { useServices } from '@/services/hooks'
 import { createStoreWithServices } from '@/store/store'
 import { refresh as apiRefresh } from '@/lib/api'
+import type { AuthLoginResult } from '@/types/auth'
 
 type User = UserDetail | null;
 
@@ -13,7 +14,7 @@ type AuthContextValue = {
   user: User;
   authenticated: boolean;
   initializing: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<AuthLoginResult>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (u: User) => void;
@@ -49,8 +50,7 @@ function AuthInner({ children }: { children: React.ReactNode }) {
   const authenticated = !!user;
 
   const login = useCallback(async (email: string, password: string) => {
-    const action = await dispatch(loginThunk({ email, password }))
-    return action.payload
+    return dispatch(loginThunk({ email, password })).unwrap()
   }, [dispatch])
 
   const register = useCallback(async (email: string, password: string, name: string) => {

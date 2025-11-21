@@ -138,6 +138,7 @@ const confirmTotpMock = vi.fn(async (): Promise<SecurityMfaEnrollmentResult> => 
   backupCodes: ['code-1', 'code-2'],
 }))
 const disableFactorMock = vi.fn(async () => undefined)
+const deleteFactorMock = vi.fn(async () => undefined)
 const regenerateCodesMock = vi.fn(async () => ({ codes: [] }))
 const updateAlertsMock = vi.fn(async (input: AccountSecuritySnapshot['alerts']) => input)
 const updateRecoveryMock = vi.fn(async (input: AccountSecuritySnapshot['recovery']) => input)
@@ -153,6 +154,7 @@ const services: Partial<Services> = {
     startTotpEnrollment: startTotpMock,
     confirmTotpEnrollment: confirmTotpMock,
     disableFactor: disableFactorMock,
+    deleteFactor: deleteFactorMock,
     regenerateRecoveryCodes: regenerateCodesMock,
     updateAlerts: updateAlertsMock,
     updateRecovery: updateRecoveryMock,
@@ -173,6 +175,7 @@ describe('AccountSecuritySettingsPage', () => {
     startTotpMock.mockClear()
     confirmTotpMock.mockClear()
     disableFactorMock.mockClear()
+  deleteFactorMock.mockClear()
     regenerateCodesMock.mockClear()
     updateAlertsMock.mockClear()
     updateRecoveryMock.mockClear()
@@ -235,5 +238,31 @@ describe('AccountSecuritySettingsPage', () => {
     if (newPasswordField) {
       expect(within(newPasswordField).getByText(/At least 8 characters/i)).toBeInTheDocument()
     }
+  })
+
+  it('passes the selected authenticator preset to the enrollment service', async () => {
+    const { wrapper } = renderWithProviders(<div />, { services, withRouter: true })
+    render(<AccountSecuritySettingsPage />, { wrapper })
+
+    const startButton = await screen.findByRole('button', { name: /Select authenticator app/i })
+    fireEvent.click(startButton)
+
+    const googleButton = await screen.findByTestId('totp-preset-google')
+    fireEvent.click(googleButton)
+
+    await waitFor(() => expect(startTotpMock).toHaveBeenCalledWith({ label: 'Google Authenticator', issuer: 'Pet Shelter Registry' }))
+  })
+
+  it('deletes an authenticator after confirmation', async () => {
+    const { wrapper } = renderWithProviders(<div />, { services, withRouter: true })
+    render(<AccountSecuritySettingsPage />, { wrapper })
+
+    const deleteButton = await screen.findByRole('button', { name: /Delete/i })
+    fireEvent.click(deleteButton)
+
+    const confirmButton = await screen.findByRole('button', { name: /Delete factor/i })
+    fireEvent.click(confirmButton)
+
+    await waitFor(() => expect(deleteFactorMock).toHaveBeenCalledWith('factor-1'))
   })
 })
