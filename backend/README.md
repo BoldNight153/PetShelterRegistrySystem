@@ -22,6 +22,10 @@ npx prisma migrate dev --name init
 npm run seed
 ```
 
+## Shared dev database snapshot
+
+The SQLite file at `prisma/dev.db` is intentionally versioned so every contributor works from the same seeded dataset. After running migrations or seeds that change reference data, re-run `npm run seed`, verify the resulting `dev.db`, and include it in your commits. Production deployments should point `DATABASE_URL` at their own Postgres or SQLite instance and must **not** reuse the tracked dev file.
+
 ## Default admin credentials
 
 - Email: `admin@example.com`
