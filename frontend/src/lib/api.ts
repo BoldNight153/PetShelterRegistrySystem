@@ -9,10 +9,13 @@ import type {
 import { normalizeAccountSecuritySnapshot } from '@/types/security-settings'
 import type { NotificationSettings, NotificationSettingsInput } from '@/types/notifications'
 import { normalizeNotificationSettings } from '@/types/notifications'
+import type { LoginDeviceMetadata, LoginChallengeResponse, VerifyMfaChallengeInput } from '@/types/auth'
+import { isLoginChallengeResponse } from '@/types/auth'
 
 // Minimal API client for auth with CSRF double-submit and cookie-based session
-type LoginInput = { email: string; password: string };
+type LoginInput = { email: string; password: string } & LoginDeviceMetadata;
 type RegisterInput = { email: string; password: string; name?: string };
+type MfaVerifyInput = VerifyMfaChallengeInput;
 
 const API_BASE = "/"; // Vite proxy should send /auth to backend
 
@@ -43,7 +46,23 @@ export async function login(input: LoginInput) {
     const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || null);
     throw new Error(msg || `Login failed (${res.status})`);
   }
-  const body = await res.json();
+  const body = await res.json().catch(() => ({}));
+
+  const challengePayload: LoginChallengeResponse | null = (() => {
+    if (isLoginChallengeResponse(body)) return body;
+    if (body && typeof body === 'object' && 'challengeRequired' in body && (body as any).challengeRequired === true) {
+      return body as LoginChallengeResponse;
+    }
+    if (body && typeof body === 'object' && 'challenge' in body) {
+      return { challengeRequired: true, challenge: (body as any).challenge } as LoginChallengeResponse;
+    }
+    return null;
+  })();
+
+  if (res.status === 202 || challengePayload) {
+    if (!challengePayload?.challenge) throw new Error('Missing MFA challenge payload');
+    return challengePayload;
+  }
 
   // Option A: post-login CSRF sync — ensure browser has processed Set-Cookie and
   // the server sees the session cookies before callers continue. This reduces
@@ -76,6 +95,25 @@ export async function login(input: LoginInput) {
   }
 
   return body;
+}
+
+export async function verifyMfaChallenge(input: MfaVerifyInput) {
+  const csrf = await getCsrfToken()
+  const res = await fetch(`${API_BASE}auth/mfa/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': csrf,
+    },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || null)
+    throw new Error(msg || `Verification failed (${res.status})`)
+  }
+  return res.json()
 }
 
 export async function register(input: RegisterInput) {
@@ -774,6 +812,19 @@ export async function confirmTotpEnrollment(input: { ticket: string; code: strin
   return res.json() as Promise<SecurityMfaEnrollmentResult>;
 }
 
+export async function enableMfaFactor(factorId: string): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/auth/security/mfa/${encodeURIComponent(factorId)}/enable`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to enable factor');
+  }
+}
+
 export async function disableMfaFactor(factorId: string): Promise<void> {
   const csrf = await getCsrfToken();
   const res = await fetch(`/auth/security/mfa/${encodeURIComponent(factorId)}/disable`, {
@@ -784,6 +835,19 @@ export async function disableMfaFactor(factorId: string): Promise<void> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to disable factor');
+  }
+}
+
+export async function deleteMfaFactor(factorId: string): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/auth/security/mfa/${encodeURIComponent(factorId)}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to delete factor');
   }
 }
 

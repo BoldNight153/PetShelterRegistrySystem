@@ -1,6 +1,39 @@
 import request from 'supertest';
 import type { Response as SupertestResponse } from 'supertest';
+import { Prisma } from '@prisma/client';
 import app from '../index';
+import prisma from '../prisma/client';
+
+type SecuritySettingKey = 'loginIpWindowSec' | 'loginIpLimit' | 'loginLockWindowSec' | 'loginLockThreshold';
+
+const touchedSettings = new Set<SecuritySettingKey>();
+const originalSettings: Partial<Record<SecuritySettingKey, Prisma.JsonValue | null | undefined>> = {};
+
+async function setSecuritySetting(key: SecuritySettingKey, value: number) {
+  if (!touchedSettings.has(key)) {
+    const existing = await prisma.setting.findUnique({ where: { category_key: { category: 'security', key } } });
+    originalSettings[key] = existing?.value;
+    touchedSettings.add(key);
+  }
+  await prisma.setting.upsert({
+    where: { category_key: { category: 'security', key } },
+    create: { category: 'security', key, value },
+    update: { value },
+  });
+}
+
+async function resetSecuritySettings() {
+  await Promise.all(Array.from(touchedSettings).map(async (key) => {
+    const previous = originalSettings[key];
+    if (typeof previous === 'undefined') {
+      await prisma.setting.delete({ where: { category_key: { category: 'security', key } } }).catch(() => {});
+    } else {
+      const value = previous === null ? Prisma.JsonNull : (previous as Prisma.InputJsonValue);
+      await prisma.setting.update({ where: { category_key: { category: 'security', key } }, data: { value } });
+    }
+  }));
+  touchedSettings.clear();
+}
 
 function getCookie(cookies: string[] | undefined, name: string): string | undefined {
   if (!cookies) return undefined;
@@ -8,10 +41,14 @@ function getCookie(cookies: string[] | undefined, name: string): string | undefi
 }
 
 describe('Auth rate limiting - IP throttle', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     // Make the window very small and the limit low to keep tests fast
     process.env.LOGIN_IP_WINDOW_MS = '1000';
     process.env.LOGIN_IP_LIMIT = '2';
+    await Promise.all([
+      setSecuritySetting('loginIpWindowSec', 1),
+      setSecuritySetting('loginIpLimit', 2),
+    ]);
   });
 
   it('throttles repeated login attempts by IP', async () => {
@@ -46,12 +83,18 @@ describe('Auth rate limiting - IP throttle', () => {
 });
 
 describe('Auth rate limiting - per-user lockout', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     // Ensure IP throttle does not interfere; lockout after 2 failures within 1s
     process.env.LOGIN_IP_WINDOW_MS = '1000';
     process.env.LOGIN_IP_LIMIT = '100';
     process.env.LOGIN_LOCK_WINDOW_MS = '1000';
     process.env.LOGIN_LOCK_THRESHOLD = '2';
+    await Promise.all([
+      setSecuritySetting('loginIpWindowSec', 1),
+      setSecuritySetting('loginIpLimit', 100),
+      setSecuritySetting('loginLockWindowSec', 1),
+      setSecuritySetting('loginLockThreshold', 2),
+    ]);
   });
 
   it('locks out a specific email after repeated failures', async () => {
@@ -83,4 +126,8 @@ describe('Auth rate limiting - per-user lockout', () => {
     const a4 = await attempt();
     expect([400, 401, 403]).toContain(a4.status);
   });
+});
+
+afterAll(async () => {
+  await resetSecuritySettings();
 });

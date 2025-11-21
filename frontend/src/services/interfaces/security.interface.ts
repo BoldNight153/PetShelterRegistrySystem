@@ -37,7 +37,9 @@ export interface IAccountSecurityService {
   changePassword(input: ChangePasswordInput): Promise<void>
   startTotpEnrollment(input?: TotpEnrollmentInput): Promise<SecurityMfaEnrollmentPrompt>
   confirmTotpEnrollment(input: ConfirmTotpEnrollmentInput): Promise<SecurityMfaEnrollmentResult>
+  enableFactor(factorId: string): Promise<void>
   disableFactor(factorId: string): Promise<void>
+  deleteFactor(factorId: string): Promise<void>
   regenerateRecoveryCodes(): Promise<{ codes: string[]; expiresAt?: string | null }>
   updateAlerts(input: SecurityAlertSettings): Promise<SecurityAlertSettings>
   updateRecovery(input: SecurityRecoverySettings): Promise<SecurityRecoverySettings>

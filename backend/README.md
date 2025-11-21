@@ -22,6 +22,17 @@ npx prisma migrate dev --name init
 npm run seed
 ```
 
+## Shared dev database snapshot
+
+The SQLite file at `prisma/dev.db` is intentionally versioned so every contributor works from the same seeded dataset. After running migrations or seeds that change reference data, re-run `npm run seed`, verify the resulting `dev.db`, and include it in your commits. Production deployments should point `DATABASE_URL` at their own Postgres or SQLite instance and must **not** reuse the tracked dev file.
+
+## Default admin credentials
+
+- Email: `admin@example.com`
+- Password: `Admin123!@#`
+
+Re-running the seed script now upgrades existing admin accounts that were created with older bcrypt hashes so they authenticate without server errors. To force-reset the admin password (for example, after changing the default), set `SEED_ADMIN_FORCE_RESET=true` when running `npm run seed`.
+
 1. Run in dev mode:
 
 ```bash

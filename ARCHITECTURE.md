@@ -34,6 +34,8 @@ frontend/src/services  # Interfaces + adapters that call backend via src/lib/api
 - **Notifications workspace**: `frontend/src/pages/settings/account/notifications.tsx` consumes the `NotificationService` hooks to manage default channels, topic overrides, digests, quiet hours, escalations, and trusted devices. It is now the single place to edit security alert delivery, and it mirrors changes back to the Security snapshot for parity.
 - **Docs route**: `/docs` renders ReDoc via `src/docs/redoc-page.tsx`, consuming backend `/api-docs` (proxied through Vite). Update spec URLs here if backend paths change.
 
+- **MFA naming + per-app enforcement**: Users pick a friendly authenticator name (Google, Microsoft, Authy, 1Password, or custom) before the QR code renders. The picker passes `{ label, issuer }` into `SecurityService.startTotpEnrollment`, and the backend auto-rotates the existing factor whenever the normalized label already exists so only one secret per authenticator provider stays active. Hard deletes call `DELETE /auth/security/mfa/:factorId` behind a trash-can confirmation on the security page, complementing the existing “Disable” soft toggle.
+
 ## Workflow & quality gates
 
 - **Backend dev loop**: `cd backend && cp -n .env.example .env && npm ci && npx prisma generate && npx prisma migrate dev --name init && npm run seed && npm run dev` (port 4000). Tests via `npm test` (Jest + SuperTest). `npm run validate:openapi` must pass before committing OpenAPI edits.
