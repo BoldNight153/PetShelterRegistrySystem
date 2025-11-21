@@ -264,7 +264,7 @@ components:
           type: ["integer", "null"]
         metadata:
           description: Arbitrary MFA metadata
-  required: [id, type, label, enabled, status]
+      required: [id, type, label, enabled, status]
     SecurityMfaRecommendation:
       type: object
       properties:
