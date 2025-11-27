@@ -115,6 +115,12 @@ export default defineConfig({
         cookieDomainRewrite: "",
         cookiePathRewrite: '/',
       },
+      "/admin/authenticators": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+        cookieDomainRewrite: "",
+        cookiePathRewrite: '/',
+      },
       "/admin/version": {
         target: "http://localhost:4000",
         changeOrigin: true,

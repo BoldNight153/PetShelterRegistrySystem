@@ -5,16 +5,59 @@ import type {
   SecurityMfaEnrollmentResult,
   SecurityRecoverySettings,
   SecuritySession,
+  SecurityAuthenticatorCatalogEntry,
 } from '@/types/security-settings'
-import { normalizeAccountSecuritySnapshot } from '@/types/security-settings'
-import type { NotificationSettings, NotificationSettingsInput } from '@/types/notifications'
+import { normalizeAccountSecuritySnapshot, normalizeSecurityAuthenticatorCatalogEntry } from '@/types/security-settings'
+import type {
+  NotificationSettings,
+  NotificationSettingsInput,
+  NotificationDevice,
+  NotificationDeviceRegistrationInput,
+} from '@/types/notifications'
 import { normalizeNotificationSettings } from '@/types/notifications'
+import type { LoginDeviceMetadata, LoginChallengeResponse, VerifyMfaChallengeInput } from '@/types/auth'
+import { isLoginChallengeResponse } from '@/types/auth'
+import type {
+  AdminAuthenticatorCatalogRecord,
+  CreateAdminAuthenticatorInput,
+  UpdateAdminAuthenticatorInput,
+} from '@/services/interfaces/admin.interface'
 
 // Minimal API client for auth with CSRF double-submit and cookie-based session
-type LoginInput = { email: string; password: string };
+type LoginInput = { email: string; password: string } & LoginDeviceMetadata;
 type RegisterInput = { email: string; password: string; name?: string };
+type MfaVerifyInput = VerifyMfaChallengeInput;
+
+type ApiError = Error & { payload?: unknown; status?: number };
 
 const API_BASE = "/"; // Vite proxy should send /auth to backend
+
+function resolveErrorMessage(body: unknown, fallback: string): string {
+  if (body && typeof body === 'object') {
+    const record = body as Record<string, unknown>;
+    if (typeof record.error === 'string' && record.error.trim()) {
+      return record.error.trim();
+    }
+    if (record.error && typeof record.error === 'object') {
+      const nested = record.error as Record<string, unknown>;
+      if (typeof nested.message === 'string' && nested.message.trim()) {
+        return nested.message.trim();
+      }
+    }
+    if (typeof record.message === 'string' && record.message.trim()) {
+      return record.message.trim();
+    }
+  }
+  return fallback;
+}
+
+function buildApiError(res: Response, body: unknown, fallback: string): ApiError {
+  const message = resolveErrorMessage(body, fallback || `Request failed (${res.status})`);
+  const error = new Error(message) as ApiError;
+  error.payload = body;
+  error.status = res.status;
+  return error;
+}
 
 async function getCsrfToken(): Promise<string> {
   const res = await fetch(`${API_BASE}auth/csrf`, {
@@ -40,10 +83,25 @@ export async function login(input: LoginInput) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || null);
-    throw new Error(msg || `Login failed (${res.status})`);
+    throw buildApiError(res, err, `Login failed (${res.status})`);
   }
-  const body = await res.json();
+  const body = await res.json().catch(() => ({}));
+
+  const challengePayload: LoginChallengeResponse | null = (() => {
+    if (isLoginChallengeResponse(body)) return body;
+    if (body && typeof body === 'object' && 'challengeRequired' in body && (body as any).challengeRequired === true) {
+      return body as LoginChallengeResponse;
+    }
+    if (body && typeof body === 'object' && 'challenge' in body) {
+      return { challengeRequired: true, challenge: (body as any).challenge } as LoginChallengeResponse;
+    }
+    return null;
+  })();
+
+  if (res.status === 202 || challengePayload) {
+    if (!challengePayload?.challenge) throw new Error('Missing MFA challenge payload');
+    return challengePayload;
+  }
 
   // Option A: post-login CSRF sync — ensure browser has processed Set-Cookie and
   // the server sees the session cookies before callers continue. This reduces
@@ -76,6 +134,24 @@ export async function login(input: LoginInput) {
   }
 
   return body;
+}
+
+export async function verifyMfaChallenge(input: MfaVerifyInput) {
+  const csrf = await getCsrfToken()
+  const res = await fetch(`${API_BASE}auth/mfa/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': csrf,
+    },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw buildApiError(res, err, `Verification failed (${res.status})`)
+  }
+  return res.json()
 }
 
 export async function register(input: RegisterInput) {
@@ -644,6 +720,131 @@ export async function deleteAdminMenuItem(id: string): Promise<void> {
 }
 
 // ----------------------
+// Admin authenticator catalog API
+// ----------------------
+
+function coerceStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const items = value
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter((item) => item.length > 0);
+  return items.length ? items : null;
+}
+
+const VALID_FACTOR_TYPES = new Set<AdminAuthenticatorCatalogRecord['factorType']>(['TOTP', 'SMS', 'PUSH', 'HARDWARE_KEY', 'BACKUP_CODES']);
+
+function normalizeAuthenticatorCatalogRecord(value: unknown): AdminAuthenticatorCatalogRecord | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id : null;
+  const label = typeof record.label === 'string' ? record.label : null;
+  if (!id || !label) return null;
+  const rawFactor = typeof record.factorType === 'string' ? record.factorType.trim().toUpperCase() : 'TOTP';
+  const factorType = VALID_FACTOR_TYPES.has(rawFactor as AdminAuthenticatorCatalogRecord['factorType'])
+    ? (rawFactor as AdminAuthenticatorCatalogRecord['factorType'])
+    : 'TOTP';
+  const sortOrder = typeof record.sortOrder === 'number'
+    ? record.sortOrder
+    : (typeof record.sortOrder === 'string' && record.sortOrder.trim().length
+        ? Number(record.sortOrder)
+        : null);
+  return {
+    id,
+    label,
+    description: typeof record.description === 'string' ? record.description : (record.description ?? null) as string | null,
+    factorType,
+    issuer: typeof record.issuer === 'string' ? record.issuer : (record.issuer ?? null) as string | null,
+    helper: typeof record.helper === 'string' ? record.helper : (record.helper ?? null) as string | null,
+    docsUrl: typeof record.docsUrl === 'string' ? record.docsUrl : (record.docsUrl ?? null) as string | null,
+    tags: coerceStringArray(record.tags),
+    metadata: (record.metadata ?? null) as JsonValue | null,
+    sortOrder: Number.isFinite(sortOrder) ? Number(sortOrder) : null,
+    isArchived: typeof record.isArchived === 'boolean' ? record.isArchived : Boolean(record.isArchived),
+    createdAt: record.createdAt ? String(record.createdAt) : null,
+    updatedAt: record.updatedAt ? String(record.updatedAt) : null,
+    archivedAt: record.archivedAt ? String(record.archivedAt) : null,
+    archivedBy: record.archivedBy ? String(record.archivedBy) : null,
+  } satisfies AdminAuthenticatorCatalogRecord;
+}
+
+export async function fetchAdminAuthenticators(includeArchived?: boolean): Promise<AdminAuthenticatorCatalogRecord[]> {
+  const query = includeArchived ? '?includeArchived=true' : '';
+  const res = await fetch(`/admin/authenticators${query}`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load authenticator catalog');
+  const data = await res.json().catch(() => ({}));
+  const list = Array.isArray((data as any)?.authenticators)
+    ? (data as any).authenticators
+    : Array.isArray(data)
+      ? data
+      : [];
+  return list
+    .map((entry: unknown) => normalizeAuthenticatorCatalogRecord(entry))
+    .filter((entry: AdminAuthenticatorCatalogRecord | null): entry is AdminAuthenticatorCatalogRecord => Boolean(entry));
+}
+
+export async function createAdminAuthenticator(input: CreateAdminAuthenticatorInput): Promise<AdminAuthenticatorCatalogRecord> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/admin/authenticators', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to create authenticator');
+  }
+  const data = await res.json().catch(() => ({}));
+  const normalized = normalizeAuthenticatorCatalogRecord((data as any)?.authenticator ?? data);
+  if (!normalized) throw new Error('Invalid authenticator response');
+  return normalized;
+}
+
+export async function updateAdminAuthenticator(id: string, input: UpdateAdminAuthenticatorInput): Promise<AdminAuthenticatorCatalogRecord> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/authenticators/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to update authenticator');
+  }
+  const data = await res.json().catch(() => ({}));
+  const normalized = normalizeAuthenticatorCatalogRecord((data as any)?.authenticator ?? data);
+  if (!normalized) throw new Error('Invalid authenticator response');
+  return normalized;
+}
+
+export async function archiveAdminAuthenticator(id: string): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/authenticators/${encodeURIComponent(id)}/archive`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to archive authenticator');
+  }
+}
+
+export async function restoreAdminAuthenticator(id: string): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/admin/authenticators/${encodeURIComponent(id)}/restore`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to restore authenticator');
+  }
+}
+
+// ----------------------
 // Account security API
 // ----------------------
 
@@ -659,6 +860,24 @@ export async function fetchAccountSecuritySnapshot(): Promise<AccountSecuritySna
   const data = await res.json().catch(() => ({}));
   const raw = data && typeof data === 'object' && 'snapshot' in data ? (data as Record<string, unknown>).snapshot : data;
   return normalizeAccountSecuritySnapshot(raw as Record<string, unknown> | null | undefined);
+}
+
+export async function fetchSecurityAuthenticatorCatalog(options?: { includeArchived?: boolean; factorType?: string }): Promise<SecurityAuthenticatorCatalogEntry[]> {
+  const params = new URLSearchParams();
+  if (options?.includeArchived) params.set('includeArchived', 'true');
+  if (options?.factorType) params.set('factorType', options.factorType);
+  const query = params.toString();
+  const res = await fetch(`/auth/security/authenticators${query ? `?${query}` : ''}`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load authenticator catalog');
+  const data = await res.json().catch(() => ({}));
+  const entries: unknown[] = Array.isArray((data as any)?.authenticators)
+    ? (data as { authenticators: unknown[] }).authenticators
+    : Array.isArray(data)
+      ? (data as unknown[])
+      : [];
+  return entries
+    .map((entry) => normalizeSecurityAuthenticatorCatalogEntry(entry))
+    .filter((entry): entry is SecurityAuthenticatorCatalogEntry => Boolean(entry));
 }
 
 export async function listAccountSecuritySessions(): Promise<SecuritySession[]> {
@@ -730,6 +949,13 @@ type ChangeAccountPasswordInput = {
   signOutOthers?: boolean;
 };
 
+type TotpEnrollmentPayload = {
+  label?: string;
+  issuer?: string;
+  accountName?: string;
+  catalogId?: string;
+};
+
 export async function changeAccountPassword(input: ChangeAccountPasswordInput): Promise<void> {
   const csrf = await getCsrfToken();
   const res = await fetch('/auth/security/password', {
@@ -744,7 +970,7 @@ export async function changeAccountPassword(input: ChangeAccountPasswordInput): 
   }
 }
 
-export async function startTotpEnrollment(input?: { label?: string; issuer?: string }): Promise<SecurityMfaEnrollmentPrompt> {
+export async function startTotpEnrollment(input?: TotpEnrollmentPayload): Promise<SecurityMfaEnrollmentPrompt> {
   const csrf = await getCsrfToken();
   const res = await fetch('/auth/security/mfa/totp/enroll', {
     method: 'POST',
@@ -774,6 +1000,34 @@ export async function confirmTotpEnrollment(input: { ticket: string; code: strin
   return res.json() as Promise<SecurityMfaEnrollmentResult>;
 }
 
+export async function regenerateTotpFactor(factorId: string, input?: TotpEnrollmentPayload): Promise<SecurityMfaEnrollmentPrompt> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/auth/security/mfa/totp/${encodeURIComponent(factorId)}/regenerate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input ?? {}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to rotate authenticator');
+  }
+  return res.json() as Promise<SecurityMfaEnrollmentPrompt>;
+}
+
+export async function enableMfaFactor(factorId: string): Promise<void> {
+  const csrf = await getCsrfToken();
+  const res = await fetch(`/auth/security/mfa/${encodeURIComponent(factorId)}/enable`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to enable factor');
+  }
+}
+
 export async function disableMfaFactor(factorId: string): Promise<void> {
   const csrf = await getCsrfToken();
   const res = await fetch(`/auth/security/mfa/${encodeURIComponent(factorId)}/disable`, {
@@ -787,18 +1041,37 @@ export async function disableMfaFactor(factorId: string): Promise<void> {
   }
 }
 
-export async function regenerateRecoveryCodes(): Promise<{ codes: string[]; expiresAt?: string | null }> {
+export async function deleteMfaFactor(factorId: string): Promise<void> {
   const csrf = await getCsrfToken();
-  const res = await fetch('/auth/security/mfa/backup-codes/regenerate', {
-    method: 'POST',
+  const res = await fetch(`/auth/security/mfa/${encodeURIComponent(factorId)}`, {
+    method: 'DELETE',
     headers: { 'X-CSRF-Token': csrf },
     credentials: 'include',
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to delete factor');
+  }
+}
+
+export async function regenerateRecoveryCodes(factorId?: string): Promise<{ codes: string[]; expiresAt?: string | null }> {
+  const csrf = await getCsrfToken();
+  const res = await fetch('/auth/security/mfa/backup-codes/regenerate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(factorId ? { factorId } : {}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
     throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to regenerate codes');
   }
-  return res.json().catch(() => ({ codes: [] }));
+  const data = await res.json().catch(() => ({}));
+  const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  const codesRaw = Array.isArray(record.codes) ? record.codes : [];
+  const codes = codesRaw.filter((entry): entry is string => typeof entry === 'string');
+  const expiresAt = typeof record.expiresAt === 'string' ? record.expiresAt : null;
+  return { codes, expiresAt };
 }
 
 export async function updateSecurityAlertPreferences(input: SecurityAlertSettings): Promise<SecurityAlertSettings> {
@@ -813,7 +1086,12 @@ export async function updateSecurityAlertPreferences(input: SecurityAlertSetting
     const err = await res.json().catch(() => ({}));
     throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to update alerts');
   }
-  return res.json().catch(() => input);
+  const data = await res.json().catch(() => ({}));
+  const payload = data && typeof data === 'object' && 'alerts' in data
+    ? (data as Record<string, unknown>).alerts as Record<string, unknown>
+    : (data as Record<string, unknown> | null | undefined);
+  const normalized = normalizeAccountSecuritySnapshot({ alerts: payload } as Record<string, unknown>);
+  return normalized.alerts;
 }
 
 export async function updateSecurityRecoveryContacts(input: SecurityRecoverySettings): Promise<SecurityRecoverySettings> {
@@ -828,7 +1106,12 @@ export async function updateSecurityRecoveryContacts(input: SecurityRecoverySett
     const err = await res.json().catch(() => ({}));
     throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to update recovery settings');
   }
-  return res.json().catch(() => input);
+  const data = await res.json().catch(() => ({}));
+  const payload = data && typeof data === 'object' && 'recovery' in data
+    ? (data as Record<string, unknown>).recovery as Record<string, unknown>
+    : (data as Record<string, unknown> | null | undefined);
+  const normalized = normalizeAccountSecuritySnapshot({ recovery: payload } as Record<string, unknown>);
+  return normalized.recovery;
 }
 
 // ----------------------
@@ -858,4 +1141,39 @@ export async function updateNotificationSettings(input: NotificationSettingsInpu
   const data = await res.json().catch(() => ({}));
   const payload = data && typeof data === 'object' && 'settings' in data ? (data as Record<string, unknown>).settings : data;
   return normalizeNotificationSettings(payload as Record<string, unknown> | null | undefined);
+}
+
+export async function registerNotificationDevice(input: NotificationDeviceRegistrationInput): Promise<NotificationDevice> {
+  const csrf = await getCsrfToken()
+  const res = await fetch('/auth/notifications/devices/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to register device')
+  }
+  const data = await res.json().catch(() => ({}))
+  const payload = data && typeof data === 'object' && 'device' in data
+    ? (data as Record<string, unknown>).device
+    : data
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid device response')
+  }
+  return payload as NotificationDevice
+}
+
+export async function disableNotificationDevice(deviceId: string): Promise<void> {
+  const csrf = await getCsrfToken()
+  const res = await fetch(`/auth/notifications/devices/${encodeURIComponent(deviceId)}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': csrf },
+    credentials: 'include',
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(typeof err?.error === 'string' ? err.error : 'Failed to disable device')
+  }
 }

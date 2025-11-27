@@ -57,5 +57,12 @@
 - Document new backend settings/flags in `backend/README.md`, Admin Settings UI copy, and `ARCHITECTURE.md` so operators know how to configure them.
 - Keep service interfaces stable; when adding methods, ensure both backend implementations and frontend adapters align.
 - Follow existing security patterns: cookie-based auth with CSRF double-submit, RBAC via middleware, rate limiting, and audit logging for sensitive actions.
-- Use Agent TODO's tool for todo management and tracking of changes across the codebase.
+- Use Agent TODOs extension tool for todo management and tracking of changes across the codebase. Do no use any other todo management system.
+- Agent TODOs extension has the following tools you can use:
+    - mcp_todos_todo_read
+    - mcp_todos_todo_write
+- if you want to use mcp_todos_todo_write you must use mcp_todos_todo_read first to read the existing todos.
+- you may not remove items from a todo list or create a new list with out asking for permission first.
+- you may add items to a list as needed.
 - Do not remove items from the TODO list without completing them and having explicit approval to remove completed items from the list.
+- use cmd.exe for all windows terminal commands

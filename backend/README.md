@@ -22,6 +22,35 @@ npx prisma migrate dev --name init
 npm run seed
 ```
 
+## Shared dev database snapshot
+
+The SQLite file at `prisma/dev.db` is intentionally versioned so every contributor works from the same seeded dataset. After running migrations or seeds that change reference data, re-run `npm run seed`, verify the resulting `dev.db`, and include it in your commits. Production deployments should point `DATABASE_URL` at their own Postgres or SQLite instance and must **not** reuse the tracked dev file.
+
+## Default admin credentials
+
+- Email: `admin@example.com`
+- Password: `Admin123!@#`
+
+Re-running the seed script now upgrades existing admin accounts that were created with older bcrypt hashes so they authenticate without server errors. To force-reset the admin password (for example, after changing the default), set `SEED_ADMIN_FORCE_RESET=true` when running `npm run seed`.
+
+## Auth smoke test
+
+Run the automated login + MFA smoke flow anytime you touch the auth stack:
+
+```bash
+npm run auth:smoke
+```
+
+The script bootstraps CSRF cookies, posts to `/auth/login`, completes the MFA challenge via deterministic backup codes, refreshes cookies, and finally checks `/menus/settings_main` to ensure privileged routes still respond. It defaults to `NODE_ENV=test` and `DATABASE_URL=file:./dev.db`, but you can override a few knobs without editing code:
+
+- `DEV_ADMIN_EMAIL` / `DEV_ADMIN_PASSWORD` &mdash; seed credentials to use
+- `AUTH_SMOKE_DEVICE_FP`, `AUTH_SMOKE_DEVICE_NAME`, `AUTH_SMOKE_DEVICE_PLATFORM` &mdash; device context passed through login + MFA
+- `AUTH_SMOKE_MENUS` &mdash; alternate menu slug to verify (default `settings_main`)
+
+Tip: re-run `npm run seed` beforehand so the deterministic MFA backup codes stay in sync with the script.
+
+The command exits non-zero on any failure, making it safe to wire into pre-commit hooks or CI once the dev database is available.
+
 1. Run in dev mode:
 
 ```bash
@@ -52,6 +81,24 @@ NODE_ENV=test npm test
 1. Enable providers via Admin Settings (`auth.google = true`, `auth.github = true`).
 
 Then visit `/auth/oauth/google/start` or `/auth/oauth/github/start` from the browser.
+
+## Authentication settings category
+
+- The Admin UI Authentication tab writes to the `auth` settings category. The backend normalizes values on both read and write so callers can send simple primitives without duplicating validation.
+- Keys:
+  - `mode` &mdash; `session` (HTTP-only cookies) or `jwt` (stateless token issuance).
+  - `google` / `github` &mdash; booleans gating each OAuth provider.
+  - `enforceMfa` &mdash; `optional`, `recommended`, or `required`; login flow checks this to decide when to issue MFA challenges.
+  - `authenticators` &mdash; ordered list of authenticator catalog IDs (`google`, `microsoft`, `authy`, `1password`, `okta`, `webauthn_keys`, `platform_passkeys`, `sms_backup`, `push_trusted`, `backup_codes`).
+- `SettingsService.listSettings` exposes a `preserveUnknownAuth` flag that `/admin/settings` uses during GET requests so the payload still contains archived or missing authenticator IDs for cleanup. Other callers should omit the flag to receive a fully sanitized list that matches the current catalog.
+- Responses intentionally keep authenticator IDs that no longer exist (for example, archived custom entries) so administrators can see “missing” selections and clean them up in the UI. Saving new settings still validates against the current catalog to avoid re-introducing invalid identifiers.
+- Defaults come from `DEFAULT_AUTH_SETTINGS` and are seeded via `npm run seed`. Update both the seed file and `frontend/src/lib/authenticator-catalog.ts` if you add or rename authenticators so Admin + Account pages stay in sync.
+
+### Regression coverage & release implications
+
+- `backend/src/tests/admin.settings.test.ts` covers GET/PUT authentication settings normalization end-to-end, including preserving orphaned catalog IDs and sanitizing payloads before they hit Prisma. `backend/src/tests/admin.authenticators.test.ts` now asserts that archived catalog entries stay hidden unless `includeArchived=true` and that non-admins cannot mutate the catalog.
+- Run `npm test -- admin.settings admin.authenticators` after touching auth settings, authenticator catalog seeds, or RBAC around `/admin/authenticators*` to keep these regression suites green.
+- Release note: because both suites assert on seeded authenticator data, always re-run `npm run seed` and commit the updated `prisma/dev.db` whenever you add/remove catalog presets. Otherwise the new tests will fail during CI.
 
 ## Email delivery (verification & reset)
 
@@ -134,15 +181,14 @@ main()
 - Password reset refuses recent passwords (last N), then records the new hash
 
 - Account security APIs: `/auth/security` returns the snapshot used by the frontend, `/auth/security/sessions` lists refresh-token sessions, `POST /auth/security/password` (CSRF-protected) enforces the registration password policy before rotating hashes + revoking other sessions, `PUT /auth/security/recovery` persists updated recovery emails, SMS numbers, and break-glass contacts, and `PUT /auth/security/alerts` stores each user's alert preferences + default channels in `SecurityService`.
+- When a user has started but not yet confirmed a TOTP enrollment, the `/auth/security` response now includes `snapshot.mfa.pendingEnrollment` with the ticket, factor ID, mode (`create` vs `rotate`), associated catalog ID, expiry, and factor status so the UI can nudge them to finish setup or discard the pending entry.
 
 ## Notifications quick start
 
-- Notifications live in the `user.metadata.notifications` JSON blob. Defaults are generated by `NotificationService` so fresh accounts get baseline topics, digests, quiet hours, escalation targets, and device slots without additional seeds.
-- Legacy Account Security alert preferences are auto-migrated into notification topics. When users save notifications the service also mirrors the relevant security topics back into `metadata.security.alerts` so the Security page stays accurate.
-- API surface:
   - `GET /auth/notifications` (cookie auth) returns `{ settings }` with channels, topics, digests, quiet hours, escalations, and device registrations.
   - `PUT /auth/notifications` requires the CSRF header and accepts partial settings updates (channels, topics, digests, quiet hours, escalations, devices). The backend normalizes payloads, enforces channel enums, and persists to metadata.
-- Remember to fetch `/auth/csrf` before issuing the PUT from a browser client, and include both the `x-csrf-token` header plus the existing session cookies when calling these endpoints locally.
+  - `POST /auth/notifications/devices/register` exchanges a browser/mobile push subscription for a durable device record so notifications can be delivered later. `DELETE /auth/notifications/devices/{deviceId}` revokes an opt-in.
+  - Push/in-app device opt-ins persist in the `NotificationDeviceRegistration` table (see the `user.notificationDevices` relation). The service hydrates settings responses from this table and mirrors the readable subset back into `metadata.notifications.devices` for backward compatibility.
 
 ## Audit log configuration
 

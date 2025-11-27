@@ -43,6 +43,19 @@ export type NotificationDevice = {
 	lastUsedAt?: string | null;
 };
 
+export type NotificationDeviceRegistrationTransport = 'web_push' | 'mobile_push' | 'unknown';
+
+export type NotificationDeviceRegistrationInput = {
+	label: string;
+	platform?: NotificationDevicePlatform;
+	transport?: NotificationDeviceRegistrationTransport;
+	fingerprint?: string | null;
+	subscription?: Record<string, unknown> | null;
+	token?: string | null;
+	userAgent?: string | null;
+	ipAddress?: string | null;
+};
+
 export type NotificationSettings = {
 	defaultChannels: NotificationChannel[];
 	topics: NotificationTopicPreference[];

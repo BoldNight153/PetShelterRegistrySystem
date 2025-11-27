@@ -30,6 +30,21 @@ enum OwnerRole {
   EMERGENCY_CONTACT
 }
 
+enum MfaFactorType {
+  TOTP
+  SMS
+  PUSH
+  HARDWARE_KEY
+  BACKUP_CODES
+}
+
+enum MfaFactorStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+  REVOKED
+}
+
 model Shelter {
   id        String     @id @default(uuid())
   name      String
@@ -158,6 +173,10 @@ model User {
   auditLogs     AuditLog[]
   locks         UserLock[]
   passwordHistory PasswordHistory[]
+  devices       UserDevice[]
+  notificationDevices NotificationDeviceRegistration[]
+  mfaFactors    UserMfaFactor[]
+  backupCodes   UserBackupCode[]
   metadata      Json?
   lastLoginAt   DateTime?
   createdAt     DateTime       @default(now())
@@ -194,10 +213,13 @@ model RefreshToken {
   replacedByToken String?
   userAgent       String?
   ipAddress       String?
+  device          UserDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  deviceId        String?
   createdAt       DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([deviceId])
 }
 
 model VerificationToken {
@@ -324,6 +346,121 @@ model Setting {
 
   @@unique([category, key])
   @@index([category])
+}
+
+model AuthenticatorCatalog {
+  id          String        @id @default(uuid())
+  label       String
+  description String?
+  factorType  MfaFactorType
+  issuer      String?
+  helper      String?
+  docsUrl     String?
+  tags        Json?
+  metadata    Json?
+  sortOrder   Int           @default(0)
+  isArchived  Boolean       @default(false)
+  isSystem    Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  archivedAt  DateTime?
+  archivedBy  String?
+  factors     UserMfaFactor[]
+
+  @@index([isArchived])
+  @@index([sortOrder])
+}
+
+model UserDevice {
+  id          String    @id @default(cuid())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  label       String?
+  platform    String?
+  fingerprint String?
+  userAgent   String?
+  ipAddress   String?
+  lastSeenAt  DateTime?
+  trustedAt   DateTime?
+  trustSource String?
+  pushToken   String?
+  capabilities Json?
+  channels     Json?
+  status       String? // active, disabled, revoked
+  refreshTokens RefreshToken[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([fingerprint])
+  @@index([trustedAt])
+  @@unique([userId, fingerprint])
+}
+
+model NotificationDeviceRegistration {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  label        String
+  platform     String   @default("unknown")
+  transport    String   @default("web_push")
+  fingerprint  String?
+  subscription Json?
+  token        String?
+  status       String   @default("active")
+  userAgent    String?
+  ipAddress    String?
+  registeredAt DateTime @default(now())
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([fingerprint])
+}
+
+model UserMfaFactor {
+  id         String       @id @default(cuid())
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  type       MfaFactorType
+  label      String
+  secret     String?
+  enabled    Boolean      @default(true)
+  status     MfaFactorStatus @default(ACTIVE)
+  enrolledAt DateTime     @default(now())
+  lastUsedAt DateTime?
+  metadata   Json?
+  devices    Json?
+  backupCodes UserBackupCode[]
+  catalog    AuthenticatorCatalog? @relation(fields: [catalogId], references: [id], onDelete: SetNull)
+  catalogId  String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([userId, type])
+  @@index([catalogId])
+  @@unique([userId, catalogId])
+}
+
+model UserBackupCode {
+  id        String        @id @default(cuid())
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  factor    UserMfaFactor? @relation(fields: [factorId], references: [id], onDelete: SetNull)
+  factorId  String?
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  @@index([userId])
+  @@index([factorId])
 }
 
 // Generic rate limit counters (windowed)

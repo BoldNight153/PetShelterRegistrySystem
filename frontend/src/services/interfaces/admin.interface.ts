@@ -1,5 +1,49 @@
+import type { AuthenticatorCatalogSeed } from '@petshelter/authenticator-catalog';
 import type { SettingsMap, JsonValue } from './types';
 export type { SettingsMap, JsonValue };
+
+export type AuthenticatorFactorType = AuthenticatorCatalogSeed['factorType'];
+
+export type AdminAuthenticatorCatalogRecord = {
+  id: string;
+  label: string;
+  description?: string | null;
+  factorType: AuthenticatorFactorType;
+  issuer?: string | null;
+  helper?: string | null;
+  docsUrl?: string | null;
+  tags?: string[] | null;
+  metadata?: JsonValue | null;
+  sortOrder?: number | null;
+  isArchived?: boolean | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
+};
+
+export type CreateAdminAuthenticatorInput = {
+  id: string;
+  label: string;
+  description?: string | null;
+  factorType: AuthenticatorFactorType;
+  issuer?: string | null;
+  helper?: string | null;
+  docsUrl?: string | null;
+  tags?: string[] | null;
+  metadata?: JsonValue | null;
+  sortOrder?: number | null;
+};
+
+export type UpdateAdminAuthenticatorInput = Partial<Omit<CreateAdminAuthenticatorInput, 'id'>>;
+
+export interface IAdminAuthenticatorCatalogService {
+  list(options?: { includeArchived?: boolean }): Promise<AdminAuthenticatorCatalogRecord[]>;
+  create(input: CreateAdminAuthenticatorInput): Promise<AdminAuthenticatorCatalogRecord>;
+  update(id: string, input: UpdateAdminAuthenticatorInput): Promise<AdminAuthenticatorCatalogRecord>;
+  archive(id: string): Promise<void>;
+  restore(id: string): Promise<void>;
+}
 
 export interface ISettingsService {
   loadSettings(category?: string): Promise<SettingsMap>;
@@ -84,4 +128,5 @@ export interface IAdminNavigationService {
 export interface IAdminService {
   settings: ISettingsService;
   navigation: IAdminNavigationService;
+  authenticators: IAdminAuthenticatorCatalogService;
 }

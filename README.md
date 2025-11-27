@@ -173,6 +173,12 @@ Frontend:
 - Ensure the backend is running on port 4000; the frontend proxies assume this. You can change the target in `frontend/vite.config.ts`.
 - ReDoc search requires serving the spec from the same origin (the Vite proxy handles this in dev). If you change the path, update `specUrl` in `frontend/src/docs/redoc-page.tsx`.
 
+### Auth troubleshooting cheat sheet
+
+- The Prisma seed always provisions a `system_admin` account at `admin@example.com` with password `Admin123!@#`. If you reset the database, rerun `npm run seed` under `backend/` to recreate it.
+- MFA is enabled for that account. When seeding, the console prints lines such as `[security] TOTP secret for admin@example.com: XXXXX` along with backup codes. Copy one of those secrets into any authenticator app (or use the logged backup codes) to satisfy `/auth/mfa/verify` during manual testing.
+- For quick curl/manual repros, the payload `{ "email": "admin@example.com", "password": "Admin123!@#" }` combined with the latest CSRF token from `GET /auth/csrf` reliably exercises the login + MFA challenge path. This is useful when debugging 401/500 issues in `/auth/login`, `/auth/refresh`, or `/menus/*`.
+
 ## Changelog
 
 See `CHANGELOG.md`. Recent:

@@ -1,10 +1,15 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { vi, describe, it, beforeEach, expect } from 'vitest'
+import type { Mocked } from 'vitest'
 
 import AdminNavigationBuilderPage from './navigation-builder'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import { defaultServices } from '@/services/defaults'
-import type { AdminMenu } from '@/services/interfaces/admin.interface'
+import type {
+  AdminMenu,
+  IAdminAuthenticatorCatalogService,
+  AdminAuthenticatorCatalogRecord,
+} from '@/services/interfaces/admin.interface'
 
 vi.mock('@/lib/auth-context', () => ({
   useAuth: () => ({ user: { email: 'admin@example.com', roles: ['admin'] } }),
@@ -66,6 +71,30 @@ describe('AdminNavigationBuilderPage', () => {
   })
   const updateMenuItemMock = vi.fn().mockResolvedValue(baseMenu.items[0])
   const deleteMenuItemMock = vi.fn().mockResolvedValue(undefined)
+  const authenticatorRecord: AdminAuthenticatorCatalogRecord = {
+    id: 'mock',
+    label: 'Mock Authenticator',
+    factorType: 'TOTP',
+    description: null,
+    issuer: null,
+    helper: null,
+    docsUrl: null,
+    tags: null,
+    metadata: null,
+    sortOrder: null,
+    isArchived: false,
+    createdAt: null,
+    updatedAt: null,
+    archivedAt: null,
+    archivedBy: null,
+  }
+  const authenticatorServiceStub: Mocked<IAdminAuthenticatorCatalogService> = {
+    list: vi.fn().mockResolvedValue([authenticatorRecord]),
+    create: vi.fn().mockResolvedValue(authenticatorRecord),
+    update: vi.fn().mockResolvedValue(authenticatorRecord),
+    archive: vi.fn().mockResolvedValue(undefined),
+    restore: vi.fn().mockResolvedValue(undefined),
+  }
 
   beforeEach(() => {
     listMenusMock.mockClear()
@@ -76,6 +105,11 @@ describe('AdminNavigationBuilderPage', () => {
     createMenuItemMock.mockClear()
     updateMenuItemMock.mockClear()
     deleteMenuItemMock.mockClear()
+    authenticatorServiceStub.list.mockClear()
+    authenticatorServiceStub.create.mockClear()
+    authenticatorServiceStub.update.mockClear()
+    authenticatorServiceStub.archive.mockClear()
+    authenticatorServiceStub.restore.mockClear()
   })
 
   it('allows creating a top-level menu item', async () => {
@@ -94,6 +128,7 @@ describe('AdminNavigationBuilderPage', () => {
             updateMenuItem: updateMenuItemMock,
             deleteMenuItem: deleteMenuItemMock,
           },
+          authenticators: authenticatorServiceStub,
         },
       },
       withRouter: true,

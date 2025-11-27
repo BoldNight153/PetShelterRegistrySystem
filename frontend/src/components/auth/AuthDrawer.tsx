@@ -104,7 +104,10 @@ export default function AuthDrawer({ open, onOpenChange, initialView = "login", 
         <div className="p-4 flex w-full justify-center">
           <div className="w-full max-w-sm">
           {view === "login" ? (
-            <LoginForm onSuccess={handleSuccess} switchToRegister={() => setView("register")} />
+            <LoginForm
+              onSuccess={handleSuccess}
+              switchToRegister={() => setView("register")}
+            />
           ) : (
             <RegisterForm onSuccess={handleSuccess} switchToLogin={() => setView("login")} />
           )}

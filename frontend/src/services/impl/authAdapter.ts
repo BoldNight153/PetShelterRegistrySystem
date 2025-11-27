@@ -4,10 +4,25 @@
 import * as api from '../../lib/api';
 import type { IAuthService } from '../interfaces/auth.interface';
 import type { UserProfileUpdateInput } from '../interfaces/types';
+import type { AuthLoginResult, LoginRequestInput, VerifyMfaChallengeInput } from '@/types/auth';
+import { isLoginChallengeResponse } from '@/types/auth';
 
 export class AuthAdapter implements IAuthService {
-  async login(input: { email: string; password: string }) {
+  async login(input: LoginRequestInput): Promise<AuthLoginResult> {
     const basic = await api.login(input);
+    if (isLoginChallengeResponse(basic)) {
+      return basic;
+    }
+    try {
+      const detailed = await api.me();
+      return detailed ?? basic;
+    } catch {
+      return basic;
+    }
+  }
+
+  async verifyMfaChallenge(input: VerifyMfaChallengeInput) {
+    const basic = await api.verifyMfaChallenge(input);
     try {
       const detailed = await api.me();
       return detailed ?? basic;

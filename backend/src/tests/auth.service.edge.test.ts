@@ -41,7 +41,7 @@ function createMockPrisma() {
       }),
     },
     user: {
-      findUnique: jest.fn(async ({ where: { email } }) => null),
+      findUnique: jest.fn(async () => null),
       create: jest.fn(async ({ data }) => ({ id: 'u1', ...data })),
       update: jest.fn(async ({ where: { id }, data }) => ({ id, ...data })),
     },
@@ -79,7 +79,7 @@ describe('AuthService edge cases', () => {
     await svc.createRefreshToken('u2', 'r2', new Date(Date.now() + 1000 * 60 * 60));
     await svc.createRefreshToken('u2', 'r3', new Date(Date.now() + 1000 * 60 * 60));
 
-    const res = await svc.revokeAllRefreshTokens('u2');
+    await svc.revokeAllRefreshTokens('u2');
     expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalled();
   });
 });

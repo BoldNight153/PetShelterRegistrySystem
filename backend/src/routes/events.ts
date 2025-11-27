@@ -17,6 +17,7 @@ function resolveEventService(req: any): EventService | null {
 }
 
 const router = express.Router();
+const EVENTS_WRITE_PERMISSION = 'events.write';
 
 const EventSchema = z.object({ petId: z.string(), type: z.string(), occurredAt: z.string().optional(), fromShelterId: z.string().optional(), toShelterId: z.string().optional(), notes: z.string().optional() });
 
@@ -27,7 +28,7 @@ router.get('/', async (req, res) => {
   res.json(items);
 });
 
-router.post('/', requirePermission('events.write'), async (req, res) => {
+router.post('/', requirePermission(EVENTS_WRITE_PERMISSION), async (req, res) => {
   const parsed = EventSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
   const data = parsed.data;
@@ -49,7 +50,7 @@ router.get('/:id', async (req, res) => {
   res.json(item);
 });
 
-router.put('/:id', requirePermission('events.write'), async (req, res) => {
+router.put('/:id', requirePermission(EVENTS_WRITE_PERMISSION), async (req, res) => {
   const id = req.params.id;
   const parsed = EventSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
@@ -59,7 +60,7 @@ router.put('/:id', requirePermission('events.write'), async (req, res) => {
   res.json(updated);
 });
 
-router.delete('/:id', requirePermission('events.write'), async (req, res) => {
+router.delete('/:id', requirePermission(EVENTS_WRITE_PERMISSION), async (req, res) => {
   const id = req.params.id;
   const svc = resolveEventService(req);
   if (svc?.delete) {

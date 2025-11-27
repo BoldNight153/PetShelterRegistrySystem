@@ -1,6 +1,9 @@
-import { OwnerRole, PetStatus, PrismaClient, Sex } from '@prisma/client'
+import { MfaFactorType, OwnerRole, PetStatus, PrismaClient, Sex } from '@prisma/client'
+import { createHash } from 'crypto'
 import argon2 from 'argon2'
 import { DEFAULT_AUDIT_SETTINGS } from '../src/types/auditSettings'
+import { DEFAULT_AUTH_SETTINGS } from '../src/types/authSettings'
+import { DEFAULT_AUTHENTICATOR_CATALOG } from '@petshelter/authenticator-catalog';
 
 // Declare minimal process type to appease TS in environments without @types/node
 declare const process: { env: Record<string, string | undefined> }
@@ -365,6 +368,182 @@ const demoUsers: DemoUserSeed[] = [
   { email: 'foster.portal@example.com', name: 'Frankie Foster', roles: ['owner'] },
 ]
 
+const SECURITY_SENSITIVE_ROLES = new Set(['system_admin', 'admin', 'shelter_admin', 'staff_manager', 'veterinarian'])
+const BACKUP_CODES_PER_FACTOR = 8
+type DeviceVariant = 'primary' | 'mobile'
+
+function slugify(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+}
+
+function deriveBase32Secret(seed: string) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  const hash = createHash('sha256').update(`psrs:${seed}`).digest('hex')
+  let secret = ''
+  for (let i = 0; i < hash.length && secret.length < 32; i += 2) {
+    const byte = parseInt(hash.slice(i, i + 2), 16)
+    secret += alphabet[byte % alphabet.length]
+  }
+  return secret.padEnd(32, 'A').slice(0, 32)
+}
+
+function deriveBackupCodes(email: string, total = BACKUP_CODES_PER_FACTOR) {
+  const codes: string[] = []
+  for (let i = 0; i < total; i++) {
+    const hash = createHash('sha256').update(`backup:${email}:${i}`).digest('hex').toUpperCase()
+    const chunk = hash.slice(0, 10)
+    codes.push(`${chunk.slice(0, 5)}-${chunk.slice(5, 10)}`)
+  }
+  return codes
+}
+
+function buildDeviceSeed(user: { email: string; name?: string | null }, variant: DeviceVariant) {
+  const slug = slugify(user.email)
+  const firstName = user.name?.split(' ')[0] ?? 'User'
+  const now = new Date()
+  const lastSeenOffsetHours = variant === 'primary' ? 6 : 2
+  const lastSeen = new Date(now.getTime() - lastSeenOffsetHours * 60 * 60 * 1000)
+  const trustOffsetDays = variant === 'primary' ? 7 : 3
+  const trustedAt = daysAgo(trustOffsetDays)
+
+  if (variant === 'primary') {
+    return {
+      fingerprint: `seed-${slug}-primary`,
+      label: `${firstName}'s Secure Workstation`,
+      platform: 'macOS 15.0',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+      ipAddress: `10.0.${(slug.length % 50) + 10}.${(slug.length * 7) % 200 + 10}`,
+      pushToken: null,
+      channels: ['email'],
+      capabilities: { supportsPasskeys: true, supportsWebPush: true },
+      status: 'active',
+      trustedAt,
+      lastSeenAt: lastSeen,
+      trustSource: 'seed:initial-trust',
+    }
+  }
+
+  return {
+    fingerprint: `seed-${slug}-mobile`,
+    label: `${firstName}'s Mobile Companion`,
+    platform: 'iOS 18.1',
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+    ipAddress: `172.16.${(slug.length % 80) + 20}.${(slug.length * 11) % 150 + 20}`,
+    pushToken: `seed-device-token-${slug}`,
+    channels: ['push', 'sms'],
+    capabilities: { supportsPush: true, biometric: true },
+    status: 'active',
+    trustedAt,
+    lastSeenAt: lastSeen,
+    trustSource: 'seed:mobile-trust',
+  }
+}
+
+async function ensureUserDevice(user: any, variant: DeviceVariant) {
+  const seed = buildDeviceSeed(user, variant)
+  await prisma.userDevice.upsert({
+    where: { userId_fingerprint: { userId: user.id, fingerprint: seed.fingerprint } } as any,
+    update: {
+      label: seed.label,
+      platform: seed.platform,
+      userAgent: seed.userAgent,
+      ipAddress: seed.ipAddress,
+      lastSeenAt: seed.lastSeenAt,
+      trustedAt: seed.trustedAt,
+      trustSource: seed.trustSource,
+      pushToken: seed.pushToken,
+      capabilities: seed.capabilities,
+      channels: seed.channels,
+      status: seed.status,
+    },
+    create: {
+      userId: user.id,
+      fingerprint: seed.fingerprint,
+      label: seed.label,
+      platform: seed.platform,
+      userAgent: seed.userAgent,
+      ipAddress: seed.ipAddress,
+      lastSeenAt: seed.lastSeenAt,
+      trustedAt: seed.trustedAt,
+      trustSource: seed.trustSource,
+      pushToken: seed.pushToken,
+      capabilities: seed.capabilities,
+      channels: seed.channels,
+      status: seed.status,
+    },
+  })
+}
+
+async function seedBackupCodes(user: any, factor: any) {
+  const codes = deriveBackupCodes(user.email)
+  await prisma.userBackupCode.deleteMany({ where: { userId: user.id, factorId: factor.id ?? undefined } })
+  for (const code of codes) {
+    const codeHash = await (argon2 as any).hash(code, { type: (argon2 as any).argon2id })
+    await prisma.userBackupCode.create({ data: { userId: user.id, factorId: factor.id, codeHash } })
+  }
+  console.log(`[security] Backup codes for ${user.email}: ${codes.join(', ')}`)
+}
+
+async function ensureTotpFactor(user: any, roleNames: string[]) {
+  const label = 'Seed Authenticator App'
+  const secret = deriveBase32Secret(`${user.email}:${label}`)
+  const enforcement = roleNames.includes('system_admin') ? 'required' : 'recommended'
+  const devicesMeta = [
+    { fingerprint: `seed-${slugify(user.email)}-primary`, label: 'Primary Workstation' },
+    { fingerprint: `seed-${slugify(user.email)}-mobile`, label: 'Mobile Companion' },
+  ]
+  const factorData = {
+    type: MfaFactorType.TOTP,
+    label,
+    secret,
+    enabled: true,
+    metadata: {
+      issuer: 'Pet Shelter Registry System',
+      enforcement,
+      seedSource: 'seed:demo',
+    },
+    devices: devicesMeta,
+    lastUsedAt: daysAgo(1),
+  }
+
+  const existing = await prisma.userMfaFactor.findFirst({ where: { userId: user.id, label } })
+  const factor = existing
+    ? await prisma.userMfaFactor.update({ where: { id: existing.id }, data: factorData })
+    : await prisma.userMfaFactor.create({ data: { userId: user.id, ...factorData } })
+
+  console.log(`[security] TOTP secret for ${user.email}: ${secret}`)
+  await seedBackupCodes(user, factor)
+}
+
+async function seedSecurityArtifactsForUsers(emails: string[]) {
+  const uniqueEmails = Array.from(new Set(emails))
+  if (!uniqueEmails.length) return
+
+  const users = await prisma.user.findMany({
+    where: { email: { in: uniqueEmails } },
+    include: {
+      roles: {
+        include: {
+          role: true,
+        },
+      },
+    },
+  })
+
+  for (const user of users) {
+    const roleNames: string[] = (user.roles ?? [])
+      .map((assignment: any) => assignment.role?.name)
+      .filter((name: any): name is string => Boolean(name))
+
+    await ensureUserDevice(user, 'primary')
+
+    if (roleNames.some(role => SECURITY_SENSITIVE_ROLES.has(role))) {
+      await ensureUserDevice(user, 'mobile')
+      await ensureTotpFactor(user, roleNames)
+    }
+  }
+}
+
 async function upsertDemoUsers(passwordHash: string) {
   for (const userSeed of demoUsers) {
     const user = await prisma.user.upsert({
@@ -620,22 +799,42 @@ async function main() {
   // Optional seed user for testing admin access
   const adminEmail = (process as any)?.env?.SEED_ADMIN_EMAIL || 'admin@example.com'
   const adminPass = (process as any)?.env?.SEED_ADMIN_PASSWORD || 'Admin123!@#'
-  const existing = await prisma.user.findUnique({ where: { email: adminEmail } })
-  if (!existing) {
-    // Use a light hash cost for seeding only
-    const passwordHash = await (argon2 as any).hash(adminPass, { type: (argon2 as any).argon2id })
-    const user = await prisma.user.create({ data: { email: adminEmail, passwordHash, name: 'Seed Admin', emailVerified: new Date() } })
+  const forceReset = String((process as any)?.env?.SEED_ADMIN_FORCE_RESET || '').toLowerCase() === 'true'
+  const hashOpts = (process as any)?.env?.NODE_ENV === 'test'
+    ? { type: (argon2 as any).argon2id, timeCost: 2, memoryCost: 1024, parallelism: 1 }
+    : { type: (argon2 as any).argon2id }
+  let adminUser = await prisma.user.findUnique({ where: { email: adminEmail } })
+  const needsUpgrade = !adminUser?.passwordHash || !String(adminUser.passwordHash).startsWith('$argon2')
+  if (!adminUser) {
+    const passwordHash = await (argon2 as any).hash(adminPass, hashOpts)
+    adminUser = await prisma.user.create({ data: { email: adminEmail, passwordHash, name: 'Seed Admin', emailVerified: new Date() } })
+    console.log(`Seeded admin user: ${adminEmail} / ${adminPass}`)
+  } else if (forceReset || needsUpgrade) {
+    const passwordHash = await (argon2 as any).hash(adminPass, hashOpts)
+    await prisma.user.update({ where: { id: adminUser.id }, data: { passwordHash, emailVerified: adminUser.emailVerified ?? new Date(), name: adminUser.name ?? 'Seed Admin' } })
+    adminUser = await prisma.user.findUnique({ where: { id: adminUser.id } })
+    console.log(`[seed] Reset admin password for ${adminEmail} (legacy hash detected)`)
+  } else if (!adminUser.emailVerified) {
+    adminUser = await prisma.user.update({ where: { id: adminUser.id }, data: { emailVerified: new Date() } })
+  }
+  if (adminUser) {
     const sysAdmin = await prisma.role.findUnique({ where: { name: 'system_admin' } })
     if (sysAdmin) {
-      await prisma.userRole.create({ data: { userId: user.id, roleId: sysAdmin.id } })
+      await prisma.userRole.upsert({
+        where: { userId_roleId: { userId: adminUser.id, roleId: sysAdmin.id } as any },
+        update: {},
+        create: { userId: adminUser.id, roleId: sysAdmin.id },
+      })
     }
-    console.log(`Seeded admin user: ${adminEmail} / ${adminPass}`)
   }
 
   const demoPassword = (process as any)?.env?.SEED_DEMO_PASSWORD || 'DemoPass123!'
   const demoPasswordHash = await (argon2 as any).hash(demoPassword, { type: (argon2 as any).argon2id })
   await upsertDemoUsers(demoPasswordHash)
   console.log(`Seeded demo users with password: ${demoPassword}`)
+  await seedSecurityArtifactsForUsers([adminEmail, ...demoUsers.map(u => u.email)])
+
+  await seedAuthenticatorCatalog()
 
   // Seed default application settings if not present
   const defaultSettings: Record<string, Record<string, any>> = {
@@ -648,8 +847,7 @@ async function main() {
       retentionDays: 7,
     },
     auth: {
-      google: true,
-      github: true,
+      ...DEFAULT_AUTH_SETTINGS,
     },
     docs: {
       showPublicDocsLink: true,
@@ -931,6 +1129,43 @@ async function main() {
 
   for (const menu of menusToSeed) {
     await syncMenu(menu)
+  }
+}
+
+async function seedAuthenticatorCatalog() {
+  for (const entry of DEFAULT_AUTHENTICATOR_CATALOG) {
+    await prisma.authenticatorCatalog.upsert({
+      where: { id: entry.id },
+      update: {
+        label: entry.label,
+        description: entry.description,
+        factorType: entry.factorType,
+        issuer: entry.issuer ?? null,
+        helper: entry.helper ?? null,
+        docsUrl: entry.docsUrl ?? null,
+        tags: entry.tags ?? null,
+        metadata: entry.metadata ?? undefined,
+        sortOrder: entry.sortOrder ?? 0,
+        isArchived: false,
+        isSystem: true,
+        archivedAt: null,
+        archivedBy: null,
+      },
+      create: {
+        id: entry.id,
+        label: entry.label,
+        description: entry.description,
+        factorType: entry.factorType,
+        issuer: entry.issuer ?? null,
+        helper: entry.helper ?? null,
+        docsUrl: entry.docsUrl ?? null,
+        tags: entry.tags ?? null,
+        metadata: entry.metadata ?? undefined,
+        sortOrder: entry.sortOrder ?? 0,
+        isArchived: false,
+        isSystem: true,
+      },
+    })
   }
 }
 

@@ -123,6 +123,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     BadRequest:
       description: Bad request
       content:
@@ -137,6 +143,12 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     Forbidden:
       description: Authenticated but action is not allowed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Request could not be completed because another enrollment or lifecycle action is already in progress
       content:
         application/json:
           schema:
@@ -239,6 +251,38 @@ components:
           type: array
           items: { type: string }
       required: [id, label]
+    SecurityAuthenticatorCatalogDetails:
+      type: object
+      description: Admin-defined authenticator catalog entry that pre-populates MFA enrollment labels and help text.
+      properties:
+        id: { type: string }
+        label: { type: string }
+        description: { type: ["string", "null"] }
+        helper: { type: ["string", "null"] }
+        docsUrl:
+          type: ["string", "null"]
+          format: uri
+        issuer: { type: ["string", "null"] }
+        tags:
+          type: array
+          items: { type: string }
+        metadata:
+          type: ["object", "null"]
+          additionalProperties: true
+      required: [id, label]
+    SecurityAuthenticatorCatalogEntry:
+      allOf:
+        - $ref: '#/components/schemas/SecurityAuthenticatorCatalogDetails'
+        - type: object
+          properties:
+            factorType:
+              type: string
+              enum: [TOTP, SMS, PUSH, HARDWARE_KEY, BACKUP_CODES]
+            sortOrder:
+              type: ["integer", "null"]
+            isArchived:
+              type: ["boolean", "null"]
+          required: [factorType]
     SecurityMfaFactor:
       type: object
       properties:
@@ -248,6 +292,9 @@ components:
           enum: [totp, sms, push, hardware_key, backup_codes]
         label: { type: string }
         enabled: { type: boolean }
+        status:
+          type: string
+          enum: [pending, active, disabled, revoked]
         enrolledAt:
           type: ["string", "null"]
           format: date-time
@@ -261,7 +308,60 @@ components:
           type: ["integer", "null"]
         metadata:
           description: Arbitrary MFA metadata
-      required: [id, type, label, enabled]
+        catalogId:
+          type: ["string", "null"]
+          description: Optional authenticator catalog identifier
+      required: [id, type, label, enabled, status]
+    SecurityPendingMfaEnrollment:
+      type: object
+      description: Details about a pending MFA enrollment ticket that has not been confirmed yet.
+      properties:
+        ticket: { type: string }
+        factorId: { type: string }
+        mode:
+          type: string
+          enum: [create, rotate]
+          description: create = first-time enrollment, rotate = regenerating an existing factor
+        type:
+          type: string
+          enum: [totp, sms, push, hardware_key, backup_codes]
+        label: { type: string }
+        catalogId:
+          type: ["string", "null"]
+          description: Authenticator catalog identifier applied to the pending factor
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+        status:
+          type: string
+          enum: [pending, active, disabled, revoked]
+          description: Current factor status so the UI can show warnings for disabled or revoked factors
+        catalog:
+          description: Snapshot of the authenticator catalog entry applied to the pending factor
+          oneOf:
+            - $ref: '#/components/schemas/SecurityAuthenticatorCatalogDetails'
+            - type: "null"
+        description:
+          type: ["string", "null"]
+          description: Catalog-provided description for the authenticator
+        helper:
+          type: ["string", "null"]
+          description: Additional helper text pulled from the catalog entry
+        docsUrl:
+          type: ["string", "null"]
+          format: uri
+          description: Documentation link associated with the catalog entry
+        tags:
+          type: ["array", "null"]
+          items: { type: string }
+        issuer:
+          type: ["string", "null"]
+          description: Issuer field applied to authenticator apps
+        metadata:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: Additional catalog metadata surfaced to the frontend
+      required: [ticket, factorId, mode, type, label, status]
     SecurityMfaRecommendation:
       type: object
       properties:
@@ -416,6 +516,11 @@ components:
             recommendations:
               type: array
               items: { $ref: '#/components/schemas/SecurityMfaRecommendation' }
+            pendingEnrollment:
+              description: Pending MFA enrollment ticket, including catalog metadata even when the factor row is still pending creation.
+              oneOf:
+                - $ref: '#/components/schemas/SecurityPendingMfaEnrollment'
+                - type: "null"
           required: [factors, recommendations]
         sessions:
           type: object
@@ -439,6 +544,94 @@ components:
           type: array
           items: { $ref: '#/components/schemas/SecuritySession' }
       required: [summary, sessions]
+    SecuritySessionRevokeRequest:
+      type: object
+      properties:
+        sessionId: { type: string, description: Refresh token identifier }
+      required: [sessionId]
+    SecuritySessionTrustRequest:
+      type: object
+      properties:
+        sessionId: { type: string, description: Refresh token identifier }
+        trust:
+          type: boolean
+          description: When true mark device trusted; when false clear trust
+      required: [sessionId]
+    SecurityTotpEnrollRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          description: Friendly label for the authenticator entry
+        issuer:
+          type: string
+          description: Issuer shown in authenticator apps
+        accountName:
+          type: string
+          description: Account identifier for key URI (defaults to email)
+        catalogId:
+          type: string
+          description: Optional authenticator catalog identifier to associate with the factor
+    SecurityTotpConfirmRequest:
+      type: object
+      properties:
+        ticket: { type: string }
+        code:
+          type: string
+          minLength: 6
+          maxLength: 12
+      required: [ticket, code]
+    SecurityTotpEnrollmentPrompt:
+      type: object
+      properties:
+        ticket: { type: string }
+        factorId: { type: string }
+        mode:
+          type: string
+          enum: [create, rotate]
+        type:
+          type: string
+          enum: [totp]
+        label:
+          type: ["string", "null"]
+          description: Friendly authenticator label associated with the pending enrollment
+        secret: { type: string }
+        uri: { type: string }
+        qrCodeDataUrl: { type: string }
+        expiresAt:
+          type: string
+          format: date-time
+        catalogId:
+          type: ["string", "null"]
+          description: Authenticator catalog identifier applied to the factor
+      required: [ticket, factorId, mode, type, secret, uri]
+    SecurityTotpEnrollmentResult:
+      type: object
+      properties:
+        factor: { $ref: '#/components/schemas/SecurityMfaFactor' }
+        backupCodes:
+          type: array
+          items: { type: string }
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+      required: [factor, backupCodes]
+    SecurityBackupCodeRegenerateRequest:
+      type: object
+      properties:
+        factorId:
+          type: string
+          description: Optional MFA factor ID to scope code regeneration
+    SecurityBackupCodeResponse:
+      type: object
+      properties:
+        codes:
+          type: array
+          items: { type: string }
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+      required: [codes]
     NotificationChannel:
       type: string
       enum: [email, sms, push, in_app]
@@ -519,6 +712,29 @@ components:
           type: ["string", "null"]
           format: date-time
       required: [id, label, platform, enabled]
+    NotificationDeviceRegistrationRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          maxLength: 160
+        platform:
+          type: string
+          enum: [ios, android, web, unknown]
+        transport:
+          type: string
+          enum: [web_push, mobile_push, unknown]
+          default: web_push
+        fingerprint:
+          type: ["string", "null"]
+        subscription:
+          type: ["object", "null"]
+          additionalProperties: true
+        token:
+          type: ["string", "null"]
+        userAgent:
+          type: ["string", "null"]
+      required: [label]
     NotificationSettings:
       type: object
       properties:
@@ -614,6 +830,44 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "429": { $ref: '#/components/responses/TooManyRequests' }
 
+  /auth/security/authenticators:
+    get:
+      tags: [Security]
+      summary: List authenticator catalog entries available to the signed-in user
+      description: Returns active authenticator catalog entries so the account security page can surface admin-defined presets.
+      operationId: listSecurityAuthenticatorCatalog
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: factorType
+          in: query
+          required: false
+          description: Optional factor type filter (case-insensitive)
+          schema:
+            type: string
+            enum: [totp, sms, push, hardware_key, backup_codes, TOTP, SMS, PUSH, HARDWARE_KEY, BACKUP_CODES]
+        - name: includeArchived
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include archived authenticators when true.
+      responses:
+        "200":
+          description: Authenticator catalog entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticators:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SecurityAuthenticatorCatalogEntry'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
   /auth/security/sessions:
     get:
       tags: [Security]
@@ -631,6 +885,67 @@ paths:
                 $ref: '#/components/schemas/SecuritySessionsResponse'
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/sessions/revoke:
+    post:
+      tags: [Security]
+      summary: Revoke a specific session
+      description: Revokes a refresh-token session belonging to the signed-in user. Requires CSRF header.
+      operationId: revokeAccountSecuritySession
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecuritySessionRevokeRequest'
+      responses:
+        "204": { description: Session revoked }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/sessions/revoke-all:
+    post:
+      tags: [Security]
+      summary: Revoke all other sessions
+      description: Revokes every refresh-token session for the user (optionally excluding the current cookie holder).
+      operationId: revokeAllAccountSecuritySessions
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "204": { description: Sessions revoked }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/sessions/trust:
+    post:
+      tags: [Security]
+      summary: Mark a session's device as trusted or untrusted
+      description: Updates trust metadata for the device backing a refresh-token session.
+      operationId: trustAccountSecuritySession
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecuritySessionTrustRequest'
+      responses:
+        "204": { description: Session trust updated }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
         "429": { $ref: '#/components/responses/TooManyRequests' }
 
   /auth/security/password:
@@ -724,6 +1039,208 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "429": { $ref: '#/components/responses/TooManyRequests' }
 
+  /auth/security/mfa/totp/enroll:
+    post:
+      tags: [Security]
+      summary: Start TOTP enrollment
+      description: |
+        Generates a TOTP secret, QR code, and short-lived ticket for the signed-in user. Any previous pending
+        enrollment ticket for the same account is discarded automatically, and if the requested label or catalog entry
+        already exists the API transparently switches to a rotation flow instead of creating duplicates.
+      operationId: startTotpEnrollment
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityTotpEnrollRequest'
+      responses:
+        "200":
+          description: Enrollment prompt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityTotpEnrollmentPrompt'
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/totp/confirm:
+    post:
+      tags: [Security]
+      summary: Confirm TOTP enrollment
+      description: Verifies a TOTP code using the pending ticket and persists the factor plus backup codes.
+      operationId: confirmTotpEnrollment
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityTotpConfirmRequest'
+      responses:
+        "200":
+          description: Enrollment confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityTotpEnrollmentResult'
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/totp/{factorId}/regenerate:
+    post:
+      tags: [Security]
+      summary: Rotate an existing TOTP factor
+      description: |
+        Creates a new secret and ticket for an existing TOTP factor so the user can re-enroll the authenticator. Any
+        other pending ticket tied to that factor is replaced to ensure only one rotation is active at a time, and the
+        returned prompt preserves catalog associations if present.
+      operationId: regenerateTotpFactor
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          name: factorId
+          required: true
+          schema: { type: string }
+          description: Identifier of the factor returned from the security snapshot
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityTotpEnrollRequest'
+      responses:
+        "200":
+          description: Rotation prompt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityTotpEnrollmentPrompt'
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/backup-codes/regenerate:
+    post:
+      tags: [Security]
+      summary: Regenerate backup codes
+      description: Issues a fresh set of single-use backup codes tied to one of the user's active MFA factors.
+      operationId: regenerateBackupCodes
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityBackupCodeRegenerateRequest'
+      responses:
+        "200":
+          description: Backup codes regenerated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityBackupCodeResponse'
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/{factorId}/disable:
+    post:
+      tags: [Security]
+      summary: Disable an MFA factor
+      description: |
+        Marks a specific MFA factor (e.g., TOTP) as disabled for the signed-in user. If the same factor currently has
+        an active rotation or enrollment ticket, the request is rejected with HTTP 409 so the pending flow can finish first.
+      operationId: disableMfaFactor
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          required: true
+          name: factorId
+          schema: { type: string }
+          description: Identifier returned in the security snapshot
+      responses:
+        "204": { description: Factor disabled }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/{factorId}/enable:
+    post:
+      tags: [Security]
+      summary: Enable an MFA factor
+      description: |
+        Reactivates a previously disabled MFA factor for the signed-in user. Matching pending tickets for that factor
+        are auto-cleared, but the API returns HTTP 409 if another factor currently has a live enrollment in progress so
+        the user resolves those conflicts first.
+      operationId: enableMfaFactor
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          required: true
+          name: factorId
+          schema: { type: string }
+          description: Identifier returned in the security snapshot
+      responses:
+        "204": { description: Factor enabled }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/security/mfa/{factorId}:
+    delete:
+      tags: [Security]
+      summary: Delete an MFA factor
+      description: |
+        Permanently removes an MFA factor and any backup codes linked to it. If the factor currently has an enrollment
+        or rotation ticket awaiting confirmation, the API responds with HTTP 409 so the pending flow can be completed or
+        canceled before deletion.
+      operationId: deleteMfaFactor
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          required: true
+          name: factorId
+          schema: { type: string }
+          description: Identifier returned in the security snapshot
+      responses:
+        "204": { description: Factor deleted }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
   /auth/notifications:
     get:
       tags: [Notifications]
@@ -780,6 +1297,65 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/notifications/devices/register:
+    post:
+      tags: [Notifications]
+      summary: Register the current device for push or in-app notifications
+      description: |
+        Exchanges a browser or mobile push subscription for a durable device record so the backend can deliver
+        push/in-app notifications. Requires a valid session plus CSRF token.
+      operationId: registerNotificationDevice
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationDeviceRegistrationRequest'
+      responses:
+        "201":
+          description: Device registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device: { $ref: '#/components/schemas/NotificationDevice' }
+                required: [device]
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/notifications/devices/{deviceId}:
+    delete:
+      tags: [Notifications]
+      summary: Disable a notification device
+      description: |
+        Marks a previously registered device as revoked so push and in-app delivery stop until it registers again.
+        Requires a valid session cookie and CSRF token.
+      operationId: disableNotificationDevice
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema: { type: string }
+          description: Identifier returned by the register device endpoint or notification settings payload.
+      responses:
+        "204": { description: Device disabled }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
 
   /auth/register:
     post:

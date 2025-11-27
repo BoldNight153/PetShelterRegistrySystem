@@ -7,9 +7,14 @@ export interface SettingRow {
   value: Prisma.JsonValue;
 }
 
+type ListSettingsOptions = {
+  preserveUnknownAuth?: boolean;
+};
+
 export interface ISettingsService {
-  listSettings(category?: string): Promise<Record<string, Record<string, Prisma.JsonValue>>>;
+  listSettings(category?: string, options?: ListSettingsOptions): Promise<Record<string, Record<string, Prisma.JsonValue>>>;
   upsertSettings(category: string, entries: Array<{ key: string; value: Prisma.JsonValue }>, actorId?: string | null): Promise<void>;
 }
 
 export default ISettingsService;
+export type { ListSettingsOptions };

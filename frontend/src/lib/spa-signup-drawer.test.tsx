@@ -5,8 +5,14 @@ import { AuthProvider } from '@/lib/auth-context'
 import RootLayout from '@/layout/root-layout'
 import RegisterPage from '@/pages/register'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
+import type { AuthLoginResult, LoginRequestInput } from '@/types/auth'
 
-const loginMock = vi.fn(async (input: { email: string; password: string }) => ({ email: input.email, name: 'User' }))
+const loginMock = vi.fn(async (input: LoginRequestInput): Promise<AuthLoginResult> => ({
+  id: 'user-123',
+  email: input.email,
+  name: 'User',
+}))
+const verifyMfaMock = vi.fn(async () => ({ id: 'user-123' }))
 const refreshMock = vi.fn(async () => ({ ok: true }))
 const logoutMock = vi.fn(async () => { /* void */ })
 const registerMock = vi.fn(async (input: { email: string; password: string; name?: string }) => ({ email: input.email, name: input.name ?? 'User' }))
@@ -18,6 +24,7 @@ describe('SPA /signup opens Register drawer', () => {
       services: {
         auth: {
           login: loginMock,
+          verifyMfaChallenge: verifyMfaMock,
           refresh: refreshMock,
           logout: logoutMock,
           register: registerMock,

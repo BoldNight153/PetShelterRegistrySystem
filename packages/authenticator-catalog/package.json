@@ -1,0 +1,34 @@
+{
+  "name": "@petshelter/authenticator-catalog",
+  "version": "1.0.0",
+  "description": "Shared authenticator catalog for the Pet Shelter Registry System.",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "node ./scripts/clean.mjs",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs && npm run build:types && npm run build:bridge",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:types": "tsc -p tsconfig.types.json",
+    "build:bridge": "node ./scripts/build-bridge.cjs",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {}
+}

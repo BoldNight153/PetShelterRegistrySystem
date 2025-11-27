@@ -25,42 +25,75 @@ export class RateLimitService implements IRateLimitService {
     }
   }
 
+  private normalizeWindowMs(ms: number) {
+    return Math.max(ms, 1);
+  }
+
   private windowStartFor(ms: number) {
+    const normalized = this.normalizeWindowMs(ms);
     const now = Date.now();
-    const start = now - (now % ms);
+    const start = now - (now % normalized);
     return new Date(start);
+  }
+
+  private windowBounds(windowMs: number) {
+    const normalized = this.normalizeWindowMs(windowMs);
+    return new Date(Date.now() - normalized);
+  }
+
+  private async pruneOldBuckets(scope: string, key: string, windowMs: number) {
+    const normalized = this.normalizeWindowMs(windowMs);
+    const cutoff = new Date(Date.now() - normalized * 4);
+    await this.prisma.rateLimit.deleteMany({ where: { scope, key, lastAttemptAt: { lt: cutoff } as any } }).catch(() => {});
+  }
+
+  private async summarizeRecent(scope: string, key: string, windowMs: number) {
+    const since = this.windowBounds(windowMs);
+    const rows = await this.prisma.rateLimit.findMany({
+      where: { scope, key, lastAttemptAt: { gte: since } as any },
+      select: { count: true, windowStart: true, lastAttemptAt: true },
+      orderBy: { lastAttemptAt: 'desc' },
+    });
+    if (!rows.length) {
+      const now = new Date();
+      return { count: 0, latestWindow: now, earliestWindow: now };
+    }
+    const count = rows.reduce((sum, row) => sum + row.count, 0);
+    const latestWindow = rows[0].lastAttemptAt ?? rows[0].windowStart;
+    const earliestWindow = rows[rows.length - 1].lastAttemptAt ?? rows[rows.length - 1].windowStart;
+    return { count, latestWindow, earliestWindow };
   }
 
   async incrementAndCheck(opts: LimitOptions) {
     const { scope, key, windowMs, limit } = opts;
     const windowStart = this.windowStartFor(windowMs);
     const now = new Date();
-    const existing = await this.prisma.rateLimit.findUnique({ where: { scope_key_windowStart: { scope, key, windowStart } as any } });
-    let count = 0;
+    const compositeWhere = { scope_key_windowStart: { scope, key, windowStart } } as any;
+    const existing = await this.prisma.rateLimit.findUnique({ where: compositeWhere });
     if (!existing) {
       await this.prisma.rateLimit.create({ data: { scope, key, windowStart, count: 1, lastAttemptAt: now } });
-      count = 1;
     } else {
-      const updated = await this.prisma.rateLimit.update({ where: { scope_key_windowStart: { scope, key, windowStart } as any }, data: { count: { increment: 1 }, lastAttemptAt: now } });
-      count = updated.count;
+      await this.prisma.rateLimit.update({ where: compositeWhere, data: { count: { increment: 1 }, lastAttemptAt: now } });
     }
-    const allowed = count <= limit;
-    const remaining = Math.max(0, limit - count);
-    const windowReset = new Date(windowStart.getTime() + windowMs);
-    return { allowed, remaining, count, windowReset };
+
+    await this.pruneOldBuckets(scope, key, windowMs);
+    const summary = await this.summarizeRecent(scope, key, windowMs);
+    const allowed = summary.count <= limit;
+    const remaining = Math.max(0, limit - summary.count);
+    const windowReset = new Date(summary.latestWindow.getTime() + this.normalizeWindowMs(windowMs));
+    return { allowed, remaining, count: summary.count, windowReset };
   }
 
   async getCount(opts: Omit<LimitOptions, 'limit'>) {
     const { scope, key, windowMs } = opts;
-    const windowStart = this.windowStartFor(windowMs);
-    const row = await this.prisma.rateLimit.findUnique({ where: { scope_key_windowStart: { scope, key, windowStart } as any } });
-    const count = row?.count ?? 0;
-    return { count, windowStart, windowReset: new Date(windowStart.getTime() + windowMs) };
+    await this.pruneOldBuckets(scope, key, windowMs);
+    const summary = await this.summarizeRecent(scope, key, windowMs);
+    const windowReset = new Date(summary.latestWindow.getTime() + this.normalizeWindowMs(windowMs));
+    return { count: summary.count, windowStart: summary.earliestWindow, windowReset };
   }
 
-  async resetWindow(scope: string, key: string, windowMs: number) {
-    const windowStart = this.windowStartFor(windowMs);
-    try { await this.prisma.rateLimit.delete({ where: { scope_key_windowStart: { scope, key, windowStart } as any } }); } catch {}
+  async resetWindow(scope: string, key: string, _windowMs?: number) {
+    await this.prisma.rateLimit.deleteMany({ where: { scope, key } as any }).catch(() => {});
   }
 }
 

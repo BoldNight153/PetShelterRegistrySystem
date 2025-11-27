@@ -4,8 +4,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import NotificationsSettingsPage from './notifications'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import type { Services } from '@/services/defaults'
-import type { NotificationSettings, NotificationSettingsInput, NotificationTopicPreference } from '@/types/notifications'
+import type { NotificationSettings, NotificationSettingsInput, NotificationTopicPreference, NotificationDevice } from '@/types/notifications'
 import { DEFAULT_NOTIFICATION_SETTINGS } from '@/types/notifications'
+import { buildNotificationRegistrationPayload, supportsPushNotifications } from '@/lib/notifications-device'
 
 vi.mock('sonner', () => ({
   toast: {
@@ -14,17 +15,25 @@ vi.mock('sonner', () => ({
   },
 }))
 
+vi.mock('@/lib/notifications-device', () => ({
+  buildNotificationRegistrationPayload: vi.fn(),
+  supportsPushNotifications: vi.fn().mockReturnValue(true),
+}))
+
 let currentSettings: NotificationSettings
 const loadSettingsMock = vi.fn(async () => currentSettings)
 const updateSettingsMock = vi.fn(async (input: NotificationSettingsInput) => {
   currentSettings = applyPatch(currentSettings, input)
   return currentSettings
 })
+const registerDeviceMock = vi.fn(async () => mockRegisteredDevice())
 
 const services: Partial<Services> = {
   notifications: {
     loadSettings: loadSettingsMock,
     updateSettings: updateSettingsMock,
+    registerDevice: registerDeviceMock,
+    disableDevice: vi.fn().mockResolvedValue(undefined),
   },
 }
 
@@ -33,8 +42,17 @@ describe('NotificationsSettingsPage', () => {
     currentSettings = buildSettings()
     loadSettingsMock.mockResolvedValue(currentSettings)
     updateSettingsMock.mockResolvedValue(currentSettings)
+    registerDeviceMock.mockResolvedValue(mockRegisteredDevice())
     loadSettingsMock.mockClear()
     updateSettingsMock.mockClear()
+    registerDeviceMock.mockClear()
+    vi.mocked(buildNotificationRegistrationPayload).mockReset()
+    vi.mocked(buildNotificationRegistrationPayload).mockResolvedValue({
+      label: 'Browser session',
+      transport: 'web_push',
+      subscription: { endpoint: 'https://push.test' },
+    })
+    vi.mocked(supportsPushNotifications).mockReturnValue(true)
   })
 
   it('renders summary cards and topic rows when data loads', async () => {
@@ -78,6 +96,38 @@ describe('NotificationsSettingsPage', () => {
     expect(payload.topics).toBeDefined()
     const taskTopic = payload.topics?.find((topic) => topic.id === 'task_assignments')
     expect(taskTopic?.channels).toContain('sms')
+  })
+
+  it('toggles trusted devices and persists the updated list', async () => {
+    const { wrapper } = renderWithProviders(<div />, { services, withRouter: true })
+    render(<NotificationsSettingsPage />, { wrapper })
+
+    const deviceToggle = await screen.findByTestId('device-toggle-device-1')
+    fireEvent.click(deviceToggle)
+
+    const saveDevices = screen.getByRole('button', { name: /Save device preferences/i })
+    fireEvent.click(saveDevices)
+
+    await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1))
+    const payload = updateSettingsMock.mock.calls[0][0]
+    expect(payload.devices?.[0].enabled).toBe(false)
+  })
+
+  it('registers the current device when push is supported', async () => {
+    const payload = {
+      label: 'My Laptop',
+      transport: 'web_push' as const,
+      subscription: { endpoint: 'https://push.example' },
+    }
+    vi.mocked(buildNotificationRegistrationPayload).mockResolvedValue(payload)
+
+    const { wrapper } = renderWithProviders(<div />, { services, withRouter: true })
+    render(<NotificationsSettingsPage />, { wrapper })
+
+    const registerButton = await screen.findByRole('button', { name: /register this device/i })
+    fireEvent.click(registerButton)
+
+    await waitFor(() => expect(registerDeviceMock).toHaveBeenCalledWith(payload))
   })
 })
 
@@ -130,4 +180,14 @@ function applyPatch(settings: NotificationSettings, patch: NotificationSettingsI
     next.devices = patch.devices.map((device) => ({ ...device }))
   }
   return next
+}
+
+function mockRegisteredDevice(): NotificationDevice {
+  return {
+    id: 'device-registered',
+    label: 'Browser session',
+    platform: 'web',
+    enabled: true,
+    lastUsedAt: '2024-02-01T12:00:00.000Z',
+  }
 }

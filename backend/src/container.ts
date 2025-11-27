@@ -17,6 +17,7 @@ import { AuthService } from './services/authService';
 import { RateLimitService } from './services/rateLimitService';
 import { SecurityService } from './services/securityService';
 import { NotificationService } from './services/notificationService';
+import { AuthenticatorCatalogService } from './services/authenticatorCatalogService';
 
 export const container: AwilixContainer = createContainer();
 
@@ -38,6 +39,7 @@ container.register({
   authService: asClass(AuthService).singleton(),
   securityService: asClass(SecurityService).singleton(),
   notificationService: asClass(NotificationService).singleton(),
+  authenticatorCatalogService: asClass(AuthenticatorCatalogService).singleton(),
   // register other services here as needed
 });
 
