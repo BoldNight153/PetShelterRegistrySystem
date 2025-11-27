@@ -175,12 +175,14 @@ const NotificationDeviceSchema = z.object({
   lastUsedAt: z.string().datetime().optional().nullable(),
 });
 
+const NotificationSubscriptionSchema = z.record(z.string(), z.any());
+
 const NotificationDeviceRegistrationSchema = z.object({
   label: z.string().trim().min(1).max(160),
   platform: NotificationDevicePlatformSchema.optional(),
   transport: NotificationDeviceTransportSchema,
   fingerprint: z.string().trim().min(8).max(200).optional().nullable(),
-  subscription: z.record(z.any()).optional().nullable(),
+  subscription: NotificationSubscriptionSchema.optional().nullable(),
   token: z.string().trim().max(512).optional().nullable(),
   userAgent: z.string().trim().max(512).optional().nullable(),
 });
