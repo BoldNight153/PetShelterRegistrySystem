@@ -3,11 +3,18 @@ import type { Response as SupertestResponse } from 'supertest';
 import { Prisma } from '@prisma/client';
 import app from '../index';
 import prisma from '../prisma/client';
+import { resetRateLimits } from './helpers/rateLimit';
 
 type SecuritySettingKey = 'loginIpWindowSec' | 'loginIpLimit' | 'loginLockWindowSec' | 'loginLockThreshold';
 
 const touchedSettings = new Set<SecuritySettingKey>();
 const originalSettings: Partial<Record<SecuritySettingKey, Prisma.JsonValue | null | undefined>> = {};
+const originalEnv = {
+  LOGIN_IP_WINDOW_MS: process.env.LOGIN_IP_WINDOW_MS,
+  LOGIN_IP_LIMIT: process.env.LOGIN_IP_LIMIT,
+  LOGIN_LOCK_WINDOW_MS: process.env.LOGIN_LOCK_WINDOW_MS,
+  LOGIN_LOCK_THRESHOLD: process.env.LOGIN_LOCK_THRESHOLD,
+};
 
 async function setSecuritySetting(key: SecuritySettingKey, value: number) {
   if (!touchedSettings.has(key)) {
@@ -39,6 +46,10 @@ function getCookie(cookies: string[] | undefined, name: string): string | undefi
   if (!cookies) return undefined;
   return cookies.find((c) => c.startsWith(`${name}=`));
 }
+
+beforeEach(async () => {
+  await resetRateLimits();
+});
 
 describe('Auth rate limiting - IP throttle', () => {
   beforeAll(async () => {
@@ -129,5 +140,10 @@ describe('Auth rate limiting - per-user lockout', () => {
 });
 
 afterAll(async () => {
+  await resetRateLimits();
   await resetSecuritySettings();
+  process.env.LOGIN_IP_WINDOW_MS = originalEnv.LOGIN_IP_WINDOW_MS;
+  process.env.LOGIN_IP_LIMIT = originalEnv.LOGIN_IP_LIMIT;
+  process.env.LOGIN_LOCK_WINDOW_MS = originalEnv.LOGIN_LOCK_WINDOW_MS;
+  process.env.LOGIN_LOCK_THRESHOLD = originalEnv.LOGIN_LOCK_THRESHOLD;
 });

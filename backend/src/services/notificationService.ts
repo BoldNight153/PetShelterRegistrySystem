@@ -1,5 +1,5 @@
-import { PrismaClient, type User } from '@prisma/client';
-import type { Prisma } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
+import type { NotificationDeviceRegistration } from '@prisma/client';
 import {
   type NotificationSettings,
   type NotificationSettingsInput,
@@ -10,10 +10,11 @@ import {
   type NotificationDevice,
   type NotificationChannel,
   type NotificationTopicCategory,
+  type NotificationDeviceRegistrationInput,
 } from '../types/notificationSettings';
 import type { INotificationService } from './interfaces/notificationService.interface';
 
-export type NotificationPrisma = Pick<PrismaClient, 'user'>;
+export type NotificationPrisma = Pick<PrismaClient, 'user' | 'notificationDeviceRegistration'>;
 
 const DEFAULT_DIGEST: NotificationDigestSettings = {
   enabled: true,
@@ -100,11 +101,16 @@ export class NotificationService implements INotificationService {
   }
 
   async getNotificationSettings(userId: string): Promise<NotificationSettings | null> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { notificationDevices: true } });
     if (!user) return null;
     const metadata = this.asRecord((user as unknown as { metadata?: Prisma.JsonValue | null }).metadata);
     const raw = metadata?.notifications ?? null;
-    return this.normalizeSettings(raw, metadata ?? null);
+    const settings = this.normalizeSettings(raw, metadata ?? null);
+    const registered = this.mapDeviceRegistrations(((user as any)?.notificationDevices ?? []) as NotificationDeviceRegistration[]);
+    if (registered.length) {
+      settings.devices = registered;
+    }
+    return settings;
   }
 
   async updateNotificationSettings(userId: string, payload: NotificationSettingsInput): Promise<NotificationSettings | null> {
@@ -113,7 +119,15 @@ export class NotificationService implements INotificationService {
 
     const metadata = this.cloneMetadata((user as unknown as { metadata?: Prisma.JsonValue | null }).metadata);
     const current = this.normalizeSettings(metadata.notifications ?? null, metadata);
-    const next = this.mergeSettings(current, payload);
+    const sanitizedPayload: NotificationSettingsInput = { ...payload };
+    let devicePatch: NotificationDevice[] | undefined;
+    if (Array.isArray(payload.devices)) {
+      devicePatch = this.normalizeDevices(payload.devices, current.devices);
+      sanitizedPayload.devices = devicePatch;
+      await this.updateRegisteredDeviceStatuses(userId, devicePatch);
+    }
+
+    const next = this.mergeSettings(current, sanitizedPayload);
 
     const securityAlerts = this.buildSecurityAlertPayload(next);
     const security = this.asRecord(metadata.security) ?? {};
@@ -121,6 +135,10 @@ export class NotificationService implements INotificationService {
       security.alerts = securityAlerts;
     }
     metadata.security = security;
+    const registeredDevices = await this.fetchRegisteredDevices(userId);
+    if (registeredDevices.length) {
+      next.devices = registeredDevices;
+    }
     metadata.notifications = next;
 
     await this.prisma.user.update({
@@ -129,6 +147,70 @@ export class NotificationService implements INotificationService {
     });
 
     return next;
+  }
+
+  async registerNotificationDevice(userId: string, payload: NotificationDeviceRegistrationInput): Promise<NotificationDevice | null> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return null;
+
+    const label = this.coerceString(payload.label, 'Unnamed device').slice(0, 160) || 'Unnamed device';
+    const platform = this.coerceDevicePlatform(payload.platform ?? 'unknown');
+    const transport = payload.transport === 'mobile_push' ? 'mobile_push' : 'web_push';
+    const fingerprint = this.coerceNullableString(payload.fingerprint, null);
+    const token = this.coerceNullableString(payload.token, null);
+    const subscriptionValue = payload.subscription ? (payload.subscription as Prisma.InputJsonValue) : Prisma.JsonNull;
+    const lookup = [] as Prisma.NotificationDeviceRegistrationWhereInput[];
+    if (fingerprint) lookup.push({ fingerprint });
+    if (token) lookup.push({ token });
+    const existing = lookup.length
+      ? await this.prisma.notificationDeviceRegistration.findFirst({ where: { userId, OR: lookup } })
+      : null;
+
+    const baseDeviceData = {
+      label,
+      platform,
+      transport,
+      fingerprint,
+      subscription: subscriptionValue,
+      token,
+      status: 'active',
+      revokedAt: null,
+      lastUsedAt: new Date(),
+      userAgent: this.coerceNullableString(payload.userAgent, null),
+      ipAddress: this.coerceNullableString(payload.ipAddress, null),
+    };
+
+    const updatePayload: Prisma.NotificationDeviceRegistrationUncheckedUpdateInput = {
+      ...baseDeviceData,
+    };
+
+    const createPayload: Prisma.NotificationDeviceRegistrationUncheckedCreateInput = {
+      ...baseDeviceData,
+      userId,
+      registeredAt: new Date(),
+    };
+
+    let record: NotificationDeviceRegistration;
+    if (existing) {
+      record = await this.prisma.notificationDeviceRegistration.update({ where: { id: existing.id }, data: updatePayload });
+    } else {
+      record = await this.prisma.notificationDeviceRegistration.create({ data: createPayload });
+    }
+
+    await this.refreshRegisteredDevicesCache(userId);
+    const devices = this.mapDeviceRegistrations([record]);
+    return devices[0] ?? null;
+  }
+
+  async disableNotificationDevice(userId: string, deviceId: string): Promise<boolean> {
+    const existing = await this.prisma.notificationDeviceRegistration.findFirst({ where: { id: deviceId, userId } });
+    if (!existing) return false;
+    await this.prisma.notificationDeviceRegistration.update({
+      where: { id: existing.id },
+      data: { status: 'revoked', revokedAt: new Date(), lastUsedAt: new Date() },
+    });
+    await this.refreshRegisteredDevicesCache(userId);
+    return true;
   }
 
   private normalizeSettings(raw: unknown, metadata: Record<string, any> | null): NotificationSettings {
@@ -257,6 +339,58 @@ export class NotificationService implements INotificationService {
       });
     }
     return devices.slice(0, 25);
+  }
+
+  private async fetchRegisteredDevices(userId: string): Promise<NotificationDevice[]> {
+    const records = await this.prisma.notificationDeviceRegistration.findMany({
+      where: { userId },
+      orderBy: [{ status: 'desc' }, { updatedAt: 'desc' }],
+      take: 25,
+    });
+    return this.mapDeviceRegistrations(records as NotificationDeviceRegistration[]);
+  }
+
+  private mapDeviceRegistrations(records: NotificationDeviceRegistration[]): NotificationDevice[] {
+    if (!Array.isArray(records) || !records.length) return [];
+    return records.map(record => ({
+      id: record.id,
+      label: this.coerceString(record.label, 'Unnamed device'),
+      platform: this.coerceDevicePlatform(record.platform),
+      enabled: record.status !== 'revoked' && record.status !== 'disabled',
+      lastUsedAt: record.lastUsedAt ? this.coerceDate(record.lastUsedAt) : (record.updatedAt ? this.coerceDate(record.updatedAt) : null),
+    }));
+  }
+
+  private async updateRegisteredDeviceStatuses(userId: string, devices: NotificationDevice[]): Promise<void> {
+    if (!devices.length) return;
+    await Promise.all(devices.map(async device => {
+      const lastUsedAt = device.lastUsedAt ? this.parseDate(device.lastUsedAt) : undefined;
+      await this.prisma.notificationDeviceRegistration.updateMany({
+        where: { id: device.id, userId },
+        data: {
+          status: device.enabled ? 'active' : 'disabled',
+          lastUsedAt,
+          revokedAt: device.enabled ? null : undefined,
+        },
+      });
+    }));
+  }
+
+  private async refreshRegisteredDevicesCache(userId: string): Promise<NotificationDevice[]> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return [];
+    const metadata = this.cloneMetadata((user as unknown as { metadata?: Prisma.JsonValue | null }).metadata);
+    const normalized = this.normalizeSettings(metadata.notifications ?? null, metadata);
+    const devices = await this.fetchRegisteredDevices(userId);
+    if (devices.length) {
+      normalized.devices = devices;
+    }
+    metadata.notifications = normalized;
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { metadata: metadata as Prisma.JsonObject } as Prisma.UserUpdateInput,
+    });
+    return devices;
   }
 
   private buildSecurityAlertPayload(settings: NotificationSettings): Record<string, unknown> | null {
@@ -403,6 +537,12 @@ export class NotificationService implements INotificationService {
       return value;
     }
     return 'unknown';
+  }
+
+  private parseDate(value: string | Date | null | undefined): Date | undefined {
+    if (!value) return undefined;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isFinite(date.getTime()) ? date : undefined;
   }
 
   private asRecord(value: unknown): Record<string, any> | null {

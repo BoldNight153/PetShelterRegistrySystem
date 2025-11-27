@@ -8,6 +8,7 @@ function resolvePetOwnerService(req: any) {
 }
 
 const router = express.Router();
+const OWNERS_WRITE_PERMISSION = 'owners.write';
 
 const PetOwnerSchema = z.object({ petId: z.string(), ownerId: z.string(), role: z.enum(['OWNER','FOSTER','EMERGENCY_CONTACT']).optional(), isPrimary: z.boolean().optional(), startDate: z.string().optional(), endDate: z.string().optional(), notes: z.string().optional() });
 
@@ -18,7 +19,7 @@ router.get('/', async (req, res) => {
   res.json(items);
 });
 
-router.post('/', requirePermission('owners.write'), async (req, res) => {
+router.post('/', requirePermission(OWNERS_WRITE_PERMISSION), async (req, res) => {
   const parsed = PetOwnerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
   const data = parsed.data;
@@ -48,7 +49,7 @@ router.get('/:id', async (req, res) => {
   res.json(item);
 });
 
-router.put('/:id', requirePermission('owners.write'), async (req, res) => {
+router.put('/:id', requirePermission(OWNERS_WRITE_PERMISSION), async (req, res) => {
   const { id } = req.params as { id: string };
   const parsed = PetOwnerSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
@@ -64,7 +65,7 @@ router.put('/:id', requirePermission('owners.write'), async (req, res) => {
   res.json(updated);
 });
 
-router.delete('/:id', requirePermission('owners.write'), async (req, res) => {
+router.delete('/:id', requirePermission(OWNERS_WRITE_PERMISSION), async (req, res) => {
   const id = req.params.id;
   const svc = resolvePetOwnerService(req);
   if (svc) {

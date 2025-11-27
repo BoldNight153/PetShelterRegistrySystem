@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../index';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { resetRateLimits } from './helpers/rateLimit';
 
 const prisma = new PrismaClient();
 const agent = request.agent(app);
@@ -18,6 +19,10 @@ async function fetchCsrf() {
 }
 
 describe('Auth legacy password hash handling', () => {
+  beforeEach(async () => {
+    await resetRateLimits();
+  });
+
   beforeAll(async () => {
     const bcryptHash = await bcrypt.hash(legacyPassword, 10);
     await prisma.user.upsert({

@@ -3,7 +3,13 @@ import { vi, test, expect } from 'vitest'
 import { ServicesProvider } from '@/services/provider'
 import { useServices } from '@/services/hooks'
 import type { Services } from '@/services/defaults'
-import type { IAdminNavigationService, AdminMenuRecord, AdminMenuItem } from '@/services/interfaces/admin.interface'
+import type {
+  IAdminNavigationService,
+  AdminMenuRecord,
+  AdminMenuItem,
+  IAdminAuthenticatorCatalogService,
+  AdminAuthenticatorCatalogRecord,
+} from '@/services/interfaces/admin.interface'
 
 function Consumer() {
   const s = useServices()
@@ -39,8 +45,32 @@ test('ServicesProvider provides default services and allows overrides', () => {
     updateMenuItem: vi.fn(async () => fakeMenuItem),
     deleteMenuItem: vi.fn(async () => undefined),
   }
+  const fakeAuthRecord: AdminAuthenticatorCatalogRecord = {
+    id: 'mock',
+    label: 'Mock',
+    factorType: 'TOTP',
+    description: null,
+    issuer: null,
+    helper: null,
+    docsUrl: null,
+    tags: null,
+    metadata: null,
+    sortOrder: null,
+    isArchived: false,
+    createdAt: null,
+    updatedAt: null,
+    archivedAt: null,
+    archivedBy: null,
+  }
+  const fakeAuthenticators: IAdminAuthenticatorCatalogService = {
+    list: vi.fn(async () => []),
+    create: vi.fn(async () => fakeAuthRecord),
+    update: vi.fn(async () => fakeAuthRecord),
+    archive: vi.fn(async () => undefined),
+    restore: vi.fn(async () => undefined),
+  }
   const override = {
-    admin: { settings: { loadSettings: fakeLoad, saveSettings: fakeSave }, navigation: fakeNavigation },
+    admin: { settings: { loadSettings: fakeLoad, saveSettings: fakeSave }, navigation: fakeNavigation, authenticators: fakeAuthenticators },
   } satisfies Partial<Services>
   render(
     <ServicesProvider services={override}>

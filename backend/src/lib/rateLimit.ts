@@ -22,23 +22,23 @@ function windowBounds(windowMs: number) {
 
 async function pruneOldBuckets(scope: string, key: string, windowMs: number) {
   const cutoff = new Date(Date.now() - Math.max(windowMs, 1) * 4);
-  await prisma.rateLimit.deleteMany({ where: { scope, key, windowStart: { lt: cutoff } } }).catch(() => {});
+  await prisma.rateLimit.deleteMany({ where: { scope, key, lastAttemptAt: { lt: cutoff } } }).catch(() => {});
 }
 
 async function summarizeRecent(scope: string, key: string, windowMs: number) {
   const since = windowBounds(windowMs);
   const rows = await prisma.rateLimit.findMany({
-    where: { scope, key, windowStart: { gte: since } },
-    select: { count: true, windowStart: true },
-    orderBy: { windowStart: 'desc' },
+    where: { scope, key, lastAttemptAt: { gte: since } },
+    select: { count: true, windowStart: true, lastAttemptAt: true },
+    orderBy: { lastAttemptAt: 'desc' },
   });
   if (!rows.length) {
     const now = new Date();
     return { count: 0, latestWindow: now, earliestWindow: now };
   }
   const count = rows.reduce((sum, row) => sum + row.count, 0);
-  const latestWindow = rows[0].windowStart;
-  const earliestWindow = rows[rows.length - 1].windowStart;
+  const latestWindow = rows[0].lastAttemptAt ?? rows[0].windowStart;
+  const earliestWindow = rows[rows.length - 1].lastAttemptAt ?? rows[rows.length - 1].windowStart;
   return { count, latestWindow, earliestWindow };
 }
 

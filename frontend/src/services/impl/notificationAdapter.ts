@@ -1,6 +1,11 @@
 import * as api from '@/lib/api';
 import type { INotificationService } from '../interfaces/notifications.interface';
-import type { NotificationSettings, NotificationSettingsInput } from '@/types/notifications';
+import type {
+  NotificationSettings,
+  NotificationSettingsInput,
+  NotificationDevice,
+  NotificationDeviceRegistrationInput,
+} from '@/types/notifications';
 
 export class NotificationAdapter implements INotificationService {
   loadSettings(): Promise<NotificationSettings> {
@@ -9,6 +14,14 @@ export class NotificationAdapter implements INotificationService {
 
   updateSettings(input: NotificationSettingsInput): Promise<NotificationSettings> {
     return api.updateNotificationSettings(input);
+  }
+  
+  registerDevice(input: NotificationDeviceRegistrationInput): Promise<NotificationDevice> {
+    return api.registerNotificationDevice(input);
+  }
+  
+  disableDevice(deviceId: string): Promise<void> {
+    return api.disableNotificationDevice(deviceId);
   }
 }
 

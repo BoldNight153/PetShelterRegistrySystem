@@ -53,6 +53,7 @@ function buildSnapshot(): AccountSecuritySnapshot {
         type: 'totp',
         label: 'Authenticator app',
         enabled: true,
+        status: 'active',
         enrolledAt: '2024-01-01T00:00:00.000Z',
         lastUsedAt: '2024-01-15T00:00:00.000Z',
         devices: [],
@@ -61,6 +62,7 @@ function buildSnapshot(): AccountSecuritySnapshot {
       },
     ],
     recommendations: [],
+    pendingEnrollment: null,
   }
   snapshot.sessions = {
     summary: {
@@ -122,13 +124,29 @@ const changePasswordMock = vi.fn(async () => undefined)
 const revokeSessionMock = vi.fn(async () => undefined)
 const revokeAllSessionsMock = vi.fn(async () => undefined)
 const trustSessionMock = vi.fn(async () => undefined)
-const startTotpMock = vi.fn(async () => ({ ticket: 'ticket', type: 'totp' as const }))
+const startTotpMock = vi.fn(async () => ({
+  ticket: 'ticket',
+  factorId: 'factor-2',
+  mode: 'create' as const,
+  type: 'totp' as const,
+  catalogId: 'google',
+  expiresAt: '2024-02-05T00:00:00.000Z',
+}))
+const regenerateTotpFactorMock = vi.fn(async () => ({
+  ticket: 'rotate-ticket',
+  factorId: 'factor-1',
+  mode: 'rotate' as const,
+  type: 'totp' as const,
+  catalogId: 'google',
+  expiresAt: '2024-02-06T00:00:00.000Z',
+}))
 const confirmTotpMock = vi.fn(async (): Promise<SecurityMfaEnrollmentResult> => ({
   factor: {
     id: 'factor-2',
     type: 'totp',
     label: 'Authenticator app',
     enabled: true,
+    status: 'active',
     enrolledAt: '2024-02-05T00:00:00.000Z',
     lastUsedAt: null,
     devices: [],
@@ -137,9 +155,13 @@ const confirmTotpMock = vi.fn(async (): Promise<SecurityMfaEnrollmentResult> => 
   },
   backupCodes: ['code-1', 'code-2'],
 }))
+const enableFactorMock = vi.fn(async () => undefined)
 const disableFactorMock = vi.fn(async () => undefined)
 const deleteFactorMock = vi.fn(async () => undefined)
-const regenerateCodesMock = vi.fn(async () => ({ codes: [] }))
+const regenerateCodesMock = vi.fn(async () => ({
+  codes: ['alpha-bravo', 'charlie-delta', 'echo-foxtrot'],
+  expiresAt: '2024-02-10T00:00:00.000Z',
+}))
 const updateAlertsMock = vi.fn(async (input: AccountSecuritySnapshot['alerts']) => input)
 const updateRecoveryMock = vi.fn(async (input: AccountSecuritySnapshot['recovery']) => input)
 
@@ -152,7 +174,9 @@ const services: Partial<Services> = {
     trustSession: trustSessionMock,
     changePassword: changePasswordMock,
     startTotpEnrollment: startTotpMock,
+    regenerateTotpFactor: regenerateTotpFactorMock,
     confirmTotpEnrollment: confirmTotpMock,
+  enableFactor: enableFactorMock,
     disableFactor: disableFactorMock,
     deleteFactor: deleteFactorMock,
     regenerateRecoveryCodes: regenerateCodesMock,
@@ -173,7 +197,9 @@ describe('AccountSecuritySettingsPage', () => {
     revokeAllSessionsMock.mockClear()
     trustSessionMock.mockClear()
     startTotpMock.mockClear()
+    regenerateTotpFactorMock.mockClear()
     confirmTotpMock.mockClear()
+  enableFactorMock.mockClear()
     disableFactorMock.mockClear()
   deleteFactorMock.mockClear()
     regenerateCodesMock.mockClear()
@@ -194,6 +220,64 @@ describe('AccountSecuritySettingsPage', () => {
     expect(factorLabels.length).toBeGreaterThan(0)
     expect(await screen.findByDisplayValue('primary@example.com')).toBeInTheDocument()
     expect(await screen.findByRole('link', { name: /Manage notifications/i })).toBeInTheDocument()
+  })
+
+  it('surfaces pending enrollment alert details', async () => {
+    const snapshot = buildSnapshot()
+    snapshot.mfa.pendingEnrollment = {
+      ticket: 'pending-ticket',
+      factorId: 'factor-3',
+      mode: 'rotate',
+      type: 'totp',
+      label: 'Authenticator app',
+      catalogId: 'google',
+      expiresAt: '2024-02-07T00:00:00.000Z',
+      status: 'pending',
+    }
+    loadSnapshotMock.mockResolvedValueOnce(snapshot)
+
+    const { wrapper } = renderWithProviders(<div />, { services, withRouter: true })
+    render(<AccountSecuritySettingsPage />, { wrapper })
+
+    const alert = await screen.findByTestId('pending-mfa-enrollment-alert')
+    expect(alert).toHaveTextContent('Finish setting up Authenticator app')
+    expect(alert).toHaveTextContent(/Ticket\s+pendin.*status\s+pending/i)
+    expect(screen.getByRole('button', { name: /Enter code to finish/i })).toBeInTheDocument()
+  })
+
+  it('disables conflicting MFA actions while a rotation is pending', async () => {
+    const snapshot = buildSnapshot()
+    snapshot.mfa.factors[0].status = 'pending'
+    snapshot.mfa.pendingEnrollment = {
+      ticket: 'pending-ticket',
+      factorId: 'factor-1',
+      mode: 'rotate',
+      type: 'totp',
+      label: 'Authenticator app',
+      catalogId: 'google',
+      expiresAt: '2024-02-07T00:00:00.000Z',
+      status: 'pending',
+    }
+    loadSnapshotMock.mockResolvedValueOnce(snapshot)
+
+    const { wrapper } = renderWithProviders(<div />, { services, withRouter: true })
+    render(<AccountSecuritySettingsPage />, { wrapper })
+
+    await screen.findByTestId('pending-mfa-enrollment-alert')
+
+    const startButton = await screen.findByRole('button', { name: /Select authenticator app/i })
+    expect(startButton).toBeDisabled()
+
+    const deleteButton = await screen.findByRole('button', { name: /Delete/i })
+    expect(deleteButton).toBeDisabled()
+
+    const resumeButton = screen.getByRole('button', { name: /Enter code to finish/i })
+    fireEvent.click(resumeButton)
+
+    await waitFor(() => {
+      const dialog = screen.getByRole('dialog', { name: /finish authenticator app/i })
+      expect(within(dialog).getByLabelText(/Verification code/i)).toBeInTheDocument()
+    })
   })
 
   it('submits password changes with the service payload', async () => {
@@ -250,7 +334,26 @@ describe('AccountSecuritySettingsPage', () => {
     const googleButton = await screen.findByTestId('totp-preset-google')
     fireEvent.click(googleButton)
 
-    await waitFor(() => expect(startTotpMock).toHaveBeenCalledWith({ label: 'Google Authenticator', issuer: 'Pet Shelter Registry' }))
+    await waitFor(() => expect(startTotpMock).toHaveBeenCalledWith({ label: 'Google Authenticator', issuer: 'Pet Shelter Registry', catalogId: 'google' }))
+  })
+
+  it('rotates an authenticator when the preset already exists', async () => {
+    const snapshot = buildSnapshot()
+    snapshot.mfa.factors[0].label = 'Google Authenticator'
+    snapshot.mfa.factors[0].catalogId = 'google'
+    loadSnapshotMock.mockResolvedValueOnce(snapshot)
+
+    const { wrapper } = renderWithProviders(<div />, { services, withRouter: true })
+    render(<AccountSecuritySettingsPage />, { wrapper })
+
+    const startButton = await screen.findByRole('button', { name: /Select authenticator app/i })
+    fireEvent.click(startButton)
+
+    const googleButton = await screen.findByTestId('totp-preset-google')
+    fireEvent.click(googleButton)
+
+    await waitFor(() => expect(regenerateTotpFactorMock).toHaveBeenCalledWith('factor-1', { label: 'Google Authenticator', issuer: 'Pet Shelter Registry', catalogId: 'google' }))
+    expect(startTotpMock).not.toHaveBeenCalled()
   })
 
   it('deletes an authenticator after confirmation', async () => {
@@ -264,5 +367,59 @@ describe('AccountSecuritySettingsPage', () => {
     fireEvent.click(confirmButton)
 
     await waitFor(() => expect(deleteFactorMock).toHaveBeenCalledWith('factor-1'))
+  })
+
+  it('regenerates backup codes and surfaces them in the modal', async () => {
+    const { wrapper } = renderWithProviders(<div />, { services, withRouter: true })
+    render(<AccountSecuritySettingsPage />, { wrapper })
+
+  const backupCodesButton = await screen.findByRole('button', { name: /Regenerate backup codes/i })
+    fireEvent.click(backupCodesButton)
+
+    await waitFor(() => expect(regenerateCodesMock).toHaveBeenCalledTimes(1))
+
+    const dialog = await screen.findByRole('dialog', { name: /Backup codes/i })
+    expect(within(dialog).getByText('alpha-bravo')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Expires/i)).toBeInTheDocument()
+  })
+
+  it('renders session risk indicators and trusts new devices from the sessions list', async () => {
+    const snapshot = buildSnapshot()
+    snapshot.sessions.list = [
+      {
+        ...snapshot.sessions.list[0],
+        id: 'session-1',
+        risk: 'low',
+      },
+      {
+        ...snapshot.sessions.list[0],
+        id: 'session-2',
+        device: 'Surface Laptop',
+        platform: 'Windows',
+        trusted: false,
+        current: false,
+        risk: 'high',
+      },
+    ]
+    snapshot.sessions.summary.activeCount = snapshot.sessions.list.length
+    snapshot.sessions.summary.trustedCount = snapshot.sessions.list.filter((session) => session.trusted).length
+    loadSnapshotMock.mockResolvedValueOnce(snapshot)
+    listSessionsMock.mockResolvedValueOnce(snapshot.sessions.list)
+
+    const { wrapper } = renderWithProviders(<div />, { services, withRouter: true })
+    render(<AccountSecuritySettingsPage />, { wrapper })
+
+    await screen.findByText(/Devices & active sessions/i)
+    expect(await screen.findByText(/High risk/i)).toBeInTheDocument()
+
+    const secondRow = screen.getByText(/Surface Laptop/i).closest('tr')
+    expect(secondRow).not.toBeNull()
+    if (secondRow) {
+      const trustButton = within(secondRow).getByRole('button', { name: /Trust/i })
+      fireEvent.click(trustButton)
+    }
+
+    await waitFor(() => expect(trustSessionMock).toHaveBeenCalledWith({ sessionId: 'session-2', trust: true }))
+    expect(listSessionsMock).toHaveBeenCalled()
   })
 })

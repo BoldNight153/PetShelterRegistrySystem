@@ -9,14 +9,20 @@ type User = any | null
 
 export const login = createAsyncThunk('auth/login', async (input: LoginRequestInput, thunkAPI) => {
   const services = (thunkAPI.extra as any) ?? defaultServices
-  const data = await services.auth.login(input)
-  return data
+  try {
+    return await services.auth.login(input)
+  } catch (err) {
+    return thunkAPI.rejectWithValue(err)
+  }
 })
 
 export const verifyMfaChallenge = createAsyncThunk('auth/verifyMfaChallenge', async (input: VerifyMfaChallengeInput, thunkAPI) => {
   const services = (thunkAPI.extra as any) ?? defaultServices
-  const data = await services.auth.verifyMfaChallenge(input)
-  return data
+  try {
+    return await services.auth.verifyMfaChallenge(input)
+  } catch (err) {
+    return thunkAPI.rejectWithValue(err)
+  }
 })
 
 export const register = createAsyncThunk('auth/register', async (input: { email: string; password: string; name?: string }, thunkAPI) => {

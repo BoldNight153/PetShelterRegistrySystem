@@ -1,5 +1,6 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma, MfaFactorType } from '@prisma/client';
 import type { RefreshToken, PasswordHistory, Setting, AuditLog, User, UserDevice, UserMfaFactor, UserBackupCode } from '@prisma/client';
+import { DEFAULT_AUTHENTICATOR_CATALOG } from '@petshelter/authenticator-catalog';
 import argon2 from 'argon2';
 import { createHash, randomBytes } from 'crypto';
 import { meetsRegistrationPasswordRequirements } from '../lib/passwordPolicy';
@@ -17,6 +18,7 @@ export type SecurityPrisma = {
   userDevice: PrismaClient['userDevice'];
   userMfaFactor: PrismaClient['userMfaFactor'];
   userBackupCode: PrismaClient['userBackupCode'];
+  authenticatorCatalog: PrismaClient['authenticatorCatalog'];
   $transaction: PrismaClient['$transaction'];
 };
 
@@ -80,6 +82,23 @@ export type SecurityHardwareKey = {
   transports?: string[];
 };
 
+export type SecurityAuthenticatorCatalogDetails = {
+  id: string;
+  label: string;
+  description?: string | null;
+  helper?: string | null;
+  docsUrl?: string | null;
+  tags?: string[] | null;
+  issuer?: string | null;
+  metadata?: JsonValue | null;
+};
+
+export type SecurityAuthenticatorCatalogEntry = SecurityAuthenticatorCatalogDetails & {
+  factorType: MfaFactorType;
+  sortOrder?: number | null;
+  isArchived?: boolean | null;
+};
+
 export type SecurityMfaFactorStatus = 'pending' | 'active' | 'disabled' | 'revoked';
 
 export type SecurityMfaFactor = {
@@ -92,6 +111,25 @@ export type SecurityMfaFactor = {
   lastUsedAt?: string | null;
   devices?: SecurityHardwareKey[];
   remainingCodes?: number | null;
+  metadata?: JsonValue | null;
+  catalogId?: string | null;
+};
+
+export type SecurityPendingMfaEnrollment = {
+  ticket: string;
+  factorId: string;
+  mode: 'create' | 'rotate';
+  type: SecurityMfaFactorType;
+  label: string;
+  catalogId?: string | null;
+  expiresAt?: string | null;
+  status: SecurityMfaFactorStatus;
+  catalog?: SecurityAuthenticatorCatalogDetails | null;
+  description?: string | null;
+  helper?: string | null;
+  docsUrl?: string | null;
+  tags?: string[] | null;
+  issuer?: string | null;
   metadata?: JsonValue | null;
 };
 
@@ -221,6 +259,7 @@ export type SecurityTotpEnrollmentPrompt = {
   uri: string;
   qrCodeDataUrl?: string;
   expiresAt?: string | null;
+  catalogId?: string | null;
 };
 
 export type SecurityTotpEnrollmentResult = {
@@ -229,12 +268,24 @@ export type SecurityTotpEnrollmentResult = {
   expiresAt?: string | null;
 };
 
+type TotpEnrollmentInput = {
+  label?: string | null;
+  issuer?: string | null;
+  accountName?: string | null;
+  catalogId?: string | null;
+};
+
+type CatalogSelection = SecurityAuthenticatorCatalogDetails & {
+  factorType: string;
+};
+
 export type AccountSecuritySnapshot = {
   overview: SecurityOverview;
   password: SecurityPasswordSettings;
   mfa: {
     factors: SecurityMfaFactor[];
     recommendations: SecurityMfaRecommendation[];
+    pendingEnrollment?: SecurityPendingMfaEnrollment | null;
   };
   sessions: {
     summary: SecuritySessionSummary;
@@ -327,12 +378,18 @@ const TOTP_ENROLLMENT_TTL_MIN = 15;
 const ERROR_USER_NOT_FOUND = 'user not found';
 const ERROR_FACTOR_NOT_FOUND = 'factor not found';
 const ERROR_FACTOR_REVOKED = 'factor revoked';
+const ERROR_PENDING_ENROLLMENT = 'pending enrollment in progress';
 
 type PendingTotpEnrollment = {
   ticket: string;
   factorId: string;
   mode: 'create' | 'rotate';
   expiresAt?: string | null;
+  label?: string | null;
+  type?: SecurityMfaFactorType;
+  catalogId?: string | null;
+  status?: SecurityMfaFactorStatus;
+  catalog?: SecurityAuthenticatorCatalogDetails | null;
 };
 
 export class SecurityService {
@@ -340,6 +397,47 @@ export class SecurityService {
 
   constructor(opts?: { prisma?: SecurityPrisma }) {
     this.prisma = (opts?.prisma ?? new PrismaClient()) as SecurityPrisma;
+  }
+
+  async listAuthenticatorCatalog(options?: { includeArchived?: boolean; factorType?: string | null }): Promise<SecurityAuthenticatorCatalogEntry[]> {
+    const includeArchived = Boolean(options?.includeArchived);
+    const factorType = this.normalizeFactorTypeFilter(options?.factorType);
+    const where: Prisma.AuthenticatorCatalogWhereInput = {};
+    if (!includeArchived) {
+      where.isArchived = false;
+    }
+    if (factorType) {
+      where.factorType = factorType;
+    }
+    const rows = await this.prisma.authenticatorCatalog.findMany({
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
+      select: {
+        id: true,
+        label: true,
+        description: true,
+        helper: true,
+        docsUrl: true,
+        issuer: true,
+        tags: true,
+        metadata: true,
+        factorType: true,
+        sortOrder: true,
+        isArchived: true,
+      },
+    });
+    if (!rows.length) {
+      return this.buildCatalogEntriesFromSeeds(factorType);
+    }
+    return rows.map((row) => {
+      const details = this.buildCatalogDetailsFromRecord(row);
+      return {
+        ...details,
+        factorType: row.factorType,
+        sortOrder: typeof row.sortOrder === 'number' ? row.sortOrder : null,
+        isArchived: row.isArchived ?? null,
+      } satisfies SecurityAuthenticatorCatalogEntry;
+    });
   }
 
   async getAccountSecuritySnapshot(userId: string): Promise<AccountSecuritySnapshot | null> {
@@ -360,8 +458,8 @@ export class SecurityService {
     const policy = this.buildPasswordPolicy(settingsRows);
     const history = this.buildPasswordHistory(passwordHistory);
     const riskAlerts = this.buildRiskAlerts(auditLogs);
-    const metadata = this.extractSecurityMetadata(user);
-    const mfa = this.buildMfaSnapshot(metadata.mfa, mfaFactors, backupCodes);
+  const metadata = this.extractSecurityMetadata(user);
+  const mfa = this.buildMfaSnapshot(metadata.mfa, metadata.pendingTotp, mfaFactors, backupCodes);
     const recovery = this.mergeRecoveryWithBackupCodes(this.normalizeRecoverySettings(metadata.recovery, user), backupCodes);
     const alerts = this.normalizeAlertSettings(metadata.alerts);
     const overview = this.buildOverview(user, sessions, history, riskAlerts, mfa.factors, devices);
@@ -450,7 +548,7 @@ export class SecurityService {
     }
   }
 
-  async startTotpEnrollment(userId: string, input?: { label?: string; issuer?: string; accountName?: string }): Promise<SecurityTotpEnrollmentPrompt> {
+  async startTotpEnrollment(userId: string, input?: TotpEnrollmentInput): Promise<SecurityTotpEnrollmentPrompt> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new SecurityOperationError(404, ERROR_USER_NOT_FOUND);
 
@@ -462,16 +560,34 @@ export class SecurityService {
       delete security.pendingTotp;
     }
 
+  const selection = await this.resolveTotpCatalogSelection(input?.catalogId);
+  const catalogDetails = selection ? this.cloneCatalogDetails(selection) : null;
+    const requestedLabel = this.normalizeFactorLabel(input?.label ?? selection?.label ?? null);
+    const label = await this.chooseTotpLabel(userId, requestedLabel);
+    if (selection) {
+      const existingCatalogFactor = await this.findTotpFactorByCatalog(userId, selection.id);
+      if (existingCatalogFactor) {
+        return this.regenerateTotpFactor(userId, existingCatalogFactor.id, {
+          ...input,
+          label,
+          catalogId: selection.id,
+          issuer: input?.issuer ?? selection.issuer ?? undefined,
+        });
+      }
+    }
+    const duplicateLabel = requestedLabel ? await this.findTotpFactorByLabel(userId, label) : null;
+    if (duplicateLabel) {
+      return this.regenerateTotpFactor(userId, duplicateLabel.id, {
+        ...input,
+        label,
+        catalogId: selection?.id ?? duplicateLabel.catalogId ?? undefined,
+        issuer: input?.issuer ?? selection?.issuer ?? undefined,
+      });
+    }
+
     const secret = generateTotpSecret();
     const accountName = input?.accountName ?? user.email ?? 'Account';
-    const issuer = input?.issuer ?? null;
-    const label = await this.chooseTotpLabel(userId, input?.label);
-    const duplicateLabel = this.normalizeFactorLabel(input?.label)
-      ? await this.findTotpFactorByLabel(userId, label)
-      : null;
-    if (duplicateLabel) {
-      return this.regenerateTotpFactor(userId, duplicateLabel.id, { ...input, label });
-    }
+    const issuer = this.normalizeFactorLabel(input?.issuer ?? selection?.issuer ?? null);
     const ticket = randomBytes(24).toString('hex');
     const expiresAt = new Date(Date.now() + TOTP_ENROLLMENT_TTL_MIN * 60 * 1000);
 
@@ -483,6 +599,7 @@ export class SecurityService {
         secret,
         enabled: false,
         status: 'PENDING',
+        catalogId: selection?.id ?? null,
         metadata: {
           enrollment: {
             ticket,
@@ -499,6 +616,11 @@ export class SecurityService {
       factorId: factor.id,
       mode: 'create',
       expiresAt: expiresAt.toISOString(),
+      label,
+      type: 'totp',
+      catalogId: selection?.id ?? null,
+      status: 'pending',
+      catalog: catalogDetails,
     };
     security.pendingTotp = pendingEntry;
     const nextMetadata = { ...metadata, security } as Prisma.JsonObject;
@@ -516,6 +638,7 @@ export class SecurityService {
       uri,
       qrCodeDataUrl,
       expiresAt: expiresAt.toISOString(),
+      catalogId: selection?.id ?? null,
     } satisfies SecurityTotpEnrollmentPrompt;
   }
 
@@ -588,7 +711,7 @@ export class SecurityService {
     } satisfies SecurityTotpEnrollmentResult;
   }
 
-  async regenerateTotpFactor(userId: string, factorId: string, input?: { label?: string; issuer?: string; accountName?: string }): Promise<SecurityTotpEnrollmentPrompt> {
+  async regenerateTotpFactor(userId: string, factorId: string, input?: TotpEnrollmentInput): Promise<SecurityTotpEnrollmentPrompt> {
     const [user, factor] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: userId } }),
       this.prisma.userMfaFactor.findFirst({ where: { id: factorId, userId } }),
@@ -606,10 +729,13 @@ export class SecurityService {
       delete security.pendingTotp;
     }
 
-    const secret = generateTotpSecret();
-    const accountName = this.normalizeFactorLabel(input?.accountName) ?? user.email ?? 'Account';
-    const issuer = this.normalizeFactorLabel(input?.issuer) ?? null;
-    const label = this.normalizeFactorLabel(input?.label) ?? factor.label ?? DEFAULT_TOTP_LABEL;
+    const selection = await this.resolveTotpCatalogSelection(input?.catalogId);
+    const selectionCatalogDetails = selection ? this.cloneCatalogDetails(selection) : null;
+    const catalogDetails = selectionCatalogDetails ?? await this.loadCatalogDetails(factor.catalogId ?? null);
+  const secret = generateTotpSecret();
+  const accountName = this.normalizeFactorLabel(input?.accountName) ?? user.email ?? 'Account';
+  const issuer = this.normalizeFactorLabel(input?.issuer ?? selection?.issuer ?? null);
+  const label = this.normalizeFactorLabel(input?.label ?? selection?.label ?? factor.label ?? null) ?? factor.label ?? DEFAULT_TOTP_LABEL;
     const ticket = randomBytes(24).toString('hex');
     const expiresAt = new Date(Date.now() + TOTP_ENROLLMENT_TTL_MIN * 60 * 1000);
 
@@ -627,6 +753,7 @@ export class SecurityService {
       where: { id: factor.id },
       data: {
         label,
+        catalogId: selection?.id ?? factor.catalogId ?? null,
         metadata: this.prepareMetadataPayload(factorMetadata),
       },
     });
@@ -636,6 +763,11 @@ export class SecurityService {
       factorId: factor.id,
       mode: 'rotate',
       expiresAt: expiresAt.toISOString(),
+      label,
+      type: 'totp',
+      catalogId: selection?.id ?? factor.catalogId ?? null,
+      status: this.mapDbFactorStatus(factor.status),
+      catalog: this.cloneCatalogDetails(catalogDetails),
     };
     security.pendingTotp = pendingEntry;
     const nextMetadata = { ...metadata, security } as Prisma.JsonObject;
@@ -653,12 +785,29 @@ export class SecurityService {
       uri,
       qrCodeDataUrl,
       expiresAt: expiresAt.toISOString(),
+      catalogId: selection?.id ?? factor.catalogId ?? null,
     } satisfies SecurityTotpEnrollmentPrompt;
   }
 
   async disableMfaFactor(userId: string, factorId: string): Promise<void> {
-    const factor = await this.prisma.userMfaFactor.findFirst({ where: { id: factorId, userId } });
+    const [factor, user] = await Promise.all([
+      this.prisma.userMfaFactor.findFirst({ where: { id: factorId, userId } }),
+      this.prisma.user.findUnique({ where: { id: userId } }),
+    ]);
     if (!factor) throw new SecurityOperationError(404, ERROR_FACTOR_NOT_FOUND);
+    if (!user) throw new SecurityOperationError(404, ERROR_USER_NOT_FOUND);
+    const userMetadata = this.cloneMetadata((user as unknown as { metadata?: Prisma.JsonValue | null }).metadata);
+    const security = this.asRecord(userMetadata.security) ?? {};
+    const pending = this.readPendingTotp(security);
+    if (pending) {
+      const expired = this.isPendingEnrollmentExpired(pending);
+      if (!expired && pending.factorId === factorId) {
+        throw new SecurityOperationError(409, ERROR_PENDING_ENROLLMENT);
+      }
+      if (expired) {
+        await this.cleanupExpiredPending(userId, userMetadata, security, pending);
+      }
+    }
     const metadata = this.cloneMetadata((factor as unknown as { metadata?: Prisma.JsonValue | null }).metadata ?? null);
     const cleanedMetadata = this.prepareMetadataPayload(this.stripEnrollmentMetadata(metadata));
     await this.prisma.userMfaFactor.update({ where: { id: factorId }, data: { enabled: false, status: 'DISABLED', metadata: cleanedMetadata } });
@@ -668,10 +817,25 @@ export class SecurityService {
   }
 
   async enableMfaFactor(userId: string, factorId: string): Promise<void> {
-    const factor = await this.prisma.userMfaFactor.findFirst({ where: { id: factorId, userId } });
+    const [factor, user] = await Promise.all([
+      this.prisma.userMfaFactor.findFirst({ where: { id: factorId, userId } }),
+      this.prisma.user.findUnique({ where: { id: userId } }),
+    ]);
     if (!factor) throw new SecurityOperationError(404, ERROR_FACTOR_NOT_FOUND);
     if (factor.status === 'REVOKED') {
       throw new SecurityOperationError(400, ERROR_FACTOR_REVOKED);
+    }
+    if (!user) throw new SecurityOperationError(404, ERROR_USER_NOT_FOUND);
+    const userMetadata = this.cloneMetadata((user as unknown as { metadata?: Prisma.JsonValue | null }).metadata);
+    const security = this.asRecord(userMetadata.security) ?? {};
+    const pending = this.readPendingTotp(security);
+    if (pending) {
+      const expired = this.isPendingEnrollmentExpired(pending);
+      const targetsSameFactor = pending.factorId === factorId;
+      if (!targetsSameFactor && !expired) {
+        throw new SecurityOperationError(409, ERROR_PENDING_ENROLLMENT);
+      }
+      await this.cleanupExpiredPending(userId, userMetadata, security, pending);
     }
     const metadata = this.cloneMetadata((factor as unknown as { metadata?: Prisma.JsonValue | null }).metadata ?? null);
     const cleanedMetadata = this.prepareMetadataPayload(this.stripEnrollmentMetadata(metadata));
@@ -682,20 +846,32 @@ export class SecurityService {
   }
 
   async deleteMfaFactor(userId: string, factorId: string): Promise<void> {
-    const factor = await this.prisma.userMfaFactor.findFirst({ where: { id: factorId, userId } });
+    const [factor, user] = await Promise.all([
+      this.prisma.userMfaFactor.findFirst({ where: { id: factorId, userId } }),
+      this.prisma.user.findUnique({ where: { id: userId } }),
+    ]);
     if (!factor) throw new SecurityOperationError(404, ERROR_FACTOR_NOT_FOUND);
+    if (!user) throw new SecurityOperationError(404, ERROR_USER_NOT_FOUND);
+    const userMetadata = this.cloneMetadata((user as unknown as { metadata?: Prisma.JsonValue | null }).metadata);
+    const security = this.asRecord(userMetadata.security) ?? {};
+    const pending = this.readPendingTotp(security);
+    if (pending) {
+      const expired = this.isPendingEnrollmentExpired(pending);
+      if (!expired && pending.factorId === factorId) {
+        throw new SecurityOperationError(409, ERROR_PENDING_ENROLLMENT);
+      }
+      if (expired) {
+        await this.cleanupExpiredPending(userId, userMetadata, security, pending);
+      }
+    }
 
     await this.prisma.userBackupCode.deleteMany({ where: { userId, factorId } }).catch(() => {});
     await this.prisma.userMfaFactor.delete({ where: { id: factor.id } });
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return;
-    const metadata = this.cloneMetadata((user as unknown as { metadata?: Prisma.JsonValue | null }).metadata);
-    const security = this.asRecord(metadata.security) ?? {};
-    const pending = this.readPendingTotp(security);
-    if (pending?.factorId === factorId) {
+    const pendingAfterDelete = this.readPendingTotp(security);
+    if (pendingAfterDelete?.factorId === factorId) {
       delete security.pendingTotp;
-      const nextMetadata = { ...metadata, security } as Prisma.JsonObject;
+      const nextMetadata = { ...userMetadata, security } as Prisma.JsonObject;
       await this.prisma.user.update({ where: { id: userId }, data: { metadata: nextMetadata } as Prisma.UserUpdateInput }).catch(() => {});
     }
   }
@@ -718,7 +894,8 @@ export class SecurityService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return null;
 
-    const existingRecovery = this.normalizeRecoverySettings(this.extractSecurityMetadata(user).recovery, user);
+    const securityMetadata = this.extractSecurityMetadata(user);
+    const existingRecovery = this.normalizeRecoverySettings(securityMetadata.recovery, user);
     const merged = this.mergeRecoverySettings(existingRecovery, payload);
     const normalized = this.normalizeRecoverySettings(merged, user);
 
@@ -739,7 +916,8 @@ export class SecurityService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return null;
 
-    const existingAlerts = this.normalizeAlertSettings(this.extractSecurityMetadata(user).alerts);
+    const securityMetadata = this.extractSecurityMetadata(user);
+    const existingAlerts = this.normalizeAlertSettings(securityMetadata.alerts);
     const merged = this.mergeAlertSettings(existingAlerts, payload);
     const normalized = this.normalizeAlertSettings(merged);
 
@@ -961,16 +1139,24 @@ export class SecurityService {
     };
   }
 
-  private buildMfaSnapshot(metadataSnapshot: AccountSecuritySnapshot['mfa'], dbFactors: UserMfaFactor[], backupCodes: UserBackupCode[]): AccountSecuritySnapshot['mfa'] {
+  private buildMfaSnapshot(metadataSnapshot: AccountSecuritySnapshot['mfa'], pending: PendingTotpEnrollment | null, dbFactors: UserMfaFactor[], backupCodes: UserBackupCode[]): AccountSecuritySnapshot['mfa'] {
+    const recommendations = metadataSnapshot?.recommendations?.length
+      ? metadataSnapshot.recommendations
+      : DEFAULT_RECOMMENDATIONS.map(rec => ({ ...rec }));
+
     if (!dbFactors.length) {
-      if (!backupCodes.length) return metadataSnapshot;
+      if (!backupCodes.length) {
+        const pendingEnrollment = this.buildPendingEnrollmentSnapshot(pending, metadataSnapshot.factors) ?? metadataSnapshot.pendingEnrollment ?? null;
+        return { factors: metadataSnapshot.factors, recommendations, pendingEnrollment };
+      }
       const backupSummary = this.summarizeBackupCodes(backupCodes);
       const factors = metadataSnapshot.factors.map(factor => (
         factor.type === 'backup_codes'
           ? { ...factor, enabled: backupSummary.unusedCount > 0, remainingCodes: backupSummary.unusedCount }
           : factor
       ));
-      return { ...metadataSnapshot, factors };
+      const pendingEnrollment = this.buildPendingEnrollmentSnapshot(pending, factors) ?? metadataSnapshot.pendingEnrollment ?? null;
+      return { factors, recommendations, pendingEnrollment };
     }
 
     const backupSummary = this.summarizeBackupCodes(backupCodes);
@@ -1006,11 +1192,9 @@ export class SecurityService {
       });
     }
 
-    const recommendations = metadataSnapshot?.recommendations?.length
-      ? metadataSnapshot.recommendations
-      : DEFAULT_RECOMMENDATIONS.map(rec => ({ ...rec }));
+    const pendingEnrollment = this.buildPendingEnrollmentSnapshot(pending, factors) ?? metadataSnapshot.pendingEnrollment ?? null;
 
-    return { factors, recommendations };
+    return { factors, recommendations, pendingEnrollment };
   }
 
   private mergeRecoveryWithBackupCodes(recovery: SecurityRecoverySettings, backupCodes: UserBackupCode[]): SecurityRecoverySettings {
@@ -1041,6 +1225,40 @@ export class SecurityService {
     return { total: backupCodes.length, unusedCount, perFactor, latestCreatedAt: latest };
   }
 
+  private buildPendingEnrollmentSnapshot(pending: PendingTotpEnrollment | null, factors: SecurityMfaFactor[]): SecurityPendingMfaEnrollment | null {
+    if (!pending || !pending.ticket || !pending.factorId) return null;
+    const factor = factors.find(entry => entry.id === pending.factorId);
+    const fallbackType: SecurityMfaFactorType = factor?.type ?? pending.type ?? 'totp';
+    const normalizedPendingLabel = this.normalizeFactorLabel(pending.label ?? null);
+    const label = factor?.label
+      ?? normalizedPendingLabel
+      ?? (fallbackType === 'totp' ? DEFAULT_TOTP_LABEL : fallbackType.replace('_', ' ').replace(/\b\w/g, ch => ch.toUpperCase()));
+    const catalogId = factor?.catalogId ?? pending.catalogId ?? null;
+    const status = this.normalizeSecurityFactorStatus(
+      factor?.status ?? pending.status,
+      pending.mode === 'create' ? 'pending' : 'active',
+    );
+    const catalog = pending.catalog ?? null;
+
+    return {
+      ticket: pending.ticket,
+      factorId: pending.factorId,
+      mode: pending.mode,
+      type: fallbackType,
+      label,
+      catalogId,
+      expiresAt: pending.expiresAt ?? null,
+      status,
+      catalog,
+      description: catalog?.description ?? null,
+      helper: catalog?.helper ?? null,
+      docsUrl: catalog?.docsUrl ?? null,
+      tags: catalog?.tags ? [...catalog.tags] : null,
+      issuer: catalog?.issuer ?? null,
+      metadata: catalog?.metadata ?? null,
+    } satisfies SecurityPendingMfaEnrollment;
+  }
+
   private mapDbFactorToSnapshot(factor: UserMfaFactor, remainingCodes: number | null): SecurityMfaFactor {
     const type = this.mapDbFactorType(factor.type);
     const devices = Array.isArray(factor.devices)
@@ -1057,6 +1275,7 @@ export class SecurityService {
       devices,
       remainingCodes,
       metadata: (factor.metadata as JsonValue) ?? null,
+      catalogId: factor.catalogId ?? null,
     } satisfies SecurityMfaFactor;
   }
 
@@ -1100,7 +1319,7 @@ export class SecurityService {
     return 'weak';
   }
 
-  private extractSecurityMetadata(user: User): { mfa: AccountSecuritySnapshot['mfa']; recovery: unknown; alerts: unknown } {
+  private extractSecurityMetadata(user: User): { mfa: AccountSecuritySnapshot['mfa']; recovery: unknown; alerts: unknown; pendingTotp: PendingTotpEnrollment | null } {
     const metadata = this.asRecord((user as unknown as { metadata?: Prisma.JsonValue | null }).metadata) ?? {};
     const security = this.asRecord(metadata.security) ?? metadata;
     const notifications = this.asRecord(metadata.notifications) ?? null;
@@ -1110,7 +1329,7 @@ export class SecurityService {
     if (!alerts && notifications) {
       alerts = this.buildAlertsFromNotificationTopics(notifications) ?? null;
     }
-    return { mfa, recovery, alerts };
+    return { mfa, recovery, alerts, pendingTotp: this.readPendingTotp(security) };
   }
 
   private normalizeMfaSettings(raw: unknown): AccountSecuritySnapshot['mfa'] {
@@ -1134,6 +1353,7 @@ export class SecurityService {
         devices: [],
         remainingCodes: null,
         metadata: null,
+        catalogId: null,
       });
     }
 
@@ -1182,6 +1402,7 @@ export class SecurityService {
       devices,
       remainingCodes: record.remainingCodes == null ? null : this.coerceNumber(record.remainingCodes, 0),
       metadata: (record.metadata as JsonValue) ?? null,
+      catalogId: record.catalogId ? this.coerceString(record.catalogId) : null,
     };
   }
 
@@ -1477,7 +1698,15 @@ export class SecurityService {
     if (!ticket || !factorId) return null;
     const mode: PendingTotpEnrollment['mode'] = pending.mode === 'rotate' ? 'rotate' : 'create';
     const expiresAt = this.coerceString(pending.expiresAt) || null;
-    return { ticket, factorId, mode, expiresAt };
+    const rawType = this.coerceString(pending.type).toLowerCase();
+    const type: SecurityMfaFactorType = rawType === 'sms' || rawType === 'push' || rawType === 'hardware_key' || rawType === 'backup_codes'
+      ? rawType
+      : 'totp';
+    const label = this.normalizeFactorLabel(this.coerceString(pending.label) || null);
+    const catalogId = this.normalizeCatalogId(this.coerceString(pending.catalogId) || null);
+    const status = this.normalizeSecurityFactorStatus(pending.status, mode === 'create' ? 'pending' : 'active');
+    const catalog = this.normalizeCatalogDetails(pending.catalog ?? null);
+    return { ticket, factorId, mode, expiresAt, type, label, catalogId, status, catalog };
   }
 
   private async discardPendingTotp(userId: string, pending: PendingTotpEnrollment | null): Promise<void> {
@@ -1537,6 +1766,39 @@ export class SecurityService {
     return `${DEFAULT_TOTP_LABEL} #${count + 1}`;
   }
 
+  private async findTotpFactorByCatalog(userId: string, catalogId: string): Promise<UserMfaFactor | null> {
+    const normalized = this.normalizeCatalogId(catalogId);
+    if (!normalized) return null;
+    return this.prisma.userMfaFactor.findFirst({
+      where: { userId, catalogId: normalized, status: { not: 'REVOKED' } },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  private async resolveTotpCatalogSelection(catalogId?: string | null): Promise<CatalogSelection | null> {
+    const normalized = this.normalizeCatalogId(catalogId);
+    if (!normalized) return null;
+    const entry = await this.prisma.authenticatorCatalog.findFirst({
+      where: { id: normalized, isArchived: false },
+      select: {
+        id: true,
+        label: true,
+        description: true,
+        helper: true,
+        docsUrl: true,
+        issuer: true,
+        tags: true,
+        metadata: true,
+        factorType: true,
+      },
+    });
+    if (!entry || (entry.factorType ?? '').toLowerCase() !== 'totp') {
+      throw new SecurityOperationError(400, 'invalid authenticator catalog entry');
+    }
+    const details = this.buildCatalogDetailsFromRecord(entry);
+    return { ...details, factorType: entry.factorType } satisfies CatalogSelection;
+  }
+
   private generateBackupCodes(): { codes: string[]; hashed: { code: string; hash: string }[] } {
     const codes: string[] = [];
     const hashed: { code: string; hash: string }[] = [];
@@ -1561,6 +1823,140 @@ export class SecurityService {
 
   private hashBackupCode(code: string): string {
     return createHash('sha256').update(code).digest('hex');
+  }
+
+  private normalizeCatalogId(value?: string | null): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+
+  private normalizeFactorTypeFilter(value?: string | null): MfaFactorType | null {
+    if (typeof value !== 'string') return null;
+    const upper = value.trim().toUpperCase();
+    if (!upper) return null;
+    const allowed: MfaFactorType[] = ['TOTP', 'SMS', 'PUSH', 'HARDWARE_KEY', 'BACKUP_CODES'];
+    return allowed.includes(upper as MfaFactorType) ? (upper as MfaFactorType) : null;
+  }
+
+  private isPendingEnrollmentExpired(pending: PendingTotpEnrollment | null): boolean {
+    if (!pending) return false;
+    if (!pending.expiresAt) return false;
+    const expires = Date.parse(String(pending.expiresAt));
+    if (Number.isNaN(expires)) return false;
+    return expires <= Date.now();
+  }
+
+  private async cleanupExpiredPending(
+    userId: string,
+    metadata: Record<string, any>,
+    security: Record<string, any>,
+    pending: PendingTotpEnrollment,
+  ): Promise<void> {
+    await this.discardPendingTotp(userId, pending);
+    delete security.pendingTotp;
+    const nextMetadata = { ...metadata, security } as Prisma.JsonObject;
+    try {
+      await this.prisma.user.update({ where: { id: userId }, data: { metadata: nextMetadata } as Prisma.UserUpdateInput });
+    } catch {
+      // best-effort cleanup; ignore persistence errors
+    }
+  }
+
+  private normalizeCatalogTags(value: unknown): string[] | null {
+    const tags = this.coerceStringArray(value, []);
+    return tags.length ? tags : null;
+  }
+
+  private cloneCatalogDetails(details?: SecurityAuthenticatorCatalogDetails | null): SecurityAuthenticatorCatalogDetails | null {
+    if (!details) return null;
+    return {
+      id: details.id,
+      label: details.label,
+      description: details.description ?? null,
+      helper: details.helper ?? null,
+      docsUrl: details.docsUrl ?? null,
+      tags: details.tags ? [...details.tags] : null,
+      issuer: details.issuer ?? null,
+      metadata: details.metadata ?? null,
+    } satisfies SecurityAuthenticatorCatalogDetails;
+  }
+
+  private buildCatalogDetailsFromRecord(record: {
+    id: string;
+    label: string;
+    description: string | null;
+    helper: string | null;
+    docsUrl: string | null;
+    issuer: string | null;
+    tags: Prisma.JsonValue | null;
+    metadata: Prisma.JsonValue | null;
+  }): SecurityAuthenticatorCatalogDetails {
+    return {
+      id: record.id,
+      label: record.label,
+      description: record.description ?? null,
+      helper: record.helper ?? null,
+      docsUrl: record.docsUrl ?? null,
+      tags: this.normalizeCatalogTags(record.tags),
+      issuer: record.issuer ?? null,
+      metadata: (record.metadata as JsonValue) ?? null,
+    } satisfies SecurityAuthenticatorCatalogDetails;
+  }
+
+  private buildCatalogEntriesFromSeeds(factorType?: MfaFactorType | null): SecurityAuthenticatorCatalogEntry[] {
+    return DEFAULT_AUTHENTICATOR_CATALOG
+      .filter(seed => !factorType || seed.factorType === factorType)
+      .map((seed, index) => ({
+        id: seed.id,
+        label: seed.label,
+        description: seed.description ?? null,
+        helper: seed.helper ?? null,
+        docsUrl: seed.docsUrl ?? null,
+        issuer: seed.issuer ?? null,
+        tags: seed.tags?.length ? [...seed.tags] : null,
+        metadata: (seed.metadata ?? null) as JsonValue | null,
+        factorType: seed.factorType as MfaFactorType,
+        sortOrder: typeof seed.sortOrder === 'number' ? seed.sortOrder : (index + 1) * 10,
+        isArchived: false,
+      } satisfies SecurityAuthenticatorCatalogEntry));
+  }
+
+  private normalizeCatalogDetails(value: unknown): SecurityAuthenticatorCatalogDetails | null {
+    const record = this.asRecord(value);
+    if (!record) return null;
+    const id = this.normalizeCatalogId(this.coerceString(record.id));
+    if (!id) return null;
+    return {
+      id,
+      label: this.coerceString(record.label, 'Authenticator'),
+      description: record.description ? this.coerceString(record.description) : null,
+      helper: record.helper ? this.coerceString(record.helper) : null,
+      docsUrl: record.docsUrl ? this.coerceString(record.docsUrl) : null,
+      tags: this.normalizeCatalogTags(record.tags),
+      issuer: record.issuer ? this.coerceString(record.issuer) : null,
+      metadata: (record.metadata as JsonValue) ?? null,
+    } satisfies SecurityAuthenticatorCatalogDetails;
+  }
+
+  private async loadCatalogDetails(catalogId?: string | null): Promise<SecurityAuthenticatorCatalogDetails | null> {
+    const normalized = this.normalizeCatalogId(catalogId);
+    if (!normalized) return null;
+    const entry = await this.prisma.authenticatorCatalog.findFirst({
+      where: { id: normalized, isArchived: false },
+      select: {
+        id: true,
+        label: true,
+        description: true,
+        helper: true,
+        docsUrl: true,
+        issuer: true,
+        tags: true,
+        metadata: true,
+      },
+    });
+    if (!entry) return null;
+    return this.buildCatalogDetailsFromRecord(entry);
   }
 
   private cloneMetadata(value: Prisma.JsonValue | null | undefined): Record<string, any> {

@@ -17,6 +17,7 @@ function resolveLocationService(req: any): LocationService | null {
 }
 
 const router = express.Router();
+const LOCATIONS_WRITE_PERMISSION = 'locations.write';
 
 const LocationSchema = z.object({ shelterId: z.string().optional(), code: z.string().min(1), description: z.string().optional(), capacity: z.number().int().optional(), notes: z.string().optional() });
 
@@ -27,7 +28,7 @@ router.get('/', async (req, res) => {
   res.json(items);
 });
 
-router.post('/', requirePermission('locations.write'), async (req, res) => {
+router.post('/', requirePermission(LOCATIONS_WRITE_PERMISSION), async (req, res) => {
   const parsed = LocationSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
   // Build a clean create object without undefined fields so Prisma's XOR types are satisfied
@@ -54,7 +55,7 @@ router.get('/:id', async (req, res) => {
   res.json(item);
 });
 
-router.put('/:id', requirePermission('locations.write'), async (req, res) => {
+router.put('/:id', requirePermission(LOCATIONS_WRITE_PERMISSION), async (req, res) => {
   const id = req.params.id;
   const parsed = LocationSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
@@ -71,7 +72,7 @@ router.put('/:id', requirePermission('locations.write'), async (req, res) => {
   res.json(updated);
 });
 
-router.delete('/:id', requirePermission('locations.write'), async (req, res) => {
+router.delete('/:id', requirePermission(LOCATIONS_WRITE_PERMISSION), async (req, res) => {
   const id = req.params.id;
   const svc = resolveLocationService(req);
   if (svc?.delete) {

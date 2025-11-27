@@ -50,6 +50,7 @@
     "@tailwindcss/vite": "^4.1.13",
     "@tanstack/react-query": "^5.4.0",
     "@tanstack/react-query-devtools": "^5.4.0",
+    "@petshelter/authenticator-catalog": "file:../packages/authenticator-catalog",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

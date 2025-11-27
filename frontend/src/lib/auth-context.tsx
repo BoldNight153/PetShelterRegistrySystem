@@ -98,7 +98,8 @@ function AuthInner({ children }: { children: React.ReactNode }) {
       }
     })()
     // Dev helper: fetch /auth/mode and log backend-visible cookie/state to aid debugging
-    if (import.meta.env.DEV) {
+    const shouldFetchAuthMode = import.meta.env.DEV && !(import.meta as any)?.env?.TEST
+    if (shouldFetchAuthMode) {
       void (async () => {
         try {
           const r = await fetch('/auth/mode', { credentials: 'include' })

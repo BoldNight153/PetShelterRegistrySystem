@@ -9,6 +9,7 @@ function resolveMedicalService(req: any): MedicalService | null {
 }
 
 const router = express.Router();
+const MEDICAL_WRITE_PERMISSION = 'medical.write';
 
 type MedicalService = {
   list?: (limit?: number) => Promise<unknown[]>;
@@ -27,7 +28,7 @@ router.get('/', async (req, res) => {
   res.json(items);
 });
 
-router.post('/', requirePermission('medical.write'), async (req, res) => {
+router.post('/', requirePermission(MEDICAL_WRITE_PERMISSION), async (req, res) => {
   const parsed = MedicalSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
   const data = parsed.data;
@@ -49,7 +50,7 @@ router.get('/:id', async (req, res) => {
   res.json(item);
 });
 
-router.put('/:id', requirePermission('medical.write'), async (req, res) => {
+router.put('/:id', requirePermission(MEDICAL_WRITE_PERMISSION), async (req, res) => {
   const id = req.params.id;
   const parsed = MedicalSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
@@ -59,7 +60,7 @@ router.put('/:id', requirePermission('medical.write'), async (req, res) => {
   res.json(updated);
 });
 
-router.delete('/:id', requirePermission('medical.write'), async (req, res) => {
+router.delete('/:id', requirePermission(MEDICAL_WRITE_PERMISSION), async (req, res) => {
   const id = req.params.id;
   const svc = resolveMedicalService(req);
   if (svc?.delete) {

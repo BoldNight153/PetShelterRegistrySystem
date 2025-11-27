@@ -4,6 +4,13 @@ import { useServices } from '@/services/hooks'
 import type { Role, Permission } from '@/services/interfaces/role.interface'
 import type { UserSummaryWithLock } from '@/services/interfaces/user.interface'
 import type { SettingsMap, JsonValue } from '@/services/interfaces/types'
+import { AUTHENTICATOR_CATALOG_QUERY_KEY } from '@/services/queryKeys'
+import type {
+  AdminAuthenticatorCatalogRecord,
+  CreateAdminAuthenticatorInput,
+  UpdateAdminAuthenticatorInput,
+} from '@/services/interfaces/admin.interface'
+export { useAuthenticatorCatalog, useAuthenticators } from '@/hooks/useAuthenticatorCatalog'
 
 export function useRoles() {
   const services = useServices()
@@ -96,5 +103,41 @@ export function useSaveAdminSettings() {
   return useMutation<unknown, Error, { category: string; entries: Array<{ key: string; value: JsonValue }> }>({
     mutationFn: ({ category, entries }) => services.admin!.settings.saveSettings(category, entries),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['adminSettings'] }),
+  })
+}
+
+export function useCreateAuthenticator() {
+  const services = useServices()
+  const qc = useQueryClient()
+  return useMutation<AdminAuthenticatorCatalogRecord, Error, CreateAdminAuthenticatorInput>({
+    mutationFn: (input) => services.admin!.authenticators.create(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [AUTHENTICATOR_CATALOG_QUERY_KEY] }),
+  })
+}
+
+export function useUpdateAuthenticator() {
+  const services = useServices()
+  const qc = useQueryClient()
+  return useMutation<AdminAuthenticatorCatalogRecord, Error, { id: string; input: UpdateAdminAuthenticatorInput }>({
+    mutationFn: ({ id, input }) => services.admin!.authenticators.update(id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [AUTHENTICATOR_CATALOG_QUERY_KEY] }),
+  })
+}
+
+export function useArchiveAuthenticator() {
+  const services = useServices()
+  const qc = useQueryClient()
+  return useMutation<void, Error, string>({
+    mutationFn: (id) => services.admin!.authenticators.archive(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [AUTHENTICATOR_CATALOG_QUERY_KEY] }),
+  })
+}
+
+export function useRestoreAuthenticator() {
+  const services = useServices()
+  const qc = useQueryClient()
+  return useMutation<void, Error, string>({
+    mutationFn: (id) => services.admin!.authenticators.restore(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [AUTHENTICATOR_CATALOG_QUERY_KEY] }),
   })
 }

@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../index';
 import { PrismaClient, MfaFactorType } from '@prisma/client';
 import { authenticator } from 'otplib';
+import { resetRateLimits } from './helpers/rateLimit';
 
 jest.setTimeout(30000);
 
@@ -32,6 +33,10 @@ async function fetchCsrf() {
 }
 
 describe('Auth MFA flow', () => {
+  beforeEach(async () => {
+    await resetRateLimits();
+  });
+
   beforeAll(async () => {
     const { token, cookie } = await fetchCsrf();
     const register = await agent

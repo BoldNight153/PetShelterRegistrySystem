@@ -2,6 +2,8 @@ import { MfaFactorType, OwnerRole, PetStatus, PrismaClient, Sex } from '@prisma/
 import { createHash } from 'crypto'
 import argon2 from 'argon2'
 import { DEFAULT_AUDIT_SETTINGS } from '../src/types/auditSettings'
+import { DEFAULT_AUTH_SETTINGS } from '../src/types/authSettings'
+import { DEFAULT_AUTHENTICATOR_CATALOG } from '@petshelter/authenticator-catalog';
 
 // Declare minimal process type to appease TS in environments without @types/node
 declare const process: { env: Record<string, string | undefined> }
@@ -832,6 +834,8 @@ async function main() {
   console.log(`Seeded demo users with password: ${demoPassword}`)
   await seedSecurityArtifactsForUsers([adminEmail, ...demoUsers.map(u => u.email)])
 
+  await seedAuthenticatorCatalog()
+
   // Seed default application settings if not present
   const defaultSettings: Record<string, Record<string, any>> = {
     general: {
@@ -843,8 +847,7 @@ async function main() {
       retentionDays: 7,
     },
     auth: {
-      google: true,
-      github: true,
+      ...DEFAULT_AUTH_SETTINGS,
     },
     docs: {
       showPublicDocsLink: true,
@@ -1126,6 +1129,43 @@ async function main() {
 
   for (const menu of menusToSeed) {
     await syncMenu(menu)
+  }
+}
+
+async function seedAuthenticatorCatalog() {
+  for (const entry of DEFAULT_AUTHENTICATOR_CATALOG) {
+    await prisma.authenticatorCatalog.upsert({
+      where: { id: entry.id },
+      update: {
+        label: entry.label,
+        description: entry.description,
+        factorType: entry.factorType,
+        issuer: entry.issuer ?? null,
+        helper: entry.helper ?? null,
+        docsUrl: entry.docsUrl ?? null,
+        tags: entry.tags ?? null,
+        metadata: entry.metadata ?? undefined,
+        sortOrder: entry.sortOrder ?? 0,
+        isArchived: false,
+        isSystem: true,
+        archivedAt: null,
+        archivedBy: null,
+      },
+      create: {
+        id: entry.id,
+        label: entry.label,
+        description: entry.description,
+        factorType: entry.factorType,
+        issuer: entry.issuer ?? null,
+        helper: entry.helper ?? null,
+        docsUrl: entry.docsUrl ?? null,
+        tags: entry.tags ?? null,
+        metadata: entry.metadata ?? undefined,
+        sortOrder: entry.sortOrder ?? 0,
+        isArchived: false,
+        isSystem: true,
+      },
+    })
   }
 }
 

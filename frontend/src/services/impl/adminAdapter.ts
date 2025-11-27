@@ -6,13 +6,17 @@ import type {
   ISettingsService,
   IAdminService,
   IAdminNavigationService,
+  IAdminAuthenticatorCatalogService,
   AdminMenu,
   AdminMenuItem,
+  AdminMenuRecord,
+  AdminAuthenticatorCatalogRecord,
   CreateAdminMenuInput,
   UpdateAdminMenuInput,
   CreateAdminMenuItemInput,
   UpdateAdminMenuItemInput,
-  AdminMenuRecord,
+  CreateAdminAuthenticatorInput,
+  UpdateAdminAuthenticatorInput,
 } from '../interfaces/admin.interface';
 import type { JsonValue } from '@/services/interfaces/types';
 
@@ -68,12 +72,36 @@ class AdminNavigationAdapter implements IAdminNavigationService {
   }
 }
 
+class AdminAuthenticatorCatalogAdapter implements IAdminAuthenticatorCatalogService {
+  list(options?: { includeArchived?: boolean }): Promise<AdminAuthenticatorCatalogRecord[]> {
+    return api.fetchAdminAuthenticators(options?.includeArchived);
+  }
+
+  create(input: CreateAdminAuthenticatorInput): Promise<AdminAuthenticatorCatalogRecord> {
+    return api.createAdminAuthenticator(input);
+  }
+
+  update(id: string, input: UpdateAdminAuthenticatorInput): Promise<AdminAuthenticatorCatalogRecord> {
+    return api.updateAdminAuthenticator(id, input);
+  }
+
+  archive(id: string): Promise<void> {
+    return api.archiveAdminAuthenticator(id);
+  }
+
+  restore(id: string): Promise<void> {
+    return api.restoreAdminAuthenticator(id);
+  }
+}
+
 export class AdminAdapter implements IAdminService {
   public settings: ISettingsService;
   public navigation: IAdminNavigationService;
+  public authenticators: IAdminAuthenticatorCatalogService;
   constructor() {
     this.settings = new SettingsAdapter();
     this.navigation = new AdminNavigationAdapter();
+    this.authenticators = new AdminAuthenticatorCatalogAdapter();
   }
 }
 

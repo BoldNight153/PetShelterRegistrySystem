@@ -1,11 +1,16 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import AdminSettingsPage from './settings'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import NotificationsSettingsPage from '@/pages/settings/account/notifications'
-import type { IAdminNavigationService } from '@/services/interfaces/admin.interface'
+import type {
+  IAdminNavigationService,
+  IAdminAuthenticatorCatalogService,
+  AdminAuthenticatorCatalogRecord,
+  IAdminService,
+} from '@/services/interfaces/admin.interface'
 import type { INavigationService } from '@/services/interfaces/navigation.interface'
 import { DEFAULT_NOTIFICATION_SETTINGS } from '@/types/notifications'
 
@@ -16,16 +21,25 @@ vi.mock('@/lib/auth-context', () => {
 })
 
 const saveSettingsMock = vi.fn().mockResolvedValue({ ok: true })
+const DEFAULT_SECURITY_SETTINGS = {
+  sessionMaxAgeMin: 60,
+  requireEmailVerification: true,
+  loginIpWindowSec: 60,
+  loginIpLimit: 20,
+  loginLockWindowSec: 900,
+  loginLockThreshold: 5,
+  loginLockDurationMin: 15,
+  passwordHistoryLimit: 10,
+}
+
 const loadSettingsMock = vi.fn().mockResolvedValue({
-  security: {
-    sessionMaxAgeMin: 60,
-    requireEmailVerification: true,
-    loginIpWindowSec: 60,
-    loginIpLimit: 20,
-    loginLockWindowSec: 900,
-    loginLockThreshold: 5,
-    loginLockDurationMin: 15,
-    passwordHistoryLimit: 10,
+  security: { ...DEFAULT_SECURITY_SETTINGS },
+  auth: {
+    mode: 'session',
+    google: true,
+    github: false,
+    enforceMfa: 'recommended',
+    authenticators: ['google', 'microsoft', 'backup_codes'],
   },
 })
 
@@ -46,6 +60,14 @@ const navigationMenuMock = {
           isPublished: true,
           isVisible: true,
           meta: { settingsCategory: 'security' },
+        },
+        {
+          id: 'auth-core',
+          title: 'Authentication',
+          url: '/settings/security/authentication',
+          isPublished: true,
+          isVisible: true,
+          meta: { settingsCategory: 'auth' },
         },
         {
           id: 'profile-link',
@@ -139,10 +161,107 @@ const adminNavigationServiceStub: IAdminNavigationService = {
   deleteMenuItem: adminDeleteMenuItemMock,
 }
 
+const authenticatorBase: Omit<AdminAuthenticatorCatalogRecord, 'id' | 'label' | 'factorType'> = {
+  description: '',
+  issuer: null,
+  helper: null,
+  docsUrl: null,
+  tags: ['totp'],
+  metadata: null,
+  sortOrder: 0,
+  isArchived: false,
+  createdAt: null,
+  updatedAt: null,
+  archivedAt: null,
+  archivedBy: null,
+}
+
+const authenticatorFixtures: AdminAuthenticatorCatalogRecord[] = [
+  {
+    ...authenticatorBase,
+    id: 'google',
+    label: 'Google Authenticator',
+    factorType: 'TOTP',
+    helper: 'Use the Google Authenticator app.',
+    tags: ['totp', 'recommended'],
+    sortOrder: 1,
+  },
+  {
+    ...authenticatorBase,
+    id: 'authy',
+    label: 'Authy',
+    factorType: 'TOTP',
+    helper: 'Authy supports multi-device sync.',
+    sortOrder: 2,
+  },
+  {
+    ...authenticatorBase,
+    id: 'backup_codes',
+    label: 'Backup codes',
+    factorType: 'BACKUP_CODES',
+    isArchived: true,
+    sortOrder: 99,
+  },
+]
+
+const listAuthenticatorsMock = vi.fn().mockResolvedValue(authenticatorFixtures)
+const createAuthenticatorMock = vi.fn().mockImplementation(async (input) => ({
+  ...authenticatorBase,
+  id: input.id,
+  label: input.label,
+  factorType: input.factorType,
+  description: input.description ?? '',
+  issuer: input.issuer ?? null,
+  helper: input.helper ?? null,
+  docsUrl: input.docsUrl ?? null,
+  tags: input.tags ?? null,
+  metadata: input.metadata ?? null,
+  sortOrder: input.sortOrder ?? 0,
+  isArchived: false,
+  createdAt: null,
+  updatedAt: null,
+  archivedAt: null,
+  archivedBy: null,
+}))
+const updateAuthenticatorMock = vi.fn().mockImplementation(async (id, input) => ({
+  ...authenticatorBase,
+  id,
+  label: input.label ?? 'Updated',
+  factorType: (input.factorType ?? 'TOTP') as AdminAuthenticatorCatalogRecord['factorType'],
+  description: input.description ?? '',
+  issuer: input.issuer ?? null,
+  helper: input.helper ?? null,
+  docsUrl: input.docsUrl ?? null,
+  tags: input.tags ?? null,
+  metadata: input.metadata ?? null,
+  sortOrder: typeof input.sortOrder === 'number' ? input.sortOrder : 0,
+  isArchived: false,
+  createdAt: null,
+  updatedAt: null,
+  archivedAt: null,
+  archivedBy: null,
+}))
+const archiveAuthenticatorMock = vi.fn().mockResolvedValue(undefined)
+const restoreAuthenticatorMock = vi.fn().mockResolvedValue(undefined)
+
+const adminAuthenticatorServiceStub: IAdminAuthenticatorCatalogService = {
+  list: listAuthenticatorsMock,
+  create: createAuthenticatorMock,
+  update: updateAuthenticatorMock,
+  archive: archiveAuthenticatorMock,
+  restore: restoreAuthenticatorMock,
+}
+
+const createAdminService = (): IAdminService => ({
+  settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
+  navigation: adminNavigationServiceStub,
+  authenticators: adminAuthenticatorServiceStub,
+})
+
 const loadNotificationSettingsMock = vi.fn().mockResolvedValue(DEFAULT_NOTIFICATION_SETTINGS)
 const updateNotificationSettingsMock = vi.fn().mockResolvedValue(DEFAULT_NOTIFICATION_SETTINGS)
 
-describe('AdminSettingsPage (Security)', () => {
+describe('AdminSettingsPage', () => {
   beforeEach(() => {
     saveSettingsMock.mockClear()
     loadSettingsMock.mockClear()
@@ -161,15 +280,18 @@ describe('AdminSettingsPage (Security)', () => {
     adminDeleteMenuItemMock.mockClear()
     loadNotificationSettingsMock.mockClear()
     updateNotificationSettingsMock.mockClear()
+    listAuthenticatorsMock.mockClear()
+    listAuthenticatorsMock.mockResolvedValue(authenticatorFixtures)
+    createAuthenticatorMock.mockClear()
+    updateAuthenticatorMock.mockClear()
+    archiveAuthenticatorMock.mockClear()
+    restoreAuthenticatorMock.mockClear()
   })
 
   it('saves security settings including new thresholds', async () => {
     const { wrapper } = renderWithProviders(<div />, {
       services: {
-        admin: {
-          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
-          navigation: adminNavigationServiceStub,
-        },
+        admin: createAdminService(),
         navigation: navigationServiceStub,
       },
       withRouter: true,
@@ -205,10 +327,7 @@ describe('AdminSettingsPage (Security)', () => {
     // Start with requireEmailVerification = true from loadSettingsMock
     const { wrapper } = renderWithProviders(<div />, {
       services: {
-        admin: {
-          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
-          navigation: adminNavigationServiceStub,
-        },
+        admin: createAdminService(),
         navigation: navigationServiceStub,
       },
       withRouter: true,
@@ -241,10 +360,7 @@ describe('AdminSettingsPage (Security)', () => {
   it('renders route-based items as links', async () => {
     const { wrapper } = renderWithProviders(<div />, {
       services: {
-        admin: {
-          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
-          navigation: adminNavigationServiceStub,
-        },
+        admin: createAdminService(),
         navigation: navigationServiceStub,
       },
       withRouter: true,
@@ -265,10 +381,7 @@ describe('AdminSettingsPage (Security)', () => {
   it('keeps headings aligned with the selected nav item even when categories repeat', async () => {
     const { wrapper } = renderWithProviders(<div />, {
       services: {
-        admin: {
-          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
-          navigation: adminNavigationServiceStub,
-        },
+        admin: createAdminService(),
         navigation: navigationServiceStub,
       },
       withRouter: true,
@@ -293,10 +406,7 @@ describe('AdminSettingsPage (Security)', () => {
 
     const { wrapper } = renderWithProviders(<div />, {
       services: {
-        admin: {
-          settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
-          navigation: adminNavigationServiceStub,
-        },
+        admin: createAdminService(),
         navigation: emptyNavigationService,
         notifications: {
           loadSettings: loadNotificationSettingsMock,
@@ -319,6 +429,213 @@ describe('AdminSettingsPage (Security)', () => {
     expect(await screen.findByRole('heading', { name: /notifications & alerts/i })).toBeInTheDocument()
   })
 
+  it('shows authentication controls when selecting the nav entry', async () => {
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: createAdminService(),
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
+    render(<AdminSettingsPage />, { wrapper })
+
+    await waitFor(() => expect(getNavigationMenuMock).toHaveBeenCalled())
+    const authButton = await screen.findByRole('button', { name: /authentication/i })
+    fireEvent.click(authButton)
+    await waitFor(() => expect(listAuthenticatorsMock).toHaveBeenCalled())
+
+    expect(await screen.findByLabelText(/MFA enrollment policy/i)).toBeInTheDocument()
+    expect(screen.getByText(/Authenticator catalog/i)).toBeInTheDocument()
+  })
+
+  it('adds authenticators and persists the new auth payload keys', async () => {
+    loadSettingsMock.mockResolvedValueOnce({
+      security: { ...DEFAULT_SECURITY_SETTINGS },
+      auth: {
+        mode: 'session',
+        google: true,
+        github: false,
+        enforceMfa: 'optional',
+        authenticators: ['google'],
+      },
+    })
+
+    saveSettingsMock.mockClear()
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: createAdminService(),
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
+    render(<AdminSettingsPage />, { wrapper })
+
+    await waitFor(() => expect(loadSettingsMock).toHaveBeenCalled())
+    const authButton = await screen.findByRole('button', { name: /authentication/i })
+    fireEvent.click(authButton)
+    await waitFor(() => expect(listAuthenticatorsMock).toHaveBeenCalled())
+
+    const policySelect = await screen.findByLabelText(/MFA enrollment policy/i)
+    fireEvent.change(policySelect, { target: { value: 'required' } })
+
+    const addSelect = await screen.findByLabelText(/Authenticator to add/i)
+    fireEvent.change(addSelect, { target: { value: 'authy' } })
+    const addButton = await screen.findByRole('button', { name: /add authenticator/i })
+    fireEvent.click(addButton)
+
+    const saveButton = await screen.findByRole('button', { name: /save authentication/i })
+    fireEvent.click(saveButton)
+
+    await waitFor(() => expect(saveSettingsMock).toHaveBeenCalled())
+    const [category, entries] = saveSettingsMock.mock.calls.at(-1)!
+    expect(category).toBe('auth')
+    const typedEntries = entries as Array<{ key: string; value: unknown }>
+    const policyEntry = typedEntries.find((entry) => entry.key === 'enforceMfa')
+    const authenticatorsEntry = typedEntries.find((entry) => entry.key === 'authenticators')
+    expect(policyEntry?.value).toBe('required')
+    expect(authenticatorsEntry?.value).toEqual(['google', 'authy'])
+  })
+
+  it('creates catalog entries through the dialog', async () => {
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: createAdminService(),
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
+    render(<AdminSettingsPage />, { wrapper })
+
+    await waitFor(() => expect(getNavigationMenuMock).toHaveBeenCalled())
+    const authButton = await screen.findByRole('button', { name: /authentication/i })
+    fireEvent.click(authButton)
+    await waitFor(() => expect(listAuthenticatorsMock).toHaveBeenCalled())
+
+    const newButton = await screen.findByRole('button', { name: /new authenticator/i })
+    fireEvent.click(newButton)
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(/Identifier/i), { target: { value: 'duo_mobile' } })
+    fireEvent.change(within(dialog).getByLabelText(/Display label/i), { target: { value: 'Duo Mobile' } })
+    fireEvent.change(within(dialog).getByLabelText(/Factor type/i), { target: { value: 'PUSH' } })
+    fireEvent.change(within(dialog).getByLabelText(/Sort order/i), { target: { value: '7' } })
+    fireEvent.change(within(dialog).getByLabelText(/Description/i), { target: { value: 'Duo mobile push' } })
+    fireEvent.change(within(dialog).getByLabelText(/Issuer/i), { target: { value: 'Duo' } })
+    fireEvent.change(within(dialog).getByLabelText(/Helper text/i), { target: { value: 'Install the Duo app before enabling push.' } })
+    fireEvent.change(within(dialog).getByLabelText(/Docs URL/i), { target: { value: 'https://example.com/duo' } })
+    fireEvent.change(within(dialog).getByLabelText(/Tags/i), { target: { value: 'push, recommended' } })
+    fireEvent.change(within(dialog).getByLabelText(/Metadata/i), { target: { value: '{"platforms":["ios","android"]}' } })
+
+    const createButton = within(dialog).getByRole('button', { name: /^create$/i })
+    fireEvent.click(createButton)
+
+    await waitFor(() => expect(createAuthenticatorMock).toHaveBeenCalledWith({
+      id: 'duo_mobile',
+      label: 'Duo Mobile',
+      description: 'Duo mobile push',
+      factorType: 'PUSH',
+      issuer: 'Duo',
+      helper: 'Install the Duo app before enabling push.',
+      docsUrl: 'https://example.com/duo',
+      tags: ['push', 'recommended'],
+      metadata: { platforms: ['ios', 'android'] },
+      sortOrder: 7,
+    }))
+  })
+
+  it('shows metadata validation errors in the catalog dialog', async () => {
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: createAdminService(),
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
+    render(<AdminSettingsPage />, { wrapper })
+
+    await waitFor(() => expect(getNavigationMenuMock).toHaveBeenCalled())
+    const authButton = await screen.findByRole('button', { name: /authentication/i })
+    fireEvent.click(authButton)
+    await waitFor(() => expect(listAuthenticatorsMock).toHaveBeenCalled())
+
+    const newButton = await screen.findByRole('button', { name: /new authenticator/i })
+    fireEvent.click(newButton)
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(/Identifier/i), { target: { value: 'invalid_meta' } })
+    fireEvent.change(within(dialog).getByLabelText(/Display label/i), { target: { value: 'Invalid Metadata' } })
+    fireEvent.change(within(dialog).getByLabelText(/Metadata/i), { target: { value: '{not valid json}' } })
+
+    const createButton = within(dialog).getByRole('button', { name: /^create$/i })
+    fireEvent.click(createButton)
+
+    await screen.findByText(/metadata must be valid json/i)
+    expect(createAuthenticatorMock).not.toHaveBeenCalled()
+  })
+
+  it('edits catalog entries through the dialog', async () => {
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: createAdminService(),
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
+    render(<AdminSettingsPage />, { wrapper })
+
+    await waitFor(() => expect(getNavigationMenuMock).toHaveBeenCalled())
+    const authButton = await screen.findByRole('button', { name: /authentication/i })
+    fireEvent.click(authButton)
+    await waitFor(() => expect(listAuthenticatorsMock).toHaveBeenCalled())
+
+    const catalogCard = await screen.findByTestId('catalog-entry-google')
+    const editButton = within(catalogCard).getByRole('button', { name: /^edit$/i })
+    fireEvent.click(editButton)
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(/Display label/i), { target: { value: 'Google Authenticator (legacy)' } })
+    fireEvent.change(within(dialog).getByLabelText(/Helper text/i), { target: { value: 'Legacy instructions' } })
+    fireEvent.change(within(dialog).getByLabelText(/Sort order/i), { target: { value: '5' } })
+
+    const saveButton = within(dialog).getByRole('button', { name: /^save$/i })
+    fireEvent.click(saveButton)
+
+    await waitFor(() => expect(updateAuthenticatorMock).toHaveBeenCalledWith('google', expect.objectContaining({
+      label: 'Google Authenticator (legacy)',
+      helper: 'Legacy instructions',
+      sortOrder: 5,
+    })))
+  })
+
+  it('archives and restores catalog entries', async () => {
+    const { wrapper } = renderWithProviders(<div />, {
+      services: {
+        admin: createAdminService(),
+        navigation: navigationServiceStub,
+      },
+      withRouter: true,
+    })
+    render(<AdminSettingsPage />, { wrapper })
+
+    await waitFor(() => expect(getNavigationMenuMock).toHaveBeenCalled())
+    const authButton = await screen.findByRole('button', { name: /authentication/i })
+    fireEvent.click(authButton)
+    await waitFor(() => expect(listAuthenticatorsMock).toHaveBeenCalled())
+
+    const authyCard = await screen.findByTestId('catalog-entry-authy')
+    const archiveButton = within(authyCard).getByRole('button', { name: /archive/i })
+    fireEvent.click(archiveButton)
+    await waitFor(() => expect(archiveAuthenticatorMock).toHaveBeenCalledWith('authy'))
+
+    const showArchivedButton = await screen.findByRole('button', { name: /show archived/i })
+    fireEvent.click(showArchivedButton)
+
+    const archivedCard = await screen.findByTestId('catalog-entry-backup_codes-archived')
+    const restoreButton = within(archivedCard).getByRole('button', { name: /restore/i })
+    fireEvent.click(restoreButton)
+    await waitFor(() => expect(restoreAuthenticatorMock).toHaveBeenCalledWith('backup_codes'))
+  })
+
 })
 
 describe('AdminSettingsPage (Access control)', () => {
@@ -336,10 +653,7 @@ describe('AdminSettingsPage (Access control)', () => {
         <MemoryRouter>
           <FreshServicesProvider
             services={{
-              admin: {
-                settings: { loadSettings: loadSettingsMock, saveSettings: saveSettingsMock },
-                navigation: adminNavigationServiceStub,
-              },
+              admin: createAdminService(),
               navigation: navigationServiceStub,
             }}
           >

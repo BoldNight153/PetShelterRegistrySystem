@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../index';
 import { PrismaClient } from '@prisma/client';
 import { ensureRoleWithPermissionsForUser } from './helpers/rbac';
+import { resetRateLimits } from './helpers/rateLimit';
 
 describe('CRUD routes smoke tests', () => {
   const prisma: any = new PrismaClient();
@@ -10,6 +11,7 @@ describe('CRUD routes smoke tests', () => {
   let testEmail: string | undefined;
 
   beforeAll(async () => {
+    await resetRateLimits();
     const csrfRes = await agent.get('/auth/csrf');
     csrfToken = csrfRes.body?.csrfToken;
     testEmail = `crud.${Date.now()}@example.test`;
@@ -29,11 +31,16 @@ describe('CRUD routes smoke tests', () => {
       await new Promise(r => setTimeout(r, 5));
       // fresh login to get clean cookies after role assignment
       const csrf2 = await agent.get('/auth/csrf');
+      await resetRateLimits();
       await agent
         .post('/auth/login')
         .set('x-csrf-token', String(csrf2.body?.csrfToken))
         .send({ email: testEmail, password });
     }
+  });
+
+  beforeEach(async () => {
+    await resetRateLimits();
   });
 
   afterAll(async () => {

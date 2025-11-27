@@ -2,6 +2,17 @@
 
 All notable changes to this repository will be documented in this file.
 
+## [Unreleased]
+
+### Tests
+
+- Backend: expanded `admin.authenticators` suite now verifies `includeArchived` filtering and enforces RBAC on catalog mutations; `admin.settings` continues to cover auth payload normalization.
+- Frontend: added `src/hooks/useAuthenticatorCatalog.test.tsx` to guarantee React Query calls include/exclude archived presets correctly, complementing the existing Admin Settings page coverage.
+
+### Documentation
+
+- Updated `backend/README.md`, `frontend/README.md`, and `ARCHITECTURE.md` with the new regression expectations plus the release reminder to rerun `npm run seed` whenever authenticator catalog presets change.
+
 ## [0.4.0](https://github.com/BoldNight153/PetShelterRegistrySystem/compare/v0.3.1...v0.4.0) (2025-10-16)
 
 ### Features

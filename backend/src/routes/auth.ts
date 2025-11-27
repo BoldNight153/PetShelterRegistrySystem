@@ -22,9 +22,15 @@ import bcrypt from 'bcryptjs';
 const INTERNAL_ERROR = 'internal error';
 const HEADER_UA = 'user-agent';
 const HEADER_CSRF = 'x-csrf-token';
+const HEADER_COOKIE = 'cookie';
 const INVALID_TOKEN = 'invalid token';
 const AUDIT_LOGIN_LOCKED = 'auth.login.locked_user';
 const DIAG_VALIDATE_CSRF_MISSING = 'diagnostic /validateCsrf missing';
+const DIAG_VALIDATE_CSRF_MISMATCH = 'diagnostic /validateCsrf mismatch';
+const DIAG_COOKIE_HEADER_LABEL = 'cookieHeader=';
+const DIAG_PARSED_COOKIES_LABEL = 'parsedCookies=';
+const COOKIE_CSRF = 'csrfToken';
+const DEV_CSRF_SECRET_FALLBACK = 'dev-csrf-secret';
 const ERROR_INVALID_PAYLOAD = 'invalid payload';
 const ERROR_USER_NOT_FOUND = 'user not found';
 const WARN_RATE_LIMIT_INCREMENT = 'rateLimit.incrementAndCheck failed, falling back';
@@ -99,10 +105,13 @@ const TrustSessionSchema = z.object({
   trust: z.boolean().optional().default(true),
 });
 
+const AuthenticatorIdSchema = z.string().trim().min(2).max(120).regex(/^[a-z0-9_\-]+$/i);
+
 const TotpEnrollSchema = z.object({
   label: z.string().trim().min(1).max(120).optional(),
   issuer: z.string().trim().min(1).max(160).optional(),
   accountName: z.string().trim().min(1).max(160).optional(),
+  catalogId: AuthenticatorIdSchema.optional(),
 });
 
 const TotpConfirmSchema = z.object({
@@ -114,6 +123,7 @@ const TotpRotateSchema = z.object({
   label: z.string().trim().min(1).max(120).optional(),
   issuer: z.string().trim().min(1).max(160).optional(),
   accountName: z.string().trim().min(1).max(160).optional(),
+  catalogId: AuthenticatorIdSchema.optional(),
 });
 
 const BackupCodesRegenerateSchema = z.object({
@@ -123,6 +133,7 @@ const BackupCodesRegenerateSchema = z.object({
 const NotificationChannelSchema = z.enum(['email', 'sms', 'push', 'in_app']);
 const NotificationTopicCategorySchema = z.enum(['account', 'animals', 'operations', 'security', 'system']);
 const NotificationDevicePlatformSchema = z.enum(['ios', 'android', 'web', 'unknown']);
+const NotificationDeviceTransportSchema = z.enum(['web_push', 'mobile_push', 'unknown']).default('web_push');
 
 const NotificationTopicSchema = z.object({
   id: z.string().trim().min(1).max(160),
@@ -162,6 +173,20 @@ const NotificationDeviceSchema = z.object({
   platform: NotificationDevicePlatformSchema,
   enabled: z.boolean(),
   lastUsedAt: z.string().datetime().optional().nullable(),
+});
+
+const NotificationDeviceRegistrationSchema = z.object({
+  label: z.string().trim().min(1).max(160),
+  platform: NotificationDevicePlatformSchema.optional(),
+  transport: NotificationDeviceTransportSchema,
+  fingerprint: z.string().trim().min(8).max(200).optional().nullable(),
+  subscription: z.record(z.any()).optional().nullable(),
+  token: z.string().trim().max(512).optional().nullable(),
+  userAgent: z.string().trim().max(512).optional().nullable(),
+});
+
+const NotificationDeviceIdSchema = z.object({
+  deviceId: z.string().trim().min(1).max(160),
 });
 
 const NotificationSettingsSchema = z.object({
@@ -318,7 +343,7 @@ function resolveNotificationService(req: any): NotificationService | null {
 // Simple andi-CSRF implementation using double-submit cookie pattern.
 // GET /auth/csrf - issues a CSRF token and sets a cookie (httpOnly=false) so the browser can send it back via header.
 router.get('/csrf', (_req: Request, res: Response) => {
-  const secret = process.env.CSRF_SECRET || 'dev-csrf-secret';
+  const secret = process.env.CSRF_SECRET || DEV_CSRF_SECRET_FALLBACK;
   const token = crypto.randomBytes(16).toString('hex');
   // Optionally sign; here we attach a simple HMAC for tamper detection
   const hmac = crypto.createHmac('sha256', secret).update(token).digest('hex');
@@ -332,7 +357,7 @@ router.get('/csrf', (_req: Request, res: Response) => {
     ? String(process.env.COOKIE_SECURE) === 'true'
     : (process.env.NODE_ENV === 'production' && String(process.env.APP_ORIGIN || '').startsWith('https'));
 
-  res.cookie('csrfToken', csrfToken, {
+  res.cookie(COOKIE_CSRF, csrfToken, {
     httpOnly: false,
     secure: cookieSecure,
     sameSite: 'lax',
@@ -344,34 +369,54 @@ router.get('/csrf', (_req: Request, res: Response) => {
 
 // Middleware to validate CSRF on state-changing requests
 function validateCsrf(req: Request, res: Response, next: NextFunction): void {
-  const fromCookie = req.cookies?.csrfToken;
+  const fromCookie = req.cookies?.[COOKIE_CSRF];
   const fromHeader = req.header(HEADER_CSRF);
   if (!fromCookie || !fromHeader) {
     // DEV DIAGNOSTIC: log missing pieces for deterministic debugging
     try {
         if (process.env.NODE_ENV !== 'production') {
-          const rawCookieHeader = req.get('cookie');
+          const rawCookieHeader = req.get(HEADER_COOKIE);
           const incomingCsrfHeader = req.get(HEADER_CSRF);
           try { (req as any).log?.info?.({ cookieHeader: rawCookieHeader, parsedCookies: req.cookies, xCsrfHeader: incomingCsrfHeader }, DIAG_VALIDATE_CSRF_MISSING); } catch {}
 
-        console.log(DIAG_VALIDATE_CSRF_MISSING, 'cookieHeader=', rawCookieHeader, 'parsedCookies=', JSON.stringify(req.cookies || {}), HEADER_CSRF + '=', incomingCsrfHeader);
+        console.log(
+          DIAG_VALIDATE_CSRF_MISSING,
+          DIAG_COOKIE_HEADER_LABEL,
+          rawCookieHeader,
+          DIAG_PARSED_COOKIES_LABEL,
+          JSON.stringify(req.cookies || {}),
+          `${HEADER_CSRF}=`,
+          incomingCsrfHeader,
+        );
       }
     } catch {}
     res.status(403).json({ error: 'CSRF token missing' });
     return;
   }
   const [token, sig] = String(fromCookie).split('.');
-  const secret = process.env.CSRF_SECRET || 'dev-csrf-secret';
+  const secret = process.env.CSRF_SECRET || DEV_CSRF_SECRET_FALLBACK;
   const expected = crypto.createHmac('sha256', secret).update(token).digest('hex');
   if (sig !== expected || fromHeader !== fromCookie) {
     // DEV DIAGNOSTIC: log mismatch details so we can correlate header vs cookie seen by server
     try {
         if (process.env.NODE_ENV !== 'production') {
-          const rawCookieHeader = req.get('cookie');
+          const rawCookieHeader = req.get(HEADER_COOKIE);
           const incomingCsrfHeader = req.get(HEADER_CSRF);
-          try { (req as any).log?.info?.({ cookieHeader: rawCookieHeader, parsedCookies: req.cookies, xCsrfHeader: incomingCsrfHeader, expected, sig }, 'diagnostic /validateCsrf mismatch'); } catch {}
+          try { (req as any).log?.info?.({ cookieHeader: rawCookieHeader, parsedCookies: req.cookies, xCsrfHeader: incomingCsrfHeader, expected, sig }, DIAG_VALIDATE_CSRF_MISMATCH); } catch {}
 
-        console.log('[diagnostic] /validateCsrf mismatch - cookieHeader=', rawCookieHeader, 'parsedCookies=', JSON.stringify(req.cookies || {}), HEADER_CSRF + '=', incomingCsrfHeader, 'expectedSig=', expected, 'sig=', sig);
+        console.log(
+          '[diagnostic] /validateCsrf mismatch -',
+          DIAG_COOKIE_HEADER_LABEL,
+          rawCookieHeader,
+          DIAG_PARSED_COOKIES_LABEL,
+          JSON.stringify(req.cookies || {}),
+          `${HEADER_CSRF}=`,
+          incomingCsrfHeader,
+          'expectedSig=',
+          expected,
+          'sig=',
+          sig,
+        );
       }
     } catch {}
     res.status(403).json({ error: 'CSRF token invalid' });
@@ -821,21 +866,6 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
     const emailKey = sanitizeEmail(email);
     const deviceContext = buildDeviceContext(req, parsed.data);
     const now = new Date();
-    const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
-      const activeLock = await prisma.userLock.findFirst({
-        where: { userId: existingUser.id, unlockedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
-        orderBy: { lockedAt: 'desc' },
-      });
-      if (activeLock) {
-        return res.status(429).json({ error: 'account locked', reason: activeLock.reason, until: activeLock.expiresAt ?? null });
-      }
-      const expired = await prisma.userLock.findMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } } });
-      if (expired.length) {
-        await prisma.userLock.updateMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } }, data: { unlockedAt: now } });
-      }
-    }
-
     const ip = req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
     const ua = req.get(HEADER_UA) || undefined;
 
@@ -871,6 +901,21 @@ router.post('/login', validateCsrf, async (req: Request, res: Response) => {
     if (!ipCheck.allowed) {
       await logAudit(null, 'auth.login.throttled_ip', { ip: req.ip, get: req.get.bind(req) }, { ip, ua });
       return res.status(429).json({ error: 'too many attempts, try again later' });
+    }
+
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      const activeLock = await prisma.userLock.findFirst({
+        where: { userId: existingUser.id, unlockedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+        orderBy: { lockedAt: 'desc' },
+      });
+      if (activeLock) {
+        return res.status(429).json({ error: 'account locked', reason: activeLock.reason, until: activeLock.expiresAt ?? null });
+      }
+      const expired = await prisma.userLock.findMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } } });
+      if (expired.length) {
+        await prisma.userLock.updateMany({ where: { userId: existingUser.id, unlockedAt: null, expiresAt: { lte: now } }, data: { unlockedAt: now } });
+      }
     }
 
     let userFail;
@@ -1151,12 +1196,20 @@ router.post('/refresh', validateCsrf, async (req: Request, res: Response) => {
     // TEMP DIAGNOSTIC: log incoming Cookie header and parsed cookies for deterministic debugging in dev
     try {
       if (process.env.NODE_ENV !== 'production') {
-        const rawCookieHeader = req.get('cookie');
-        const incomingCsrfHeader = req.get('x-csrf-token');
+        const rawCookieHeader = req.get(HEADER_COOKIE);
+        const incomingCsrfHeader = req.get(HEADER_CSRF);
         // Use console.log to ensure visible in local dev environment; also use structured logger if available
         try { (req as any).log?.info?.({ cookieHeader: rawCookieHeader, parsedCookies: req.cookies, xCsrfHeader: incomingCsrfHeader }, 'diagnostic /auth/refresh incoming'); } catch {}
 
-        console.log('[diagnostic] /auth/refresh incoming - cookieHeader=', rawCookieHeader, 'parsedCookies=', JSON.stringify(req.cookies || {}), 'x-csrf-token=', incomingCsrfHeader);
+        console.log(
+          '[diagnostic] /auth/refresh incoming -',
+          DIAG_COOKIE_HEADER_LABEL,
+          rawCookieHeader,
+          DIAG_PARSED_COOKIES_LABEL,
+          JSON.stringify(req.cookies || {}),
+          `${HEADER_CSRF}=`,
+          incomingCsrfHeader,
+        );
       }
       } catch {
         // swallow diagnostics errors
@@ -1553,7 +1606,7 @@ router.get('/mode', (req: any, res: Response) => {
       session: { name: sessionCookieName, present: hasSessionCookie },
       accessToken: { present: hasAccessCookie },
       refreshToken: { present: hasRefreshCookie },
-      csrfToken: { present: Boolean(cookies['csrfToken']) },
+  csrfToken: { present: Boolean(cookies[COOKIE_CSRF]) },
     },
     session: {
       enabled: authMode === 'session',
@@ -1843,6 +1896,35 @@ router.get('/security', requireAuth, async (req: Request, res: Response) => {
     return res.json({ snapshot });
   } catch (err) {
     try { (req as any).log?.error?.({ err }, 'security snapshot failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.get('/security/authenticators', requireAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const svc = resolveSecurityService(req) ?? new SecurityService({ prisma });
+  const parseQueryString = (value: unknown): string | null => {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+      const firstString = value.find((entry): entry is string => typeof entry === 'string');
+      return firstString ?? null;
+    }
+    return null;
+  };
+  const parseBooleanFlag = (value: unknown): boolean => {
+    const normalized = parseQueryString(value)?.trim().toLowerCase();
+    if (!normalized) return false;
+    return normalized === 'true' || normalized === '1' || normalized === 'yes';
+  };
+  const includeArchived = parseBooleanFlag(req.query?.includeArchived);
+  const factorType = parseQueryString(req.query?.factorType);
+  try {
+    const authenticators = await svc.listAuthenticatorCatalog({ includeArchived, factorType });
+    return res.json({ authenticators });
+  } catch (err) {
+    try { (req as any).log?.error?.({ err }, 'security authenticators failed'); } catch {}
     const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
     return res.status(500).json({ error: message });
   }
@@ -2183,6 +2265,44 @@ router.put('/notifications', requireAuth, validateCsrf, async (req: Request, res
     return res.json({ settings: parsed.data });
   } catch (err) {
     try { (req as any).log?.error?.({ err }, 'notifications update failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.post('/notifications/devices/register', requireAuth, validateCsrf, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const parse = NotificationDeviceRegistrationSchema.safeParse(req.body || {});
+  if (!parse.success) {
+    return res.status(400).json({ error: ERROR_INVALID_PAYLOAD, details: parse.error.flatten() });
+  }
+  const svc = resolveNotificationService(req) ?? new NotificationService();
+  try {
+    const device = await svc.registerNotificationDevice(userId, { ...parse.data, ipAddress: req.ip });
+    if (!device) return res.status(404).json({ error: ERROR_USER_NOT_FOUND });
+    return res.status(201).json({ device });
+  } catch (err) {
+    try { (req as any).log?.error?.({ err }, 'notification device register failed'); } catch {}
+    const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.delete('/notifications/devices/:deviceId', requireAuth, validateCsrf, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const params = NotificationDeviceIdSchema.safeParse(req.params ?? {});
+  if (!params.success) {
+    return res.status(400).json({ error: ERROR_INVALID_PAYLOAD, details: params.error.flatten() });
+  }
+  const svc = resolveNotificationService(req) ?? new NotificationService();
+  try {
+    const removed = await svc.disableNotificationDevice(userId, params.data.deviceId);
+    if (!removed) return res.status(404).json({ error: 'device not found' });
+    return res.status(204).send();
+  } catch (err) {
+    try { (req as any).log?.error?.({ err }, 'notification device revoke failed'); } catch {}
     const message = process.env.NODE_ENV === 'test' ? String((err as any)?.message || err) : INTERNAL_ERROR;
     return res.status(500).json({ error: message });
   }

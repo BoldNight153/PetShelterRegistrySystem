@@ -43,7 +43,8 @@ import {
   type NotificationTopicPreference,
   type NotificationTopicCategory,
 } from '@/types/notifications'
-import { useNotificationSettings, useUpdateNotificationSettings } from '@/services/hooks/notifications'
+import { useNotificationSettings, useUpdateNotificationSettings, useRegisterNotificationDevice } from '@/services/hooks/notifications'
+import { buildNotificationRegistrationPayload, supportsPushNotifications } from '@/lib/notifications-device'
 import { cn } from '@/lib/utils'
 
 const CHANNEL_METADATA: Record<NotificationChannel, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
@@ -78,10 +79,32 @@ const INITIAL_SECTION_STATE: Record<SectionKey, boolean> = {
 export default function NotificationsSettingsPage() {
   const settingsQuery = useNotificationSettings()
   const updateSettings = useUpdateNotificationSettings()
+  const registerDevice = useRegisterNotificationDevice()
 
   const [draft, setDraft] = useState<NotificationSettings>(() => cloneSettings(DEFAULT_NOTIFICATION_SETTINGS))
   const [dirty, setDirty] = useState<Record<SectionKey, boolean>>(INITIAL_SECTION_STATE)
   const [saving, setSaving] = useState<Record<SectionKey, boolean>>(INITIAL_SECTION_STATE)
+  const [registeringDevice, setRegisteringDevice] = useState(false)
+  const canRegisterDevice = supportsPushNotifications()
+
+  const handleDeviceRegistration = async () => {
+    if (!canRegisterDevice) {
+      toast.error('Push registration is not available in this browser')
+      return
+    }
+    try {
+      setRegisteringDevice(true)
+      const payload = await buildNotificationRegistrationPayload()
+      await registerDevice.mutateAsync(payload)
+      await settingsQuery.refetch()
+      toast.success('Device registered for push alerts')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to register this device'
+      toast.error(message)
+    } finally {
+      setRegisteringDevice(false)
+    }
+  }
 
   useEffect(() => {
     if (!settingsQuery.data) return
@@ -589,6 +612,21 @@ export default function NotificationsSettingsPage() {
             dirty={dirty.devices}
           />
           <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">Register this browser or device to start receiving push alerts.</p>
+              {canRegisterDevice ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDeviceRegistration}
+                  disabled={registeringDevice || settingsQuery.isFetching}
+                >
+                  {registeringDevice ? 'Registering…' : 'Register this device'}
+                </Button>
+              ) : (
+                <Badge variant="outline">Push unsupported</Badge>
+              )}
+            </div>
             {draft.devices.length === 0 ? (
               <Alert>
                 <AlertDescription>No devices registered yet. We’ll populate this list as clients opt-in.</AlertDescription>
@@ -702,7 +740,12 @@ function DeviceRow({ device, onToggle }: { device: NotificationDevice; onToggle:
         </p>
       </div>
       <div className="flex items-center gap-2">
-        <Switch checked={device.enabled} onCheckedChange={onToggle} />
+        <Switch
+          checked={device.enabled}
+          onCheckedChange={onToggle}
+          aria-label={`Toggle ${device.label}`}
+          data-testid={`device-toggle-${device.id}`}
+        />
         <span className="text-sm">{device.enabled ? 'Enabled' : 'Paused'}</span>
       </div>
     </div>

@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../index';
 import { PrismaClient } from '@prisma/client';
 import { ensureRole, assignRoleToUser } from './helpers/rbac';
+import { resetRateLimits } from './helpers/rateLimit';
 
 // Some backend integration tests exercise the running server and can
 // take longer than Jest's default 5s timeout on slower machines.
@@ -22,6 +23,9 @@ async function createUser(email: string, password = 'StrongP@ssw0rd!') {
 
 describe('Admin Docs gating', () => {
   const prisma: any = new PrismaClient();
+  beforeEach(async () => {
+    await resetRateLimits();
+  });
   afterAll(async () => {
     await prisma.$disconnect();
   });

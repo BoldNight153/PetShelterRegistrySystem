@@ -60,16 +60,57 @@ export type SecurityHardwareKey = {
   transports?: string[]
 }
 
+export type SecurityAuthenticatorCatalogDetails = {
+  id: string
+  label: string
+  description?: string | null
+  helper?: string | null
+  docsUrl?: string | null
+  tags?: string[] | null
+  issuer?: string | null
+  metadata?: JsonValue | null
+}
+
+export type SecurityAuthenticatorFactorType = Uppercase<SecurityMfaFactorType>
+
+export type SecurityAuthenticatorCatalogEntry = SecurityAuthenticatorCatalogDetails & {
+  factorType: SecurityAuthenticatorFactorType
+  sortOrder?: number | null
+  isArchived?: boolean | null
+}
+
+export type SecurityMfaFactorStatus = 'pending' | 'active' | 'disabled' | 'revoked'
+
 export type SecurityMfaFactor = {
   id: string
   type: SecurityMfaFactorType
   label: string
   enabled: boolean
+  status: SecurityMfaFactorStatus
   enrolledAt?: string | null
   lastUsedAt?: string | null
   devices?: SecurityHardwareKey[]
   remainingCodes?: number | null
   metadata?: JsonValue
+  catalogId?: string | null
+}
+
+export type SecurityPendingMfaEnrollment = {
+  ticket: string
+  factorId: string
+  mode: 'create' | 'rotate'
+  type: SecurityMfaFactorType
+  label: string
+  catalogId?: string | null
+  expiresAt?: string | null
+  status: SecurityMfaFactorStatus
+  catalog?: SecurityAuthenticatorCatalogDetails | null
+  description?: string | null
+  helper?: string | null
+  docsUrl?: string | null
+  tags?: string[] | null
+  issuer?: string | null
+  metadata?: JsonValue | null
 }
 
 export type SecurityMfaRecommendation = {
@@ -147,11 +188,15 @@ export type SecurityEventEntry = {
 
 export type SecurityMfaEnrollmentPrompt = {
   ticket: string
+  factorId: string
+  mode: 'create' | 'rotate'
   type: SecurityMfaFactorType
+  label?: string
   secret?: string
   uri?: string
   qrCodeDataUrl?: string
   expiresAt?: string | null
+  catalogId?: string | null
 }
 
 export type SecurityMfaEnrollmentResult = {
@@ -165,6 +210,7 @@ export type AccountSecuritySnapshot = {
   mfa: {
     factors: SecurityMfaFactor[]
     recommendations: SecurityMfaRecommendation[]
+    pendingEnrollment?: SecurityPendingMfaEnrollment | null
   }
   sessions: {
     summary: SecuritySessionSummary
@@ -235,6 +281,7 @@ const DEFAULT_SNAPSHOT: AccountSecuritySnapshot = {
   mfa: {
     factors: [],
     recommendations: [],
+    pendingEnrollment: null,
   },
   sessions: {
     summary: { activeCount: 0, trustedCount: 0, lastRotationAt: null, lastUntrustedAt: null },
@@ -285,12 +332,19 @@ const coerceStringArray = (value: unknown, fallback: string[]): string[] => {
   return [...fallback]
 }
 
+const AUTHENTICATOR_FACTOR_TYPES: SecurityAuthenticatorFactorType[] = ['TOTP', 'SMS', 'PUSH', 'HARDWARE_KEY', 'BACKUP_CODES']
+
 const coerceAlertChannels = (value: unknown, fallback: SecurityAlertChannel[]): SecurityAlertChannel[] => {
   if (!Array.isArray(value)) return [...fallback]
   return value
     .map((entry) => (typeof entry === 'string' ? entry : null))
     .filter((entry): entry is string => Boolean(entry))
     .map((entry) => (entry === 'sms' || entry === 'push' || entry === 'in_app' ? entry : 'email')) as SecurityAlertChannel[]
+}
+
+const coerceFactorStatus = (value: unknown, fallback: SecurityMfaFactorStatus): SecurityMfaFactorStatus => {
+  if (value === 'pending' || value === 'active' || value === 'disabled' || value === 'revoked') return value
+  return fallback
 }
 
 const normalizeRecoveryChannel = (value: unknown, fallback: SecurityRecoveryChannel = DEFAULT_RECOVERY_CHANNEL): SecurityRecoveryChannel => {
@@ -441,11 +495,13 @@ const normalizeMfaFactor = (value: unknown, index: number): SecurityMfaFactor =>
       type: 'totp',
       label: 'Authenticator app',
       enabled: false,
+      status: 'disabled',
       enrolledAt: null,
       lastUsedAt: null,
       devices: [],
       remainingCodes: null,
       metadata: null,
+      catalogId: null,
     }
   }
   const record = value as Record<string, unknown>
@@ -453,16 +509,93 @@ const normalizeMfaFactor = (value: unknown, index: number): SecurityMfaFactor =>
     ? record.type
     : 'totp'
   const devicesRaw = Array.isArray(record.devices) ? record.devices : []
+  const enabled = coerceBoolean(record.enabled, true)
   return {
     id: coerceString(record.id, `factor-${index}`),
     type,
     label: coerceString(record.label, type === 'totp' ? 'Authenticator app' : type.toUpperCase()),
-    enabled: coerceBoolean(record.enabled, true),
+    enabled,
+    status: coerceFactorStatus(record.status, enabled ? 'active' : 'disabled'),
     enrolledAt: coerceDate(record.enrolledAt),
     lastUsedAt: coerceDate(record.lastUsedAt),
     devices: devicesRaw.map((device, deviceIndex) => normalizeHardwareKey(device, deviceIndex)),
     remainingCodes: record.remainingCodes == null ? null : coerceNumber(record.remainingCodes, 0),
     metadata: (record.metadata as JsonValue) ?? null,
+    catalogId: record.catalogId ? coerceString(record.catalogId) : null,
+  }
+}
+
+const normalizeCatalogDetails = (value: unknown): SecurityAuthenticatorCatalogDetails | null => {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const id = coerceString(record.id)
+  if (!id) return null
+  const tags = record.tags != null ? coerceStringArray(record.tags, []) : []
+  return {
+    id,
+    label: coerceString(record.label, 'Authenticator'),
+    description: record.description ? coerceString(record.description) : null,
+    helper: record.helper ? coerceString(record.helper) : null,
+    docsUrl: record.docsUrl ? coerceString(record.docsUrl) : null,
+    tags: tags.length ? tags : null,
+    issuer: record.issuer ? coerceString(record.issuer) : null,
+    metadata: (record.metadata as JsonValue) ?? null,
+  }
+}
+
+export function normalizeSecurityAuthenticatorCatalogEntry(value: unknown): SecurityAuthenticatorCatalogEntry | null {
+  const details = normalizeCatalogDetails(value)
+  if (!details || !value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const rawFactor = typeof record.factorType === 'string' ? record.factorType.trim().toUpperCase() : ''
+  if (!AUTHENTICATOR_FACTOR_TYPES.includes(rawFactor as SecurityAuthenticatorFactorType)) return null
+  let sortOrder: number | null = null
+  if (record.sortOrder != null && record.sortOrder !== '') {
+    const numeric = Number(record.sortOrder)
+    sortOrder = Number.isFinite(numeric) ? numeric : null
+  }
+  const archived = record.isArchived == null ? null : coerceBoolean(record.isArchived, false)
+  return {
+    ...details,
+    factorType: rawFactor as SecurityAuthenticatorFactorType,
+    sortOrder,
+    isArchived: archived,
+  }
+}
+
+const normalizePendingEnrollment = (value: unknown): SecurityPendingMfaEnrollment | null => {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const ticket = coerceString(record.ticket)
+  const factorId = coerceString(record.factorId)
+  if (!ticket || !factorId) return null
+  const type: SecurityMfaFactorType = record.type === 'sms' || record.type === 'push' || record.type === 'hardware_key' || record.type === 'backup_codes'
+    ? record.type
+    : 'totp'
+  const catalog = normalizeCatalogDetails(record.catalog)
+  const explicitTags = record.tags != null ? coerceStringArray(record.tags, []) : []
+  const normalizedTags = record.tags != null ? (explicitTags.length ? explicitTags : null) : null
+  const helper = record.helper ? coerceString(record.helper) : catalog?.helper ?? null
+  const docsUrl = record.docsUrl ? coerceString(record.docsUrl) : catalog?.docsUrl ?? null
+  const description = record.description ? coerceString(record.description) : catalog?.description ?? null
+  const issuer = record.issuer ? coerceString(record.issuer) : catalog?.issuer ?? null
+  const metadata = catalog?.metadata ?? ((record.metadata as JsonValue) ?? null)
+  return {
+    ticket,
+    factorId,
+    mode: record.mode === 'rotate' ? 'rotate' : 'create',
+    type,
+    label: coerceString(record.label, type === 'totp' ? 'Authenticator app' : type.toUpperCase()),
+    catalogId: record.catalogId ? coerceString(record.catalogId) : null,
+    expiresAt: coerceDate(record.expiresAt),
+    status: coerceFactorStatus(record.status, 'pending'),
+    catalog,
+    description,
+    helper,
+    docsUrl,
+    tags: catalog?.tags ?? normalizedTags,
+    issuer,
+    metadata,
   }
 }
 
@@ -598,6 +731,7 @@ export function normalizeAccountSecuritySnapshot(value?: Record<string, unknown>
     mfa: {
       factors: mfaFactors.map((entry, index) => normalizeMfaFactor(entry, index)),
       recommendations: normalizeMfaRecommendations(mfaRecord?.recommendations),
+      pendingEnrollment: normalizePendingEnrollment(mfaRecord?.pendingEnrollment)
     },
     sessions: normalizeSessions(record.sessions),
     recovery: normalizeRecoverySettings(record.recovery),

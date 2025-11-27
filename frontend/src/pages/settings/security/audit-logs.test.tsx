@@ -3,7 +3,11 @@ import { render, screen, fireEvent } from '@testing-library/react'
 
 import SecurityAuditLogsSettingsPage from './audit-logs'
 import type { AuditTimelineEntry } from '@/services/interfaces/types'
-import type { IAdminNavigationService } from '@/services/interfaces/admin.interface'
+import type {
+  IAdminNavigationService,
+  IAdminAuthenticatorCatalogService,
+  AdminAuthenticatorCatalogRecord,
+} from '@/services/interfaces/admin.interface'
 import { renderWithProviders } from '@/test-utils/renderWithProviders'
 import {
   DEFAULT_AUDIT_ALERTS,
@@ -57,6 +61,32 @@ const adminNavigationStub: IAdminNavigationService = {
   deleteMenuItem: vi.fn(),
 }
 
+const authenticatorRecord: AdminAuthenticatorCatalogRecord = {
+  id: 'mock',
+  label: 'Mock Auth',
+  factorType: 'TOTP',
+  description: null,
+  issuer: null,
+  helper: null,
+  docsUrl: null,
+  tags: null,
+  metadata: null,
+  sortOrder: null,
+  isArchived: false,
+  createdAt: null,
+  updatedAt: null,
+  archivedAt: null,
+  archivedBy: null,
+}
+
+const adminAuthenticatorStub: IAdminAuthenticatorCatalogService = {
+  list: vi.fn().mockResolvedValue([authenticatorRecord]),
+  create: vi.fn().mockResolvedValue(authenticatorRecord),
+  update: vi.fn().mockResolvedValue(authenticatorRecord),
+  archive: vi.fn().mockResolvedValue(undefined),
+  restore: vi.fn().mockResolvedValue(undefined),
+}
+
 function renderPage() {
   const { wrapper } = renderWithProviders(<div />, {
     services: {
@@ -66,6 +96,7 @@ function renderPage() {
           saveSettings: saveSettingsMock,
         },
         navigation: adminNavigationStub,
+        authenticators: adminAuthenticatorStub,
       },
     },
   })

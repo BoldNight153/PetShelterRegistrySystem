@@ -790,6 +790,26 @@ try {
   try { (logger).warn({ err }, 'mountAdminDocs failed'); } catch {}
 }
 
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  try {
+    const log = (req as any).log ?? logger;
+    log.error({ err, url: req.originalUrl }, 'Unhandled request error');
+  } catch {
+    try { logger.error({ err }, 'Unhandled request error'); } catch {}
+  }
+  const status = typeof err?.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
+  const body: Record<string, unknown> = {
+    error: status >= 500 ? 'internal_server_error' : (typeof err?.message === 'string' ? err.message : 'request_failed'),
+  };
+  if (process.env.NODE_ENV !== 'production' && err?.stack) {
+    body.details = err.stack;
+  }
+  if (res.headersSent) {
+    return res.end();
+  }
+  res.status(status).json(body);
+});
+
 // Start the server unless we're running tests. Tests import the `app`
 // directly and use SuperTest, so we shouldn't open a real network port.
 if (process.env.NODE_ENV !== 'test') {

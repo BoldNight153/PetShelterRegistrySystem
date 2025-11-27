@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../index';
 import { PrismaClient } from '@prisma/client';
 import { ensureRoleWithPermissionsForUser } from './helpers/rbac';
+import { resetRateLimits } from './helpers/rateLimit';
 // Increase default timeout for this file (integration hooks may take longer)
 jest.setTimeout(30000);
 
@@ -17,6 +18,7 @@ describe('More routes integration tests', () => {
   let testEmail: string | undefined;
 
   beforeAll(async () => {
+    await resetRateLimits();
     const csrfRes = await agent.get('/auth/csrf');
     csrfToken = csrfRes.body?.csrfToken;
     testEmail = `more.${Date.now()}@example.test`;
@@ -36,11 +38,16 @@ describe('More routes integration tests', () => {
       ]);
       await new Promise(r => setTimeout(r, 5));
       const csrf2 = await agent.get('/auth/csrf');
+      await resetRateLimits();
       await agent
         .post('/auth/login')
         .set('x-csrf-token', String(csrf2.body?.csrfToken))
         .send({ email: testEmail, password });
     }
+  });
+
+  beforeEach(async () => {
+    await resetRateLimits();
   });
 
   afterAll(async () => {

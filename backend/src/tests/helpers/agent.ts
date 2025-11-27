@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../../index';
 import { PrismaClient } from '@prisma/client';
 import { ensureRoleWithPermissionsForUser } from './rbac';
+import { resetRateLimits } from './rateLimit';
 
 const prisma = new PrismaClient();
 
@@ -23,6 +24,7 @@ export async function createLoggedInAdminAgent() {
   await ensureRoleWithPermissionsForUser(prisma, adminUser.id, 'system_admin', []);
   await new Promise(r => setTimeout(r, 5));
   const csrf2 = await agent.get('/auth/csrf');
+  await resetRateLimits();
   await agent
     .post('/auth/login')
     .set('x-csrf-token', String(csrf2.body?.csrfToken))

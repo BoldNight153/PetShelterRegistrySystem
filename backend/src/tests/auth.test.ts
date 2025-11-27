@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../index';
 import { PrismaClient } from '@prisma/client';
+import { resetRateLimits } from './helpers/rateLimit';
 
 const CSRF_HEADER = 'x-csrf-token';
 const CSRF_COOKIE_PREFIX = 'csrfToken=';
@@ -15,6 +16,10 @@ const testEmail = `testuser+${unique}@example.com`;
 const prisma: any = new PrismaClient();
 
 describe('Auth Phase 1', () => {
+  beforeEach(async () => {
+    await resetRateLimits();
+  });
+
   it('issues CSRF token', async () => {
     const res = await request(app).get(CSRF_ROUTE);
     expect(res.status).toBe(200);

@@ -20,6 +20,10 @@ export class AccountSecurityAdapter implements IAccountSecurityService {
     return api.fetchAccountSecuritySnapshot()
   }
 
+  listAuthenticatorCatalog(options?: Parameters<typeof api.fetchSecurityAuthenticatorCatalog>[0]) {
+    return api.fetchSecurityAuthenticatorCatalog(options)
+  }
+
   listSessions(): Promise<SecuritySession[]> {
     return api.listAccountSecuritySessions()
   }
@@ -48,6 +52,10 @@ export class AccountSecurityAdapter implements IAccountSecurityService {
     return api.confirmTotpEnrollment(input)
   }
 
+  regenerateTotpFactor(factorId: string, input?: TotpEnrollmentInput): Promise<SecurityMfaEnrollmentPrompt> {
+    return api.regenerateTotpFactor(factorId, input)
+  }
+
   enableFactor(factorId: string): Promise<void> {
     return api.enableMfaFactor(factorId)
   }
@@ -60,8 +68,8 @@ export class AccountSecurityAdapter implements IAccountSecurityService {
     return api.deleteMfaFactor(factorId)
   }
 
-  regenerateRecoveryCodes(): Promise<{ codes: string[]; expiresAt?: string | null }> {
-    return api.regenerateRecoveryCodes()
+  regenerateRecoveryCodes(factorId?: string): Promise<{ codes: string[]; expiresAt?: string | null }> {
+    return api.regenerateRecoveryCodes(factorId)
   }
 
   updateAlerts(input: SecurityAlertSettings): Promise<SecurityAlertSettings> {

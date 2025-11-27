@@ -38,6 +38,8 @@ tags:
     description: System settings grouped by category.
   - name: Audit
     description: Timeline of privileged administrative and authentication events.
+  - name: Authenticators
+    description: Manage authenticator catalog entries surfaced in authentication settings and MFA flows.
 components:
   securitySchemes:
     cookieAuth:
@@ -254,11 +256,147 @@ components:
               value: {}
             required: [key, value]
       required: [category, entries]
+    AuthSettings:
+      type: object
+      description: Authentication and MFA policy settings exposed in the Admin UI.
+      properties:
+        mode:
+          type: string
+          enum: [session, jwt]
+          description: Primary authentication strategy; session uses HTTP-only cookies, jwt enables stateless access tokens.
+        google:
+          type: boolean
+          description: Toggle for Google OAuth login.
+        github:
+          type: boolean
+          description: Toggle for GitHub OAuth login.
+        enforceMfa:
+          type: string
+          enum: [optional, recommended, required]
+          description: Organization-wide MFA policy used by login + enforcement middleware.
+        authenticators:
+          type: array
+          description: Ordered list of authenticator catalog identifiers surfaced to admins. Values may include archived or legacy IDs so missing presets can be cleaned up in the UI.
+          items:
+            type: string
+            minLength: 1
+      required: [mode, google, github, enforceMfa, authenticators]
+    JsonValue:
+      description: Arbitrary JSON value (object, array, string, number, boolean, or null).
+      oneOf:
+        - type: 'null'
+        - type: object
+          additionalProperties: { $ref: '#/components/schemas/JsonValue' }
+        - type: array
+          items: { $ref: '#/components/schemas/JsonValue' }
+        - type: string
+        - type: number
+        - type: boolean
+    AuthenticatorCatalog:
+      type: object
+      properties:
+        id: { type: string, description: Stable identifier used in settings payloads. }
+        label: { type: string }
+        description: { type: [string, 'null'] }
+        factorType:
+          type: string
+          enum: [totp, sms, push, hardware_key, backup_codes]
+        issuer: { type: [string, 'null'] }
+        helper: { type: [string, 'null'] }
+        docsUrl: { type: [string, 'null'], format: uri }
+        tags:
+          description: Optional labels for grouping/filtering in the Admin UI.
+          oneOf:
+            - type: 'null'
+            - type: array
+              items: { type: string }
+        metadata:
+          description: Arbitrary data consumed by authenticator implementations (e.g., issuer icons).
+          $ref: '#/components/schemas/JsonValue'
+        sortOrder: { type: integer }
+        isArchived: { type: boolean }
+        isSystem:
+          type: boolean
+          description: When true, this is a system-default authenticator that cannot be deleted.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        archivedAt: { type: [string, 'null'], format: date-time }
+        createdBy: { type: [string, 'null'] }
+        updatedBy: { type: [string, 'null'] }
+        archivedBy: { type: [string, 'null'] }
+      required: [id, label, factorType, sortOrder, isArchived, createdAt, updatedAt]
+    AuthenticatorCatalogCreateInput:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: '^[A-Za-z0-9_\-]+$'
+          description: Unique, human-friendly identifier (2-120 chars).
+          minLength: 2
+          maxLength: 120
+        label: { type: string, minLength: 1, maxLength: 160 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        factorType:
+          type: string
+          enum: [totp, sms, push, hardware_key, backup_codes]
+        issuer: { type: [string, 'null'], maxLength: 160 }
+        helper: { type: [string, 'null'], maxLength: 500 }
+        docsUrl: { type: [string, 'null'], format: uri }
+        tags:
+          oneOf:
+            - type: 'null'
+            - type: array
+              maxItems: 10
+              items: { type: string, minLength: 1, maxLength: 40 }
+        metadata:
+          description: Optional JSON metadata forwarded to authenticator clients.
+          $ref: '#/components/schemas/JsonValue'
+        sortOrder: { type: integer }
+      required: [id, label, factorType]
+    AuthenticatorCatalogUpdateInput:
+      type: object
+      properties:
+        label: { type: string, minLength: 1, maxLength: 160 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        factorType:
+          type: string
+          enum: [totp, sms, push, hardware_key, backup_codes]
+        issuer: { type: [string, 'null'], maxLength: 160 }
+        helper: { type: [string, 'null'], maxLength: 500 }
+        docsUrl: { type: [string, 'null'], format: uri }
+        tags:
+          oneOf:
+            - type: 'null'
+            - type: array
+              maxItems: 10
+              items: { type: string, minLength: 1, maxLength: 40 }
+        metadata:
+          description: Optional JSON metadata forwarded to authenticator clients.
+          $ref: '#/components/schemas/JsonValue'
+        sortOrder: { type: integer }
+      description: At least one property must be supplied. Omitted properties remain unchanged.
+    AuthenticatorCatalogResponse:
+      type: object
+      properties:
+        authenticator:
+          $ref: '#/components/schemas/AuthenticatorCatalog'
+      required: [authenticator]
+    AuthenticatorCatalogListResponse:
+      type: object
+      properties:
+        authenticators:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthenticatorCatalog'
+      required: [authenticators]
     SettingsResponse:
       type: object
       properties:
         settings:
           type: object
+          properties:
+            auth:
+              $ref: '#/components/schemas/AuthSettings'
           additionalProperties:
             type: object
             additionalProperties: {}
@@ -928,6 +1066,141 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
 
   # Settings endpoints
+  /admin/authenticators:
+    get:
+      summary: List authenticator catalog entries
+      description: Returns active authenticators, optionally including archived entries for auditing.
+      tags: [Authenticators]
+      operationId: listAuthenticators
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: includeArchived
+          schema: { type: boolean }
+          required: false
+          description: When true, include archived authenticators in the response.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatorCatalogListResponse'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Create an authenticator catalog entry
+      description: Adds a new authenticator definition. Requires CSRF.
+      tags: [Authenticators]
+      operationId: createAuthenticator
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorCatalogCreateInput'
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatorCatalogResponse'
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /admin/authenticators/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+        description: Authenticator identifier (matches settings authenticators array entries).
+    put:
+      summary: Update an authenticator catalog entry
+      description: Applies partial updates to the authenticator definition. Requires CSRF.
+      tags: [Authenticators]
+      operationId: updateAuthenticator
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticatorCatalogUpdateInput'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatorCatalogResponse'
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /admin/authenticators/{id}/archive:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+        description: Authenticator identifier to archive.
+    post:
+      summary: Archive an authenticator
+      description: Marks the authenticator as archived (hidden from settings). Requires CSRF.
+      tags: [Authenticators]
+      operationId: archiveAuthenticator
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiOk'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/authenticators/{id}/restore:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+        description: Authenticator identifier to restore.
+    post:
+      summary: Restore an authenticator
+      description: Reactivates a previously archived authenticator entry. Requires CSRF.
+      tags: [Authenticators]
+      operationId: restoreAuthenticator
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiOk'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /admin/settings:
     get:
       summary: List settings

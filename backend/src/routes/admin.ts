@@ -1,16 +1,34 @@
 import express from 'express';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prismaClient as prisma } from '../prisma/client';
 import { requireRole } from '../middleware/auth';
 import { resetPasswordEmailTemplate, sendMail } from '../lib/email';
 import { AuditService } from '../services/auditService';
 import { normalizeAuditSettings } from '../types/auditSettings';
+import { DEFAULT_AUTH_SETTINGS, normalizeAuthSettingEntry, normalizeAuthSettings } from '../types/authSettings';
+import type { IAuthenticatorCatalogService, AuthenticatorCatalogInput, AuthenticatorCatalogUpdate } from '../services/interfaces/authenticatorCatalogService.interface';
 
 const router = express.Router();
 // use centralized prisma client
 const ERR = { notFound: 'user not found' } as const;
 const ERR_ROLE_OR_PERMISSION_NOT_FOUND = 'role or permission not found' as const;
+const ERROR_AUTHENTICATOR_NOT_FOUND = 'authenticator not found' as const;
+
+async function resolveAuthenticatorIdBuckets() {
+  const rows = await prisma.authenticatorCatalog.findMany({
+    orderBy: { sortOrder: 'asc' },
+    select: { id: true, isArchived: true },
+  });
+  if (!rows.length) {
+    const defaults = [...DEFAULT_AUTH_SETTINGS.authenticators];
+    return { allowedIds: defaults, fallbackIds: defaults };
+  }
+  const allowedIds = rows.map(entry => entry.id);
+  const activeIds = rows.filter(entry => !entry.isArchived).map(entry => entry.id);
+  const fallbackIds = activeIds.length ? activeIds : allowedIds;
+  return { allowedIds, fallbackIds };
+}
 
 async function logAudit(userId: string | null, action: string, req: any, metadata?: any) {
   try {
@@ -580,7 +598,7 @@ router.get('/settings', settingsGuard, async (req: any, res) => {
   const { category } = req.query as { category?: string };
   const maybeSettings = req.container?.resolve?.('settingsService') as import('../services/interfaces/settingsService.interface').ISettingsService | undefined;
   if (maybeSettings && typeof maybeSettings.listSettings === 'function') {
-    const settings = await maybeSettings.listSettings(category);
+    const settings = await maybeSettings.listSettings(category, { preserveUnknownAuth: true });
     return res.json({ settings });
   }
   const where = category ? { category: String(category) } : {};
@@ -593,6 +611,14 @@ router.get('/settings', settingsGuard, async (req: any, res) => {
   }
   if (!category || category === 'audit') {
     result.audit = normalizeAuditSettings(result.audit as Record<string, unknown> | null | undefined);
+  }
+  if (!category || category === 'auth') {
+    const { allowedIds, fallbackIds } = await resolveAuthenticatorIdBuckets();
+    result.auth = normalizeAuthSettings(result.auth as Record<string, unknown> | null | undefined, {
+      allowedAuthenticatorIds: allowedIds,
+      fallbackAuthenticators: fallbackIds,
+      preserveUnknown: true,
+    });
   }
   res.json({ settings: result });
 });
@@ -615,16 +641,225 @@ router.put('/settings', settingsGuard, async (req: any, res) => {
     return res.json({ ok: true });
   }
   const writes: Array<Prisma.PrismaPromise<any>> = [];
+  let allowedAuthenticatorIds: string[] | undefined;
+  let fallbackAuthenticatorIds: string[] | undefined;
+  if (category === 'auth') {
+    const buckets = await resolveAuthenticatorIdBuckets();
+    allowedAuthenticatorIds = buckets.allowedIds;
+    fallbackAuthenticatorIds = buckets.fallbackIds;
+  }
   for (const { key, value } of entries) {
+    const sanitized = category === 'auth'
+      ? normalizeAuthSettingEntry(key, value, {
+          allowedAuthenticatorIds,
+          fallbackAuthenticators: fallbackAuthenticatorIds ?? allowedAuthenticatorIds,
+        })
+      : value;
+    const normalizedValue = sanitized as Prisma.InputJsonValue;
     writes.push(prisma.setting.upsert({
       where: { category_key: { category, key } },
-      create: { category, key, value: value as Prisma.InputJsonValue, updatedBy: actorId || undefined },
-      update: { value: value as Prisma.InputJsonValue, updatedBy: actorId || undefined },
+      create: { category, key, value: normalizedValue, updatedBy: actorId || undefined },
+      update: { value: normalizedValue, updatedBy: actorId || undefined },
     }));
   }
   await prisma.$transaction(writes);
   await logAudit((typeof actorId === 'string' ? actorId : null), 'admin.settings.upsert', req, { category, keys: entries.map((e: { key: string }) => e.key) });
   res.json({ ok: true });
+});
+
+// ----------------------
+// Authenticator catalog management
+// ----------------------
+
+const authenticatorGuard = requireRole('system_admin');
+const FactorTypeSchema = z.preprocess(
+  value => (typeof value === 'string' ? value.trim().toUpperCase() : value),
+  z.enum(['TOTP', 'SMS', 'PUSH', 'HARDWARE_KEY', 'BACKUP_CODES']),
+); // Coerce lowercase inputs to the canonical enum
+const optionalUrlSchema = z.preprocess(
+  value => (typeof value === 'string' && value.trim().length === 0 ? null : value),
+  z.string().url().optional().nullable(),
+);
+const normalizeOptionalString = (value: string | null | undefined): string | null | undefined => {
+  if (typeof value === 'undefined') return undefined;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+};
+const JsonValueSchema: z.ZodType<Prisma.JsonValue> = z.lazy(() => z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(JsonValueSchema),
+  z.record(z.string(), JsonValueSchema),
+]));
+const toNullableJsonInput = (
+  value: Prisma.JsonValue | string[] | null | undefined,
+): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined => {
+  if (typeof value === 'undefined') return undefined;
+  if (value === null) return Prisma.JsonNull;
+  return value as Prisma.InputJsonValue;
+};
+
+const AuthenticatorBaseSchema = z.object({
+  label: z.string().min(1).max(160),
+  description: z.string().max(500).optional().nullable(),
+  factorType: FactorTypeSchema,
+  issuer: z.string().max(160).optional().nullable(),
+  helper: z.string().max(500).optional().nullable(),
+  docsUrl: optionalUrlSchema,
+  tags: z.array(z.string().min(1).max(40)).max(10).optional().nullable(),
+  metadata: z.record(z.string(), z.unknown()).optional().nullable(),
+  sortOrder: z.number().int().optional().nullable(),
+});
+
+const AuthenticatorCreateSchema = AuthenticatorBaseSchema.extend({
+  id: z.string().min(2).max(120).regex(/^[a-z0-9_\-]+$/i),
+});
+
+const AuthenticatorUpdateSchema = AuthenticatorBaseSchema.partial();
+
+router.get('/authenticators', authenticatorGuard, async (req: any, res) => {
+  const includeArchived = String(req.query.includeArchived || '').toLowerCase() === 'true';
+  const maybeCatalog = req.container?.resolve?.('authenticatorCatalogService') as IAuthenticatorCatalogService | undefined;
+  const authenticators = maybeCatalog && typeof maybeCatalog.list === 'function'
+    ? await maybeCatalog.list({ includeArchived })
+    : await prisma.authenticatorCatalog.findMany({
+        where: includeArchived ? {} : { isArchived: false },
+        orderBy: { sortOrder: 'asc' },
+      });
+  res.json({ authenticators });
+});
+
+router.post('/authenticators', authenticatorGuard, async (req: any, res) => {
+  const parsed = AuthenticatorCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+  const actorId = req.user?.id || null;
+  const maybeCatalog = req.container?.resolve?.('authenticatorCatalogService') as IAuthenticatorCatalogService | undefined;
+  const payload = parsed.data;
+  const normalizedSortOrder = typeof payload.sortOrder === 'number' ? payload.sortOrder : 0;
+  const normalizedPayload: AuthenticatorCatalogInput = {
+    ...payload,
+    description: normalizeOptionalString(payload.description),
+    issuer: normalizeOptionalString(payload.issuer),
+    helper: normalizeOptionalString(payload.helper),
+    docsUrl: normalizeOptionalString(payload.docsUrl),
+    tags: payload.tags ?? undefined,
+    metadata: typeof payload.metadata === 'undefined' ? null : (payload.metadata as Prisma.JsonValue | null),
+    sortOrder: normalizedSortOrder,
+  };
+  const { sortOrder: _ignoredSortOrder, ...restPayload } = normalizedPayload;
+  try {
+    const created = maybeCatalog && typeof maybeCatalog.create === 'function'
+      ? await maybeCatalog.create(normalizedPayload, actorId)
+      : await prisma.authenticatorCatalog.create({
+          data: {
+            ...restPayload,
+            description: normalizeOptionalString(payload.description) ?? null,
+            issuer: normalizeOptionalString(payload.issuer) ?? null,
+            helper: normalizeOptionalString(payload.helper) ?? null,
+            docsUrl: normalizeOptionalString(payload.docsUrl) ?? null,
+            tags: toNullableJsonInput(payload.tags ?? null),
+            metadata: toNullableJsonInput(typeof payload.metadata === 'undefined' ? null : (payload.metadata as Prisma.JsonValue | null)),
+            sortOrder: normalizedSortOrder,
+            createdBy: actorId ?? null,
+            updatedBy: actorId ?? null,
+            isSystem: false,
+          },
+        });
+    await logAudit(actorId ?? null, 'admin.authenticators.create', req, { id: payload.id });
+    return res.status(201).json({ authenticator: created });
+  } catch (err) {
+    return res.status(400).json({ error: 'failed to create authenticator', details: String((err as Error)?.message ?? err) });
+  }
+});
+
+router.put('/authenticators/:id', authenticatorGuard, async (req: any, res) => {
+  const parsed = AuthenticatorUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.format() });
+  const actorId = req.user?.id || null;
+  const { id } = req.params as { id: string };
+  const normalizedUpdateInput: AuthenticatorCatalogUpdate = {
+    ...parsed.data,
+    description: normalizeOptionalString(parsed.data.description),
+    issuer: normalizeOptionalString(parsed.data.issuer),
+    helper: normalizeOptionalString(parsed.data.helper),
+    docsUrl: normalizeOptionalString(parsed.data.docsUrl),
+    tags: Array.isArray(parsed.data.tags) ? parsed.data.tags : undefined,
+    metadata: typeof parsed.data.metadata === 'undefined' ? undefined : (parsed.data.metadata as Prisma.JsonValue | null),
+    sortOrder: typeof parsed.data.sortOrder === 'number' ? parsed.data.sortOrder : undefined,
+  };
+  const maybeCatalog = req.container?.resolve?.('authenticatorCatalogService') as IAuthenticatorCatalogService | undefined;
+  try {
+    const updated = maybeCatalog && typeof maybeCatalog.update === 'function'
+      ? await maybeCatalog.update(id, normalizedUpdateInput, actorId)
+      : await prisma.authenticatorCatalog.update({
+          where: { id },
+          data: {
+            ...parsed.data,
+            description: typeof normalizedUpdateInput.description === 'undefined' ? undefined : normalizedUpdateInput.description,
+            issuer: typeof normalizedUpdateInput.issuer === 'undefined' ? undefined : normalizedUpdateInput.issuer,
+            helper: typeof normalizedUpdateInput.helper === 'undefined' ? undefined : normalizedUpdateInput.helper,
+            docsUrl: typeof normalizedUpdateInput.docsUrl === 'undefined' ? undefined : normalizedUpdateInput.docsUrl,
+            tags: toNullableJsonInput(parsed.data.tags),
+            metadata: typeof parsed.data.metadata === 'undefined'
+              ? undefined
+              : toNullableJsonInput((parsed.data.metadata ?? null) as Prisma.JsonValue | null),
+            sortOrder: typeof parsed.data.sortOrder === 'number' ? parsed.data.sortOrder : undefined,
+            updatedBy: actorId ?? undefined,
+          },
+        });
+    await logAudit(actorId ?? null, 'admin.authenticators.update', req, { id });
+    return res.json({ authenticator: updated });
+  } catch {
+    return res.status(404).json({ error: ERROR_AUTHENTICATOR_NOT_FOUND });
+  }
+});
+
+router.post('/authenticators/:id/archive', authenticatorGuard, async (req: any, res) => {
+  const { id } = req.params as { id: string };
+  const actorId = req.user?.id || null;
+  const maybeCatalog = req.container?.resolve?.('authenticatorCatalogService') as IAuthenticatorCatalogService | undefined;
+  try {
+    if (maybeCatalog && typeof maybeCatalog.archive === 'function') {
+      await maybeCatalog.archive(id, actorId);
+    } else {
+      const authenticator = await prisma.authenticatorCatalog.findUnique({ where: { id } });
+      if (authenticator?.isSystem) {
+        return res.status(400).json({ error: 'System authenticators cannot be archived' });
+      }
+      await prisma.authenticatorCatalog.update({
+        where: { id },
+        data: { isArchived: true, archivedAt: new Date(), archivedBy: actorId ?? null },
+      });
+    }
+    await logAudit(actorId ?? null, 'admin.authenticators.archive', req, { id });
+    return res.json({ ok: true });
+  } catch (err) {
+    const message = (err as Error)?.message || ERROR_AUTHENTICATOR_NOT_FOUND;
+    return res.status(400).json({ error: message });
+  }
+});
+
+router.post('/authenticators/:id/restore', authenticatorGuard, async (req: any, res) => {
+  const { id } = req.params as { id: string };
+  const actorId = req.user?.id || null;
+  const maybeCatalog = req.container?.resolve?.('authenticatorCatalogService') as IAuthenticatorCatalogService | undefined;
+  try {
+    if (maybeCatalog && typeof maybeCatalog.restore === 'function') {
+      await maybeCatalog.restore(id, actorId);
+    } else {
+      await prisma.authenticatorCatalog.update({
+        where: { id },
+        data: { isArchived: false, archivedAt: null, archivedBy: null, updatedBy: actorId ?? undefined },
+      });
+    }
+    await logAudit(actorId ?? null, 'admin.authenticators.restore', req, { id });
+    return res.json({ ok: true });
+  } catch {
+    return res.status(404).json({ error: ERROR_AUTHENTICATOR_NOT_FOUND });
+  }
 });
 
 // ----------------------

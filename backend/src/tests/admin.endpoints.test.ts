@@ -9,7 +9,11 @@ describe('Admin endpoints', () => {
   // Some CI environments are slower; give these tests more headroom.
   // See: https://jestjs.io/docs/api#testname-fn-timeout
   jest.setTimeout(30000);
-  const prisma: any = new PrismaClient();
+  const prisma = new PrismaClient();
+  const ORDER_DESC = 'desc' as const;
+  const PATH_ADMIN_ROLES_UPSERT = '/admin/roles/upsert';
+  const PATH_ADMIN_PERMISSIONS_GRANT = '/admin/permissions/grant';
+  const PATH_ADMIN_PERMISSIONS_REVOKE = '/admin/permissions/revoke';
   const agent = request.agent(app);
   let _csrfToken: string | undefined;
   let _adminEmail: string | undefined;
@@ -38,14 +42,14 @@ describe('Admin endpoints', () => {
 
   it('upserts and deletes a role, auditing actions', async () => {
     const roleName = `qa_role_${Date.now()}`;
-    const upsertRes = await agent.post('/admin/roles/upsert').send({ name: roleName, rank: 10, description: 'QA role' });
+  const upsertRes = await agent.post(PATH_ADMIN_ROLES_UPSERT).send({ name: roleName, rank: 10, description: 'QA role' });
     expect(upsertRes.status).toBe(200);
     expect(upsertRes.body.name).toBe(roleName);
 
     // Check audit log for upsert
     const upsertAudit = await prisma.auditLog.findFirst({
       where: { action: 'admin.roles.upsert', userId: adminUserId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: ORDER_DESC },
     });
     expect(upsertAudit).toBeTruthy();
 
@@ -55,7 +59,7 @@ describe('Admin endpoints', () => {
     // Check audit log for delete
     const deleteAudit = await prisma.auditLog.findFirst({
       where: { action: 'admin.roles.delete', userId: adminUserId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: ORDER_DESC },
     });
     expect(deleteAudit).toBeTruthy();
   });
@@ -66,13 +70,13 @@ describe('Admin endpoints', () => {
     const permName = `perm.${Date.now()}.write`;
     await ensurePermission(prisma, permName, 'Temporary permission');
 
-    const grantRes = await agent.post('/admin/permissions/grant').send({ roleName, permission: permName });
+  const grantRes = await agent.post(PATH_ADMIN_PERMISSIONS_GRANT).send({ roleName, permission: permName });
     expect(grantRes.status).toBe(200);
     expect(grantRes.body.ok).toBe(true);
 
     const grantAudit = await prisma.auditLog.findFirst({
       where: { action: 'admin.permissions.grant', userId: adminUserId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: ORDER_DESC },
     });
     expect(grantAudit).toBeTruthy();
 
@@ -82,13 +86,13 @@ describe('Admin endpoints', () => {
     const rp = await prisma.rolePermission.findFirst({ where: { roleId: role?.id, permissionId: perm?.id } });
     expect(rp).toBeTruthy();
 
-    const revokeRes = await agent.post('/admin/permissions/revoke').send({ roleName, permission: permName });
+  const revokeRes = await agent.post(PATH_ADMIN_PERMISSIONS_REVOKE).send({ roleName, permission: permName });
     expect(revokeRes.status).toBe(200);
     expect(revokeRes.body.ok).toBe(true);
 
     const revokeAudit = await prisma.auditLog.findFirst({
       where: { action: 'admin.permissions.revoke', userId: adminUserId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: ORDER_DESC },
     });
     expect(revokeAudit).toBeTruthy();
   });
@@ -115,7 +119,7 @@ describe('Admin endpoints', () => {
 
     const assignAudit = await prisma.auditLog.findFirst({
       where: { action: 'admin.users.assign_role', userId: adminUserId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: ORDER_DESC },
     });
     expect(assignAudit).toBeTruthy();
 
@@ -129,15 +133,15 @@ describe('Admin endpoints', () => {
 
     const revokeAudit = await prisma.auditLog.findFirst({
       where: { action: 'admin.users.revoke_role', userId: adminUserId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: ORDER_DESC },
     });
     expect(revokeAudit).toBeTruthy();
   });
 
   it('returns 404 for granting permission to non-existent role or permission', async () => {
-    const res1 = await agent.post('/admin/permissions/grant').send({ roleName: 'no_such_role', permission: 'no.perm' });
+  const res1 = await agent.post(PATH_ADMIN_PERMISSIONS_GRANT).send({ roleName: 'no_such_role', permission: 'no.perm' });
     expect(res1.status).toBe(404);
-    const res2 = await agent.post('/admin/permissions/revoke').send({ roleName: 'no_such_role', permission: 'no.perm' });
+  const res2 = await agent.post(PATH_ADMIN_PERMISSIONS_REVOKE).send({ roleName: 'no_such_role', permission: 'no.perm' });
     expect(res2.status).toBe(404);
   });
 
@@ -148,14 +152,14 @@ describe('Admin endpoints', () => {
 
   it('returns 400 for invalid payloads on upsert/grant/revoke/assign/revoke', async () => {
     // missing name
-    const r1 = await agent.post('/admin/roles/upsert').send({ rank: 1 });
+  const r1 = await agent.post(PATH_ADMIN_ROLES_UPSERT).send({ rank: 1 });
     expect(r1.status).toBe(400);
     // invalid types
-    const r2 = await agent.post('/admin/roles/upsert').send({ name: '', rank: -1 });
+  const r2 = await agent.post(PATH_ADMIN_ROLES_UPSERT).send({ name: '', rank: -1 });
     expect(r2.status).toBe(400);
-    const g1 = await agent.post('/admin/permissions/grant').send({ roleName: '', permission: '' });
+  const g1 = await agent.post(PATH_ADMIN_PERMISSIONS_GRANT).send({ roleName: '', permission: '' });
     expect(g1.status).toBe(400);
-    const rv1 = await agent.post('/admin/permissions/revoke').send({});
+  const rv1 = await agent.post(PATH_ADMIN_PERMISSIONS_REVOKE).send({});
     expect(rv1.status).toBe(400);
     const a1 = await agent.post('/admin/users/assign-role').send({ userId: '', roleName: '' });
     expect(a1.status).toBe(400);

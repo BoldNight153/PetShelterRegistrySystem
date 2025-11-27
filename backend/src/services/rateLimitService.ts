@@ -44,22 +44,24 @@ export class RateLimitService implements IRateLimitService {
   private async pruneOldBuckets(scope: string, key: string, windowMs: number) {
     const normalized = this.normalizeWindowMs(windowMs);
     const cutoff = new Date(Date.now() - normalized * 4);
-    await this.prisma.rateLimit.deleteMany({ where: { scope, key, windowStart: { lt: cutoff } as any } }).catch(() => {});
+    await this.prisma.rateLimit.deleteMany({ where: { scope, key, lastAttemptAt: { lt: cutoff } as any } }).catch(() => {});
   }
 
   private async summarizeRecent(scope: string, key: string, windowMs: number) {
     const since = this.windowBounds(windowMs);
     const rows = await this.prisma.rateLimit.findMany({
-      where: { scope, key, windowStart: { gte: since } as any },
-      select: { count: true, windowStart: true },
-      orderBy: { windowStart: 'desc' },
+      where: { scope, key, lastAttemptAt: { gte: since } as any },
+      select: { count: true, windowStart: true, lastAttemptAt: true },
+      orderBy: { lastAttemptAt: 'desc' },
     });
     if (!rows.length) {
       const now = new Date();
       return { count: 0, latestWindow: now, earliestWindow: now };
     }
     const count = rows.reduce((sum, row) => sum + row.count, 0);
-    return { count, latestWindow: rows[0].windowStart, earliestWindow: rows[rows.length - 1].windowStart };
+    const latestWindow = rows[0].lastAttemptAt ?? rows[0].windowStart;
+    const earliestWindow = rows[rows.length - 1].lastAttemptAt ?? rows[rows.length - 1].windowStart;
+    return { count, latestWindow, earliestWindow };
   }
 
   async incrementAndCheck(opts: LimitOptions) {

@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useServices } from '@/services/hooks'
+import { AUTHENTICATOR_CATALOG_QUERY_KEY } from '@/services/queryKeys'
 import type {
   AccountSecuritySnapshot,
   SecurityAlertSettings,
+  SecurityAuthenticatorCatalogEntry,
   SecurityMfaEnrollmentPrompt,
   SecurityMfaEnrollmentResult,
   SecurityRecoverySettings,
@@ -11,18 +13,32 @@ import type {
 import type {
   ChangePasswordInput,
   ConfirmTotpEnrollmentInput,
+  RegenerateTotpFactorInput,
+  SecurityAuthenticatorCatalogFilter,
   TotpEnrollmentInput,
   TrustSessionInput,
 } from '@/services/interfaces/security.interface'
 
 const ACCOUNT_SECURITY_KEY = ['accountSecurity'] as const
 const ACCOUNT_SECURITY_SESSIONS_KEY = ['accountSecuritySessions'] as const
+const ACCOUNT_SECURITY_CATALOG_KEY = [AUTHENTICATOR_CATALOG_QUERY_KEY, 'account'] as const
 
 export function useAccountSecuritySnapshot() {
   const services = useServices()
   return useQuery<AccountSecuritySnapshot, Error>({
     queryKey: ACCOUNT_SECURITY_KEY,
     queryFn: () => services.security.loadSnapshot(),
+  })
+}
+
+export function useSecurityAuthenticatorCatalog(options?: SecurityAuthenticatorCatalogFilter) {
+  const services = useServices()
+  const factorType = options?.factorType ?? 'all'
+  const includeArchived = Boolean(options?.includeArchived)
+  return useQuery<SecurityAuthenticatorCatalogEntry[], Error>({
+    queryKey: [...ACCOUNT_SECURITY_CATALOG_KEY, factorType, includeArchived],
+    queryFn: () => services.security.listAuthenticatorCatalog(options),
+    staleTime: 5 * 60 * 1000,
   })
 }
 
@@ -99,6 +115,17 @@ export function useConfirmTotpEnrollment() {
   })
 }
 
+export function useRegenerateTotpFactor() {
+  const services = useServices()
+  const qc = useQueryClient()
+  return useMutation<SecurityMfaEnrollmentPrompt, Error, RegenerateTotpFactorInput>({
+    mutationFn: ({ factorId, options }) => services.security.regenerateTotpFactor(factorId, options),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ACCOUNT_SECURITY_KEY })
+    },
+  })
+}
+
 export function useEnableMfaFactor() {
   const services = useServices()
   const qc = useQueryClient()
@@ -135,8 +162,11 @@ export function useDeleteMfaFactor() {
 export function useRegenerateRecoveryCodes() {
   const services = useServices()
   const qc = useQueryClient()
-  return useMutation<{ codes: string[]; expiresAt?: string | null }, Error>({
-    mutationFn: () => services.security.regenerateRecoveryCodes(),
+  return useMutation<{ codes: string[]; expiresAt?: string | null }, Error, { factorId?: string } | void>({
+    mutationFn: (input) => {
+      const factorId = input && typeof input === 'object' ? input.factorId : undefined
+      return services.security.regenerateRecoveryCodes(factorId)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ACCOUNT_SECURITY_KEY })
     },

@@ -75,7 +75,7 @@ export function requireRole(...allowed: string[]) {
       if (process.env.NODE_ENV === 'test') {
         try {
           (req as unknown as Record<string, any>).log?.warn?.({ roles: user.roles, allowed }, 'RBAC forbid');
-        } catch (_) {
+        } catch {
           // no-op
         }
       }

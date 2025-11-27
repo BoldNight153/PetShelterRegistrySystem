@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertCircle,
@@ -47,6 +47,15 @@ import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from '@/components/ui/command'
+import {
   Table,
   TableBody,
   TableCell,
@@ -59,24 +68,34 @@ import {
   type AccountSecuritySnapshot,
   type SecurityAlertChannel,
   type SecurityAlertSettings,
+  type SecurityAuthenticatorCatalogEntry,
   type SecurityMfaEnrollmentPrompt,
+  type SecurityPendingMfaEnrollment,
   type SecurityMfaFactor,
   type SecurityMfaFactorType,
+  type SecurityMfaFactorStatus,
   type SecurityRecoverySettings,
   type SecurityRiskSeverity,
   type SecuritySession,
+  type SecuritySessionRisk,
   type SecurityEventEntry,
 } from '@/types/security-settings'
+import {
+  AUTHENTICATOR_CATALOG,
+  DEFAULT_TOTP_ISSUER,
+} from '@/lib/authenticator-catalog'
 import { passwordChangeSchema, type PasswordChangeValues } from '@/lib/validation'
 import { evaluatePasswordRules, type PasswordRuleState } from '@/lib/passwordRules'
 import {
   useAccountSecuritySessions,
   useAccountSecuritySnapshot,
+  useSecurityAuthenticatorCatalog,
   useChangePassword,
   useConfirmTotpEnrollment,
   useDeleteMfaFactor,
   useDisableMfaFactor,
   useEnableMfaFactor,
+  useRegenerateTotpFactor,
   useRegenerateRecoveryCodes,
   useRevokeAllSessions,
   useRevokeSession,
@@ -85,6 +104,7 @@ import {
   useUpdateSecurityRecovery,
 } from '@/services/hooks/security'
 import type { TotpEnrollmentInput } from '@/services/interfaces/security.interface'
+import type { JsonValue } from '@/services/interfaces/types'
 
 const CHANNEL_LABELS: Record<SecurityAlertChannel, string> = {
   email: 'Email',
@@ -107,24 +127,37 @@ const SEVERITY_VARIANT: Record<SecurityRiskSeverity, 'default' | 'secondary' | '
   critical: 'destructive',
 }
 
-const DEFAULT_TOTP_ISSUER = 'Pet Shelter Registry'
+const CUSTOM_PRESET_ID = 'custom'
 
-type TotpAppPreset = {
-  id: string
-  label: string
-  description: string
-  issuer?: string
-  helper?: string
+const MFA_STATUS_META: Record<SecurityMfaFactorStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  active: { label: 'Active', variant: 'secondary' },
+  pending: { label: 'Pending', variant: 'outline' },
+  disabled: { label: 'Disabled', variant: 'outline' },
+  revoked: { label: 'Revoked', variant: 'destructive' },
 }
 
-const TOTP_APP_PRESETS: TotpAppPreset[] = [
-  { id: 'google', label: 'Google Authenticator', description: 'Android + iOS code generator', issuer: DEFAULT_TOTP_ISSUER },
-  { id: 'microsoft', label: 'Microsoft Authenticator', description: 'Microsoft Entra + push approvals', issuer: DEFAULT_TOTP_ISSUER },
-  { id: 'authy', label: 'Authy', description: 'Desktop + mobile authenticator with multi-device sync', issuer: DEFAULT_TOTP_ISSUER },
-  { id: '1password', label: '1Password', description: 'Built-in OTP field stored with your vault', issuer: DEFAULT_TOTP_ISSUER },
-]
-
-const CUSTOM_PRESET_ID = 'custom'
+const SESSION_RISK_META: Record<SecuritySessionRisk, { label: string; helper: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  low: {
+    label: 'Low risk',
+    helper: 'Signals look normal',
+    variant: 'secondary',
+  },
+  medium: {
+    label: 'Review',
+    helper: 'New location or browser',
+    variant: 'default',
+  },
+  high: {
+    label: 'High risk',
+    helper: 'Suspicious activity detected',
+    variant: 'destructive',
+  },
+  unknown: {
+    label: 'Unknown',
+    helper: 'Waiting for more signals',
+    variant: 'outline',
+  },
+}
 
 function normalizeFactorLabel(label: string | null | undefined): string {
   return (label ?? '').trim().toLowerCase()
@@ -135,7 +168,21 @@ type PasswordFormState = PasswordChangeValues & {
 }
 
 type PasswordFieldErrors = Partial<Record<keyof PasswordChangeValues, string[]>>
+const STATIC_AUTHENTICATOR_CATALOG: SecurityAuthenticatorCatalogEntry[] = AUTHENTICATOR_CATALOG.map((entry, index) => ({
+  id: entry.id,
+  label: entry.label,
+  description: entry.description ?? null,
+  helper: entry.helper ?? null,
+  docsUrl: entry.docsUrl ?? null,
+  tags: entry.tags ?? null,
+  issuer: entry.issuer ?? null,
+  metadata: (entry.metadata ?? null) as JsonValue | null,
+  factorType: entry.factorType,
+  sortOrder: typeof entry.sortOrder === 'number' ? entry.sortOrder : (index + 1) * 10,
+  isArchived: false,
+}))
 
+const STATIC_AUTHENTICATOR_MAP = new Map(STATIC_AUTHENTICATOR_CATALOG.map((entry) => [entry.id, entry]))
 type CodesModalState = {
   open: boolean
   codes: string[]
@@ -187,6 +234,7 @@ function buildDeviceLabel(session: SecuritySession): string {
 export default function AccountSecuritySettingsPage() {
   const snapshotQuery = useAccountSecuritySnapshot()
   const sessionsQuery = useAccountSecuritySessions()
+  const catalogQuery = useSecurityAuthenticatorCatalog()
 
   const changePassword = useChangePassword()
   const revokeSession = useRevokeSession()
@@ -197,6 +245,7 @@ export default function AccountSecuritySettingsPage() {
   const enableMfaFactor = useEnableMfaFactor()
   const disableMfaFactor = useDisableMfaFactor()
   const deleteMfaFactor = useDeleteMfaFactor()
+  const regenerateTotpFactor = useRegenerateTotpFactor()
   const regenerateCodes = useRegenerateRecoveryCodes()
   const updateRecovery = useUpdateSecurityRecovery()
 
@@ -225,11 +274,51 @@ export default function AccountSecuritySettingsPage() {
   }, [snapshotQuery.data])
 
   const snapshot = snapshotQuery.data ?? DEFAULT_SECURITY_SNAPSHOT
+  const pendingEnrollment = snapshot.mfa.pendingEnrollment
   const sessions = sessionsQuery.data ?? snapshot.sessions.list
   const overview = snapshot.overview
+  const backupCodesFactor = snapshot.mfa.factors.find((factor) => factor.type === 'backup_codes')
+
+  const catalogEntries = useMemo<SecurityAuthenticatorCatalogEntry[]>(() => (
+    Array.isArray(catalogQuery.data) ? catalogQuery.data : STATIC_AUTHENTICATOR_CATALOG
+  ), [catalogQuery.data])
+
+  const dynamicCatalogMap = useMemo(() => {
+    const map = new Map<string, SecurityAuthenticatorCatalogEntry>()
+    if (Array.isArray(catalogQuery.data)) {
+      catalogQuery.data.forEach((entry) => map.set(entry.id, entry))
+    }
+    return map
+  }, [catalogQuery.data])
+
+  const resolveCatalogEntry = useCallback((id: string | null | undefined) => {
+    if (!id) return undefined
+    return dynamicCatalogMap.get(id) ?? STATIC_AUTHENTICATOR_MAP.get(id)
+  }, [dynamicCatalogMap])
+
+  const totpCatalogPresets = useMemo(() => (
+    catalogEntries
+      .filter((entry) => entry.factorType === 'TOTP')
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.label.localeCompare(b.label))
+  ), [catalogEntries])
 
   const loading = snapshotQuery.isLoading && !snapshotQuery.data
   const error = snapshotQuery.error as Error | null
+
+  const resumeTotpPrompt = useMemo<SecurityMfaEnrollmentPrompt | null>(() => {
+    if (!pendingEnrollment) return null
+    if (pendingEnrollment.type !== 'totp') return null
+    if (pendingEnrollment.status !== 'pending') return null
+    return {
+      ticket: pendingEnrollment.ticket,
+      factorId: pendingEnrollment.factorId,
+      mode: pendingEnrollment.mode,
+      type: pendingEnrollment.type,
+      label: pendingEnrollment.label,
+      catalogId: pendingEnrollment.catalogId,
+      expiresAt: pendingEnrollment.expiresAt,
+    }
+  }, [pendingEnrollment])
 
   const eventFeed = useMemo(() => snapshot.events.slice(0, 8), [snapshot.events])
   const passwordHistory = useMemo(() => snapshot.password.history.slice(0, 5), [snapshot.password.history])
@@ -239,6 +328,23 @@ export default function AccountSecuritySettingsPage() {
   ), [passwordValidation])
   const passwordRules = useMemo<PasswordRuleState[]>(() => evaluatePasswordRules(passwordForm.newPassword), [passwordForm.newPassword])
   const canSubmitPassword = passwordValidation.success
+  const totpEnrollmentLocked = Boolean(resumeTotpPrompt)
+  const totpMutationPending = startTotpEnrollment.isPending || regenerateTotpFactor.isPending
+
+  const handleOpenTotpPreset = () => {
+    if (totpEnrollmentLocked) {
+      toast.warning('Finish the pending authenticator enrollment before starting another.')
+      return
+    }
+    setTotpNamingDialogOpen(true)
+  }
+
+  const handleResumeTotp = () => {
+    if (!resumeTotpPrompt) return
+    setTotpPrompt(resumeTotpPrompt)
+    setTotpDialogOpen(true)
+    setTotpCode('')
+  }
 
   const handlePasswordSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -303,14 +409,27 @@ export default function AccountSecuritySettingsPage() {
   }
 
   const handleStartTotp = async (input?: TotpEnrollmentInput) => {
+    if (totpEnrollmentLocked) {
+      toast.warning('Finish the pending authenticator enrollment before starting another.')
+      return
+    }
     try {
-      const prompt = await startTotpEnrollment.mutateAsync(input)
-      setTotpPrompt(prompt)
+      const normalizedLabel = input?.label ? normalizeFactorLabel(input.label) : null
+      const totpFactors = snapshot.mfa.factors.filter((factor) => factor.type === 'totp')
+      const matchByLabel = normalizedLabel
+        ? totpFactors.find((factor) => normalizeFactorLabel(factor.label) === normalizedLabel)
+        : undefined
+      const existingFactor = matchByLabel
+        ?? (input?.catalogId ? totpFactors.find((factor) => factor.catalogId === input.catalogId) : undefined)
+      const prompt = existingFactor
+        ? await regenerateTotpFactor.mutateAsync({ factorId: existingFactor.id, options: input })
+        : await startTotpEnrollment.mutateAsync(input)
+      setTotpPrompt({ ...prompt, label: input?.label ?? prompt.label })
       setTotpDialogOpen(true)
       setTotpCode('')
       setTotpNamingDialogOpen(false)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to start MFA enrollment'
+      const message = err instanceof Error ? err.message : 'Unable to prepare authenticator'
       toast.error(message)
     }
   }
@@ -368,9 +487,11 @@ export default function AccountSecuritySettingsPage() {
     }
   }
 
-  const handleRegenerateCodes = async () => {
+  const handleRegenerateCodes = async (factorId?: string) => {
     try {
-      const result = await regenerateCodes.mutateAsync()
+      const result = factorId
+        ? await regenerateCodes.mutateAsync({ factorId })
+        : await regenerateCodes.mutateAsync()
       setCodesModal({ open: true, codes: result.codes ?? [], expiresAt: result.expiresAt })
       toast.success('Backup codes regenerated')
     } catch (err) {
@@ -509,7 +630,9 @@ export default function AccountSecuritySettingsPage() {
           <MfaCard
             factors={snapshot.mfa.factors}
             recommendations={snapshot.mfa.recommendations}
-            onStartTotp={() => setTotpNamingDialogOpen(true)}
+            pendingEnrollment={snapshot.mfa.pendingEnrollment}
+            onStartTotp={handleOpenTotpPreset}
+            onResumeTotp={resumeTotpPrompt ? handleResumeTotp : undefined}
             onRegenerateCodes={handleRegenerateCodes}
             onEnableFactor={handleEnableFactor}
             onDisableFactor={handleDisableFactor}
@@ -518,7 +641,8 @@ export default function AccountSecuritySettingsPage() {
             disablePending={disableMfaFactor.isPending}
             deletePending={deleteMfaFactor.isPending}
             regeneratePending={regenerateCodes.isPending}
-            startPending={startTotpEnrollment.isPending}
+            startPending={totpMutationPending}
+            catalogLookup={resolveCatalogEntry}
           />
 
           <SessionsCard
@@ -537,7 +661,7 @@ export default function AccountSecuritySettingsPage() {
             onChannelChange={updateRecoveryValue}
             onSave={saveRecovery}
             saving={updateRecovery.isPending}
-            onRegenerateCodes={handleRegenerateCodes}
+            onRegenerateCodes={() => handleRegenerateCodes(backupCodesFactor?.id)}
             regeneratePending={regenerateCodes.isPending}
           />
 
@@ -555,6 +679,7 @@ export default function AccountSecuritySettingsPage() {
         onCodeChange={setTotpCode}
         onOpenChange={setTotpDialogOpen}
         onSubmit={handleConfirmTotp}
+        catalogLookup={resolveCatalogEntry}
       />
 
       <TotpPresetDialog
@@ -562,7 +687,8 @@ export default function AccountSecuritySettingsPage() {
         factors={snapshot.mfa.factors}
         onOpenChange={setTotpNamingDialogOpen}
         onSubmit={handleStartTotp}
-        submitting={startTotpEnrollment.isPending}
+        submitting={totpMutationPending}
+        presets={totpCatalogPresets}
       />
 
       <DeleteFactorDialog
@@ -749,7 +875,9 @@ function PasswordCard({
 function MfaCard({
   factors,
   recommendations,
+  pendingEnrollment,
   onStartTotp,
+  onResumeTotp,
   onRegenerateCodes,
   onEnableFactor,
   onDisableFactor,
@@ -759,11 +887,14 @@ function MfaCard({
   deletePending,
   regeneratePending,
   startPending,
+  catalogLookup,
 }: {
   factors: SecurityMfaFactor[]
   recommendations: AccountSecuritySnapshot['mfa']['recommendations']
+  pendingEnrollment?: SecurityPendingMfaEnrollment | null
   onStartTotp: () => void
-  onRegenerateCodes: () => void
+  onResumeTotp?: () => void
+  onRegenerateCodes: (factorId?: string) => void
   onEnableFactor: (factor: SecurityMfaFactor) => void
   onDisableFactor: (factor: SecurityMfaFactor) => void
   onDeleteFactor: (factor: SecurityMfaFactor) => void
@@ -772,7 +903,15 @@ function MfaCard({
   deletePending: boolean
   regeneratePending: boolean
   startPending: boolean
+  catalogLookup: (catalogId: string | null | undefined) => SecurityAuthenticatorCatalogEntry | undefined
 }) {
+  const backupCodesFactorId = useMemo(() => factors.find((factor) => factor.type === 'backup_codes')?.id, [factors])
+  const pendingFactorId = pendingEnrollment?.factorId ?? null
+  const blockNewTotp = pendingEnrollment?.status === 'pending' && pendingEnrollment.type === 'totp'
+  const startDisabled = startPending || blockNewTotp
+  const startLabel = startPending ? 'Preparing…' : 'Select authenticator app'
+  const startTitle = blockNewTotp ? 'Finish the pending authenticator enrollment before starting another.' : undefined
+
   return (
     <Card>
       <CardHeader>
@@ -780,6 +919,25 @@ function MfaCard({
         <CardDescription>Pair phishing-resistant factors with backup codes.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {pendingEnrollment ? (
+          <Alert variant="secondary" data-testid="pending-mfa-enrollment-alert">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Finish setting up {pendingEnrollment.label}</AlertTitle>
+            <AlertDescription>
+              <div className="text-sm">
+                {pendingEnrollment.mode === 'rotate' ? 'Rotation in progress.' : 'Enrollment in progress.'} Confirm this authenticator in your app before it expires {relativeTime(pendingEnrollment.expiresAt)}.
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Ticket {pendingEnrollment.ticket.slice(0, 6)}… · status {pendingEnrollment.status}
+              </div>
+              {onResumeTotp ? (
+                <Button type="button" size="sm" variant="outline" className="mt-2" onClick={onResumeTotp}>
+                  Enter code to finish
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {recommendations.length ? (
           <Alert>
             <AlertCircle className="h-4 w-4" />
@@ -799,61 +957,81 @@ function MfaCard({
         <div className="space-y-3">
           {factors.length === 0 ? (
             <p className="text-sm text-muted-foreground">No MFA factors enrolled yet. Start with an authenticator app.</p>
-          ) : factors.map((factor) => (
-            <div key={factor.id} className="rounded border p-3 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{MFA_TYPE_LABELS[factor.type]}</Badge>
-                <span className="font-medium">{factor.label}</span>
-                {factor.enabled ? <Badge variant="secondary">Active</Badge> : <Badge variant="destructive">Disabled</Badge>}
-                <span className="text-xs text-muted-foreground ml-auto">Last used {relativeTime(factor.lastUsedAt)}</span>
+          ) : factors.map((factor) => {
+            const catalogPreset = catalogLookup(factor.catalogId)
+            const statusMeta = MFA_STATUS_META[factor.status] ?? MFA_STATUS_META.disabled
+            const factorLocked = factor.status === 'pending' || factor.id === pendingFactorId
+            return (
+              <div key={factor.id} className="rounded border p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">{MFA_TYPE_LABELS[factor.type]}</Badge>
+                  <span className="font-medium">{factor.label}</span>
+                  <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+                  <span className="text-xs text-muted-foreground ml-auto">Last used {relativeTime(factor.lastUsedAt)}</span>
+                </div>
+                {catalogPreset ? (
+                  <div className="text-xs text-muted-foreground">
+                    Catalog preset: {catalogPreset.label}
+                  </div>
+                ) : null}
+                {pendingEnrollment && pendingEnrollment.factorId === factor.id ? (
+                  <div className="rounded bg-muted/40 p-2 text-xs text-muted-foreground">
+                    {pendingEnrollment.mode === 'rotate' ? 'Rotation ticket' : 'Enrollment ticket'} {pendingEnrollment.ticket.slice(0, 6)}… expires {relativeTime(pendingEnrollment.expiresAt)}.
+                  </div>
+                ) : null}
+                {factor.type !== 'backup_codes' ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => (factor.enabled ? onDisableFactor(factor) : onEnableFactor(factor))}
+                      disabled={factorLocked || (factor.enabled ? disablePending : enablePending)}
+                      title={factorLocked ? 'Finish the pending enrollment before changing this factor.' : undefined}
+                    >
+                      {factor.enabled ? 'Disable' : 'Enable'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => onDeleteFactor(factor)}
+                      disabled={factorLocked || deletePending}
+                      title={factorLocked ? 'Finish the pending enrollment before deleting this factor.' : undefined}
+                    >
+                      <Trash2 className="mr-1.5 h-4 w-4" />
+                      Delete
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    <span>{factor.remainingCodes ?? 0} codes remaining</span>
+                    <Button type="button" variant="outline" size="sm" onClick={() => onRegenerateCodes(factor.id)} disabled={regeneratePending}>
+                      {regeneratePending ? 'Regenerating…' : 'Regenerate codes'}
+                    </Button>
+                  </div>
+                )}
+                {factor.devices?.length ? (
+                  <div className="rounded bg-muted/50 p-2 text-xs text-muted-foreground">
+                    Linked keys: {factor.devices.map((device) => device.label).join(', ')}
+                  </div>
+                ) : null}
               </div>
-              {factor.type !== 'backup_codes' ? (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => (factor.enabled ? onDisableFactor(factor) : onEnableFactor(factor))}
-                    disabled={factor.enabled ? disablePending : enablePending}
-                  >
-                    {factor.enabled ? 'Disable' : 'Enable'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => onDeleteFactor(factor)}
-                    disabled={deletePending}
-                  >
-                    <Trash2 className="mr-1.5 h-4 w-4" />
-                    Delete
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <span>{factor.remainingCodes ?? 0} codes remaining</span>
-                  <Button type="button" variant="outline" size="sm" onClick={onRegenerateCodes} disabled={regeneratePending}>
-                    {regeneratePending ? 'Regenerating…' : 'Regenerate codes'}
-                  </Button>
-                </div>
-              )}
-              {factor.devices?.length ? (
-                <div className="rounded bg-muted/50 p-2 text-xs text-muted-foreground">
-                  Linked keys: {factor.devices.map((device) => device.label).join(', ')}
-                </div>
-              ) : null}
-            </div>
-          ))}
+            )
+          })}
         </div>
       </CardContent>
       <CardFooter className="flex flex-wrap gap-3">
-        <Button type="button" onClick={onStartTotp} disabled={startPending}>
-          {startPending ? 'Preparing…' : 'Select authenticator app'}
+        <Button type="button" onClick={onStartTotp} disabled={startDisabled} title={startTitle}>
+          {startLabel}
         </Button>
-        <Button type="button" variant="outline" onClick={onRegenerateCodes} disabled={regeneratePending}>
+        {blockNewTotp ? (
+          <span className="text-xs text-muted-foreground">Finish the pending setup to rotate codes again.</span>
+        ) : null}
+        <Button type="button" variant="outline" onClick={() => onRegenerateCodes(backupCodesFactorId)} disabled={regeneratePending}>
           <RefreshCcw className="mr-2 h-4 w-4" />
-          Backup codes
+          Regenerate backup codes
         </Button>
       </CardFooter>
     </Card>
@@ -895,6 +1073,7 @@ function SessionsCard({
                 <TableHead>Device</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Last active</TableHead>
+                <TableHead>Risk</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -906,46 +1085,55 @@ function SessionsCard({
                     No sessions found.
                   </TableCell>
                 </TableRow>
-              ) : sessions.map((session) => (
-                <TableRow key={session.id} data-state={session.current ? 'selected' : undefined}>
-                  <TableCell>
-                    <div className="font-medium">{buildDeviceLabel(session)}</div>
-                    <div className="text-xs text-muted-foreground">{session.platform || 'Unknown OS'}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div>{formatSessionLocation(session)}</div>
-                    <div className="text-xs text-muted-foreground">IP {session.ipAddress || '—'}</div>
-                  </TableCell>
-                  <TableCell>{relativeTime(session.lastActiveAt)}</TableCell>
-                  <TableCell>
-                    <Badge variant={session.trusted ? 'secondary' : 'outline'}>{session.trusted ? 'Trusted' : 'Untrusted'}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right space-x-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onTrustToggle(session)}
-                      disabled={sessionAction === session.id}
-                    >
-                      {session.trusted ? 'Untrust' : 'Trust'}
-                    </Button>
-                    {!session.current ? (
+              ) : sessions.map((session) => {
+                const riskMeta = SESSION_RISK_META[session.risk] ?? SESSION_RISK_META.unknown
+                return (
+                  <TableRow key={session.id} data-state={session.current ? 'selected' : undefined}>
+                    <TableCell>
+                      <div className="font-medium">{buildDeviceLabel(session)}</div>
+                      <div className="text-xs text-muted-foreground">{session.platform || 'Unknown OS'}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div>{formatSessionLocation(session)}</div>
+                      <div className="text-xs text-muted-foreground">IP {session.ipAddress || '—'}</div>
+                    </TableCell>
+                    <TableCell>{relativeTime(session.lastActiveAt)}</TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <Badge variant={riskMeta.variant}>{riskMeta.label}</Badge>
+                        <p className="text-xs text-muted-foreground">{riskMeta.helper}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={session.trusted ? 'secondary' : 'outline'}>{session.trusted ? 'Trusted' : 'Untrusted'}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right space-x-2">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => onRevoke(session.id)}
+                        onClick={() => onTrustToggle(session)}
                         disabled={sessionAction === session.id}
                       >
-                        Revoke
+                        {session.trusted ? 'Untrust' : 'Trust'}
                       </Button>
-                    ) : (
-                      <Badge variant="outline">This device</Badge>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+                      {!session.current ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onRevoke(session.id)}
+                          disabled={sessionAction === session.id}
+                        >
+                          Revoke
+                        </Button>
+                      ) : (
+                        <Badge variant="outline">This device</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </div>
@@ -1038,7 +1226,7 @@ function RecoveryCard({
         </Button>
         <Button type="button" variant="outline" onClick={onRegenerateCodes} disabled={regeneratePending}>
           <KeyRound className="mr-2 h-4 w-4" />
-          Backup codes
+          Issue new backup codes
         </Button>
         <div className="text-xs text-muted-foreground ml-auto">{recovery.backupCodesRemaining} codes remaining • last generated {relativeTime(recovery.lastCodesGeneratedAt)}</div>
       </CardFooter>
@@ -1160,15 +1348,18 @@ function TotpPresetDialog({
   onOpenChange,
   onSubmit,
   submitting,
+  presets,
 }: {
   open: boolean
   factors: SecurityMfaFactor[]
   onOpenChange: (open: boolean) => void
   onSubmit: (input: TotpEnrollmentInput) => Promise<void>
   submitting: boolean
+  presets: SecurityAuthenticatorCatalogEntry[]
 }) {
-  const [customLabel, setCustomLabel] = useState('')
   const [pendingChoice, setPendingChoice] = useState<string | null>(null)
+  const [searchValue, setSearchValue] = useState('')
+  const deferredSearch = useDeferredValue(searchValue)
 
   const totpLabels = useMemo(() => {
     return new Set(
@@ -1181,31 +1372,62 @@ function TotpPresetDialog({
   useEffect(() => {
     if (!open) {
       setPendingChoice(null)
-      setCustomLabel('')
+      setSearchValue('')
     }
   }, [open])
 
+  const labelStatus = (label: string) => totpLabels.has(normalizeFactorLabel(label))
+  const normalizedSearch = deferredSearch.trim().toLowerCase()
+
+  const filteredPresets = useMemo(() => {
+    if (!normalizedSearch) return presets
+    return presets.filter((preset) => {
+      const haystack = [
+        preset.label,
+        preset.description,
+        preset.helper,
+        preset.id,
+        preset.tags?.join(' '),
+        preset.factorType,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(normalizedSearch)
+    })
+  }, [normalizedSearch, presets])
+
   const isSubmitting = (choiceId: string) => pendingChoice === choiceId && submitting
 
-  const handlePresetClick = async (preset: TotpAppPreset) => {
+  const handlePresetClick = async (preset: SecurityAuthenticatorCatalogEntry) => {
     setPendingChoice(preset.id)
-    await onSubmit({ label: preset.label, issuer: preset.issuer })
-    setPendingChoice(null)
+    try {
+      await onSubmit({ label: preset.label, issuer: preset.issuer, catalogId: preset.id })
+      setSearchValue('')
+    } finally {
+      setPendingChoice(null)
+    }
   }
 
-  const handleCustomSubmit = async () => {
-    const label = customLabel.trim()
+  const handleCustomSubmit = async (labelOverride?: string) => {
+    const label = (labelOverride ?? searchValue).trim()
     if (!label) return
     setPendingChoice(CUSTOM_PRESET_ID)
-    await onSubmit({ label, issuer: DEFAULT_TOTP_ISSUER })
-    setPendingChoice(null)
+    try {
+      await onSubmit({ label, issuer: DEFAULT_TOTP_ISSUER })
+      setSearchValue('')
+    } finally {
+      setPendingChoice(null)
+    }
   }
 
-  const labelStatus = (label: string) => totpLabels.has(normalizeFactorLabel(label))
+  const trimmedSearch = searchValue.trim()
+  const showCustomOption = Boolean(trimmedSearch)
+  const customRotates = showCustomOption && labelStatus(trimmedSearch)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Select authenticator app</DialogTitle>
           <DialogDescription>
@@ -1213,55 +1435,71 @@ function TotpPresetDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          {TOTP_APP_PRESETS.map((preset) => {
-            const connected = labelStatus(preset.label)
-            return (
-              <div key={preset.id} className="rounded border p-3 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div>
-                    <p className="font-medium">{preset.label}</p>
-                    <p className="text-xs text-muted-foreground">{preset.description}</p>
-                  </div>
-                  {connected ? <Badge variant="secondary">Connected</Badge> : null}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => handlePresetClick(preset)}
-                    disabled={submitting}
-                    data-testid={`totp-preset-${preset.id}`}
-                  >
-                    {isSubmitting(preset.id) ? 'Preparing…' : connected ? 'Rotate secret' : 'Connect app'}
-                  </Button>
-                  {preset.helper ? <p className="text-xs text-muted-foreground">{preset.helper}</p> : null}
-                </div>
-              </div>
-            )
-          })}
-          <div className="rounded border p-3 space-y-2">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="custom-auth-label" className="font-medium">Custom label</Label>
-              {labelStatus(customLabel) && customLabel.trim() ? <Badge variant="outline">Will rotate</Badge> : null}
-            </div>
-            <Input
-              id="custom-auth-label"
-              value={customLabel}
-              onChange={(event) => setCustomLabel(event.target.value)}
-              placeholder="e.g., Okta Verify"
+          <Command shouldFilter={false} className="rounded-md border">
+            <CommandInput
+              autoFocus
+              placeholder="Search catalog or type a custom label…"
+              value={searchValue}
+              onValueChange={setSearchValue}
+              disabled={submitting}
             />
-            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-              <span>Use this for desktop managers or alternate authenticator names.</span>
-            </div>
-            <Button
-              type="button"
-              onClick={handleCustomSubmit}
-              disabled={!customLabel.trim() || submitting}
-              data-testid="totp-preset-custom"
-            >
-              {isSubmitting(CUSTOM_PRESET_ID) ? 'Preparing…' : labelStatus(customLabel) && customLabel.trim() ? 'Rotate secret' : 'Connect app'}
-            </Button>
-          </div>
+            <CommandList className="max-h-[320px]">
+              <CommandEmpty>
+                {trimmedSearch ? `No authenticators match "${trimmedSearch}".` : 'No authenticators available.'}
+              </CommandEmpty>
+              {filteredPresets.length ? (
+                <CommandGroup heading="Catalog">
+                  {filteredPresets.map((preset) => {
+                    const connected = labelStatus(preset.label)
+                    const itemDisabled = submitting && !isSubmitting(preset.id)
+                    return (
+                      <CommandItem
+                        key={preset.id}
+                        value={`${preset.id} ${preset.label}`}
+                        onSelect={() => { void handlePresetClick(preset) }}
+                        disabled={itemDisabled}
+                        className="items-start"
+                        data-testid={`totp-preset-${preset.id}`}
+                      >
+                        <div className="flex flex-1 flex-col text-left">
+                          <span className="font-medium">{preset.label}</span>
+                          {preset.description ? <span className="text-xs text-muted-foreground">{preset.description}</span> : null}
+                          {preset.helper ? <span className="text-[11px] text-muted-foreground">{preset.helper}</span> : null}
+                        </div>
+                        <div className="flex flex-col items-end gap-1 text-xs text-muted-foreground">
+                          {connected ? <Badge variant="secondary" className="self-end">Connected</Badge> : null}
+                          <span>{isSubmitting(preset.id) ? 'Preparing…' : connected ? 'Rotate secret' : 'Connect app'}</span>
+                        </div>
+                      </CommandItem>
+                    )
+                  })}
+                </CommandGroup>
+              ) : null}
+              {showCustomOption ? (
+                <>
+                  {filteredPresets.length ? <CommandSeparator /> : null}
+                  <CommandGroup heading="Custom label">
+                    <CommandItem
+                      value={`custom-${trimmedSearch}`}
+                      onSelect={() => { void handleCustomSubmit(trimmedSearch) }}
+                      disabled={submitting && !isSubmitting(CUSTOM_PRESET_ID)}
+                      data-testid="totp-preset-custom"
+                    >
+                      <div className="flex flex-1 flex-col text-left">
+                        <span className="font-medium">Use "{trimmedSearch}"</span>
+                        <span className="text-xs text-muted-foreground">
+                          {customRotates ? 'Rotate existing app with this name.' : 'Create a one-off label for another authenticator.'}
+                        </span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {isSubmitting(CUSTOM_PRESET_ID) ? 'Preparing…' : customRotates ? 'Rotate secret' : 'Connect app'}
+                      </span>
+                    </CommandItem>
+                  </CommandGroup>
+                </>
+              ) : null}
+            </CommandList>
+          </Command>
         </div>
       </DialogContent>
     </Dialog>
@@ -1311,6 +1549,7 @@ function TotpDialog({
   onCodeChange,
   onOpenChange,
   onSubmit,
+  catalogLookup,
 }: {
   open: boolean
   prompt: SecurityMfaEnrollmentPrompt | null
@@ -1319,14 +1558,43 @@ function TotpDialog({
   onCodeChange: (value: string) => void
   onOpenChange: (open: boolean) => void
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+  catalogLookup: (id: string | null | undefined) => SecurityAuthenticatorCatalogEntry | undefined
 }) {
+  const hasQr = Boolean(prompt?.qrCodeDataUrl || prompt?.secret)
+  const isRotation = prompt?.mode === 'rotate'
+  const catalogEntry = prompt?.catalogId ? catalogLookup(prompt.catalogId) : undefined
+  const catalogLabel = catalogEntry?.label ?? (prompt?.catalogId ?? null)
+  const dialogTitle = prompt?.label
+    ? `Finish ${prompt.label}`
+    : hasQr
+      ? 'Scan the QR code'
+      : 'Enter the verification code'
+  const dialogDescription = prompt
+    ? `${isRotation ? 'Rotation in progress.' : 'Enrollment in progress.'} ${hasQr
+      ? 'Scan with your authenticator app, then enter the 6-digit code.'
+      : 'Enter the current 6-digit code from your authenticator app to finish enrollment.'}`
+    : 'Enter the current 6-digit code from your authenticator app to finish enrollment.'
+  const ticketSnippet = prompt?.ticket ? `${prompt.ticket.slice(0, 6)}…` : null
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Scan the QR code</DialogTitle>
-          <DialogDescription>Scan with your authenticator app, then enter the 6-digit code.</DialogDescription>
+          <DialogTitle>{dialogTitle}</DialogTitle>
+          <DialogDescription>{dialogDescription}</DialogDescription>
         </DialogHeader>
+        {prompt ? (
+          <div className="rounded border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">{isRotation ? 'Rotation ticket' : 'Enrollment ticket'}</Badge>
+              {catalogLabel ? <Badge variant="outline">{catalogLabel}</Badge> : null}
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {ticketSnippet ? <span>Ticket {ticketSnippet}</span> : null}
+              {prompt.expiresAt ? <span>Expires {relativeTime(prompt.expiresAt)}</span> : null}
+            </div>
+          </div>
+        ) : null}
         {prompt?.qrCodeDataUrl ? (
           <div className="flex justify-center">
             <img src={prompt.qrCodeDataUrl} alt="Authenticator QR code" className="h-40 w-40 border rounded" />

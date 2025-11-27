@@ -1,8 +1,6 @@
 import argon2 from 'argon2';
 import * as totpLib from '../lib/totp';
-import { PasswordChangeError, SecurityService, type SecurityPrisma } from '../services/securityService';
-
-/* eslint-disable @typescript-eslint/unbound-method */
+import { PasswordChangeError, SecurityOperationError, SecurityService, type SecurityPrisma } from '../services/securityService';
 
 jest.mock('argon2', () => {
   const hash = jest.fn();
@@ -26,9 +24,17 @@ const CURRENT_HASH = 'current-hash';
 const OLD_PASSWORD = 'Old#Password1';
 const NEW_PASSWORD = 'New#Password1!';
 const AUTH_APP_LABEL = 'Authenticator app';
+const GOOGLE_AUTH_LABEL = 'Google Authenticator';
+const GOOGLE_AUTH_DESCRIPTION = 'Android + iOS code generator';
+const AUTH_APP_HELPER = 'Use your authenticator app';
+const GOOGLE_AUTH_DOCS = 'https://support.google.com/accounts/answer/1066447';
+const DEFAULT_ISSUER = 'Pet Shelter Registry';
+const OLD_SECRET = 'OLD-SECRET';
 const PRIMARY_FACTOR_ID = 'factor-1';
 const NEW_FACTOR_ID = 'factor-new';
 const MFA_ENROLLED_AT = '2024-01-02T00:00:00Z';
+const PENDING_TICKET = 'ticket-lock';
+const PENDING_CONFLICT_MESSAGE = 'pending enrollment in progress';
 const mockedTotp = totpLib as jest.Mocked<typeof totpLib>;
 
 describe('SecurityService', () => {
@@ -136,6 +142,10 @@ describe('SecurityService', () => {
         update: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(null),
       },
+      authenticatorCatalog: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       $transaction: jest.fn(async (operations: Array<Promise<unknown>>) => Promise.all(operations)),
     } as unknown as SecurityPrisma;
   }
@@ -155,6 +165,148 @@ describe('SecurityService', () => {
     expect(snapshot?.password.policy.minLength).toBe(14);
     expect(snapshot?.sessions.summary.activeCount).toBe(1);
     expect(snapshot?.events).toHaveLength(1);
+  });
+
+  it('includes pending enrollment metadata even when the factor row is missing', async () => {
+    const pendingFactorId = 'pending-factor';
+    const ticket = 'ticket-1234';
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const pendingUser = {
+      ...baseUser,
+      metadata: {
+        ...(baseUser.metadata || {}),
+        security: {
+          ...(baseUser.metadata?.security || {}),
+          pendingTotp: {
+            ticket,
+            factorId: pendingFactorId,
+            mode: 'rotate',
+            expiresAt,
+            label: GOOGLE_AUTH_LABEL,
+            catalogId: 'google',
+            type: 'totp',
+            status: 'pending',
+            catalog: {
+              id: 'google',
+              label: GOOGLE_AUTH_LABEL,
+              description: GOOGLE_AUTH_DESCRIPTION,
+              helper: AUTH_APP_HELPER,
+              docsUrl: GOOGLE_AUTH_DOCS,
+              tags: ['mobile'],
+              issuer: DEFAULT_ISSUER,
+            },
+          },
+        },
+      },
+    };
+    const prisma = buildPrisma({
+      user: { findUnique: jest.fn().mockResolvedValue(pendingUser) },
+      userMfaFactor: { findMany: jest.fn().mockResolvedValue([]) },
+    });
+    const svc = new SecurityService({ prisma });
+    const snapshot = await svc.getAccountSecuritySnapshot('user-1');
+    expect(snapshot?.mfa.pendingEnrollment).toEqual(expect.objectContaining({
+      ticket,
+      factorId: pendingFactorId,
+      mode: 'rotate',
+      catalogId: 'google',
+      label: GOOGLE_AUTH_LABEL,
+      type: 'totp',
+      status: 'pending',
+    }));
+    expect(snapshot?.mfa.pendingEnrollment?.expiresAt).toBe(expiresAt);
+    expect(snapshot?.mfa.pendingEnrollment?.catalog).toEqual(expect.objectContaining({ id: 'google', label: GOOGLE_AUTH_LABEL }));
+  expect(snapshot?.mfa.pendingEnrollment?.description).toBe(GOOGLE_AUTH_DESCRIPTION);
+    expect(snapshot?.mfa.pendingEnrollment?.tags).toEqual(expect.arrayContaining(['mobile']));
+  });
+
+  it('deletes factors and clears pending enrollment metadata', async () => {
+    const factor = {
+      id: PRIMARY_FACTOR_ID,
+      userId: 'user-1',
+      type: 'TOTP',
+      label: AUTH_APP_LABEL,
+      secret: OLD_SECRET,
+      enabled: true,
+      status: 'ACTIVE',
+      metadata: null,
+      enrolledAt: new Date(MFA_ENROLLED_AT),
+      lastUsedAt: null,
+    };
+    const pendingUser = {
+      ...baseUser,
+      metadata: {
+        ...(baseUser.metadata || {}),
+        security: {
+          ...(baseUser.metadata?.security || {}),
+          pendingTotp: {
+            ticket: 'ticket-456',
+            factorId: PRIMARY_FACTOR_ID,
+            mode: 'create',
+            expiresAt: new Date(Date.now() - 60_000).toISOString(),
+          },
+        },
+      },
+    };
+    const deleteMany = jest.fn().mockResolvedValue({ count: 8 });
+    const deleteFactor = jest.fn().mockResolvedValue(undefined);
+    const updateUser = jest.fn().mockResolvedValue(pendingUser);
+    const prisma = buildPrisma({
+      userMfaFactor: {
+        findFirst: jest.fn().mockResolvedValue(factor),
+        delete: deleteFactor,
+      },
+      userBackupCode: { deleteMany },
+      user: {
+        findUnique: jest.fn().mockResolvedValue(pendingUser),
+        update: updateUser,
+      },
+    });
+    const svc = new SecurityService({ prisma });
+
+    await svc.deleteMfaFactor('user-1', PRIMARY_FACTOR_ID);
+
+    expect(deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-1', factorId: PRIMARY_FACTOR_ID } });
+    expect(deleteFactor).toHaveBeenCalledWith({ where: { id: PRIMARY_FACTOR_ID } });
+    const updatedMetadata = updateUser.mock.calls[0]?.[0]?.data?.metadata;
+    expect(updatedMetadata?.security?.pendingTotp).toBeUndefined();
+  });
+
+  it('strips enrollment metadata when enabling a factor', async () => {
+    const factor = {
+      id: PRIMARY_FACTOR_ID,
+      userId: 'user-1',
+      type: 'TOTP',
+      label: AUTH_APP_LABEL,
+      secret: OLD_SECRET,
+      enabled: false,
+      status: 'DISABLED',
+      metadata: {
+        enrollment: { rotating: true },
+        notes: { rotatedAt: 'now' },
+      },
+    };
+    const update = jest.fn().mockResolvedValue({ ...factor, enabled: true, status: 'ACTIVE', metadata: { notes: { rotatedAt: 'now' } } });
+    const prisma = buildPrisma({
+      userMfaFactor: {
+        findFirst: jest.fn().mockResolvedValue(factor),
+        update,
+      },
+    });
+    const svc = new SecurityService({ prisma });
+
+    await svc.enableMfaFactor('user-1', PRIMARY_FACTOR_ID);
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: PRIMARY_FACTOR_ID },
+      data: expect.objectContaining({
+        enabled: true,
+        status: 'ACTIVE',
+        metadata: expect.objectContaining({ notes: { rotatedAt: 'now' } }),
+      }),
+    });
+    const metadataPayload = update.mock.calls[0]?.[0]?.data?.metadata;
+    expect(metadataPayload?.enrollment).toBeUndefined();
   });
 
   it('returns session summary even when no tokens exist', async () => {
@@ -285,15 +437,71 @@ describe('SecurityService', () => {
       const pending = userUpdate.mock.calls[0]?.[0]?.data?.metadata?.security?.pendingTotp;
       expect(pending).toBeTruthy();
   expect(pending.factorId).toBe(NEW_FACTOR_ID);
+          expect(pending.label).toBe(AUTH_APP_LABEL);
+          expect(pending.type).toBe('totp');
+          expect(pending.status).toBe('pending');
     });
+
+    it('associates catalog selections when provided during enrollment', async () => {
+      const create = jest.fn().mockResolvedValue({
+        id: NEW_FACTOR_ID,
+        userId: 'user-1',
+        type: 'TOTP',
+        label: AUTH_APP_LABEL,
+        secret: 'SECRET123456',
+        enabled: false,
+        status: 'PENDING',
+        metadata: null,
+        enrolledAt: null,
+        lastUsedAt: null,
+        catalogId: 'google',
+      });
+      const prisma = buildPrisma({
+        userMfaFactor: { create, count: jest.fn().mockResolvedValue(0) },
+        authenticatorCatalog: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'google',
+            label: GOOGLE_AUTH_LABEL,
+            description: GOOGLE_AUTH_DESCRIPTION,
+            helper: AUTH_APP_HELPER,
+            docsUrl: GOOGLE_AUTH_DOCS,
+            issuer: DEFAULT_ISSUER,
+            tags: ['mobile'],
+            metadata: { platform: 'mobile' },
+            factorType: 'totp',
+            isArchived: false,
+          }),
+        },
+      });
+      const svc = new SecurityService({ prisma });
+      const prompt = await svc.startTotpEnrollment('user-1', { catalogId: 'google' });
+      expect(prisma.authenticatorCatalog.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ id: 'google', isArchived: false }),
+      }));
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ catalogId: 'google' }),
+      }));
+      expect(prompt.catalogId).toBe('google');
+      const pending = (prisma.user.update as jest.Mock).mock.calls[0]?.[0]?.data?.metadata?.security?.pendingTotp;
+  expect(pending.catalog).toEqual(expect.objectContaining({ id: 'google', description: GOOGLE_AUTH_DESCRIPTION }));
+    });
+
+    it('rejects unknown catalog identifiers', async () => {
+      const prisma = buildPrisma({
+        authenticatorCatalog: { findFirst: jest.fn().mockResolvedValue(null) },
+      });
+      const svc = new SecurityService({ prisma });
+      await expect(svc.startTotpEnrollment('user-1', { catalogId: 'missing-id' })).rejects.toBeInstanceOf(SecurityOperationError);
+    });
+
 
       it('rotates the existing factor when the requested label already exists', async () => {
         const existingFactor = {
           id: PRIMARY_FACTOR_ID,
           userId: 'user-1',
           type: 'TOTP',
-          label: 'Google Authenticator',
-          secret: 'OLD-SECRET',
+          label: GOOGLE_AUTH_LABEL,
+          secret: OLD_SECRET,
           enabled: true,
           status: 'ACTIVE',
           metadata: null,
@@ -313,7 +521,7 @@ describe('SecurityService', () => {
           },
         });
         const svc = new SecurityService({ prisma });
-        const prompt = await svc.startTotpEnrollment('user-1', { label: 'Google Authenticator' });
+  const prompt = await svc.startTotpEnrollment('user-1', { label: GOOGLE_AUTH_LABEL });
         expect(prompt.mode).toBe('rotate');
         expect(prisma.userMfaFactor.create).not.toHaveBeenCalled();
         expect(prisma.userMfaFactor.update).toHaveBeenCalled();
@@ -325,7 +533,7 @@ describe('SecurityService', () => {
         userId: 'user-1',
         type: 'TOTP',
   label: AUTH_APP_LABEL,
-        secret: 'OLD-SECRET',
+  secret: OLD_SECRET,
         enabled: true,
         status: 'ACTIVE',
         metadata: null,
@@ -350,7 +558,58 @@ describe('SecurityService', () => {
       const pending = (prisma.user.update as jest.Mock).mock.calls[0]?.[0]?.data?.metadata?.security?.pendingTotp;
       expect(pending).toBeTruthy();
       expect(pending.mode).toBe('rotate');
+      expect(pending.label).toBe(AUTH_APP_LABEL);
     });
+
+    it('updates catalog association when rotating with a new selection', async () => {
+      const factor = {
+        id: PRIMARY_FACTOR_ID,
+        userId: 'user-1',
+        type: 'TOTP',
+        label: AUTH_APP_LABEL,
+  secret: OLD_SECRET,
+        enabled: true,
+        status: 'ACTIVE',
+        metadata: null,
+        enrolledAt: new Date(MFA_ENROLLED_AT),
+        lastUsedAt: null,
+        catalogId: null,
+      };
+      const prisma = buildPrisma({
+        user: {
+          findUnique: jest.fn().mockResolvedValue(baseUser),
+          update: jest.fn().mockResolvedValue(baseUser),
+        },
+        userMfaFactor: {
+          findFirst: jest.fn().mockResolvedValue(factor),
+          update: jest.fn().mockResolvedValue({ ...factor, catalogId: 'google' }),
+        },
+        authenticatorCatalog: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'google',
+            label: GOOGLE_AUTH_LABEL,
+            description: GOOGLE_AUTH_DESCRIPTION,
+            helper: AUTH_APP_HELPER,
+            docsUrl: GOOGLE_AUTH_DOCS,
+            issuer: DEFAULT_ISSUER,
+            tags: ['mobile'],
+            metadata: { platform: 'mobile' },
+            factorType: 'totp',
+            isArchived: false,
+          }),
+        },
+      });
+      const svc = new SecurityService({ prisma });
+      const prompt = await svc.regenerateTotpFactor('user-1', factor.id, { catalogId: 'google' });
+      expect(prisma.userMfaFactor.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ catalogId: 'google' }),
+      }));
+      expect(prompt.catalogId).toBe('google');
+      const pending = (prisma.user.update as jest.Mock).mock.calls[0]?.[0]?.data?.metadata?.security?.pendingTotp;
+      expect(pending.catalogId).toBe('google');
+      expect(pending.catalog).toEqual(expect.objectContaining({ id: 'google', label: GOOGLE_AUTH_LABEL }));
+    });
+
 
     it('confirms pending totp enrollment and refreshes backup codes', async () => {
       const ticket = 'ticket-123';
@@ -439,6 +698,57 @@ describe('SecurityService', () => {
       });
     });
 
+    it('clears matching pending enrollment metadata before enabling', async () => {
+      const expiresAt = new Date(Date.now() + 90_000).toISOString();
+      const pendingUser = {
+        ...baseUser,
+        metadata: {
+          ...(baseUser.metadata || {}),
+          security: {
+            ...(baseUser.metadata?.security || {}),
+            pendingTotp: {
+              ticket: PENDING_TICKET,
+              factorId: PRIMARY_FACTOR_ID,
+              mode: 'rotate',
+              expiresAt,
+              type: 'totp',
+              label: AUTH_APP_LABEL,
+            },
+          },
+        },
+      };
+      const factor = {
+        id: PRIMARY_FACTOR_ID,
+        userId: 'user-1',
+        type: 'TOTP',
+        label: AUTH_APP_LABEL,
+        secret: 'SECRET123456',
+        enabled: false,
+        status: 'DISABLED',
+        metadata: { enrollment: { rotating: true } },
+      };
+      const prisma = buildPrisma({
+        user: {
+          findUnique: jest.fn().mockResolvedValue(pendingUser),
+          update: jest.fn().mockResolvedValue(pendingUser),
+        },
+        userMfaFactor: {
+          findFirst: jest.fn().mockResolvedValue(factor),
+          update: jest.fn().mockResolvedValue({ ...factor, enabled: true, status: 'ACTIVE' }),
+        },
+      });
+      const svc = new SecurityService({ prisma });
+
+      await svc.enableMfaFactor('user-1', PRIMARY_FACTOR_ID);
+
+      const metadata = (prisma.user.update as jest.Mock).mock.calls[0]?.[0]?.data?.metadata;
+      expect(metadata?.security?.pendingTotp).toBeUndefined();
+      expect(prisma.userMfaFactor.update).toHaveBeenCalledWith({
+        where: { id: PRIMARY_FACTOR_ID },
+        data: expect.objectContaining({ enabled: true, status: 'ACTIVE' }),
+      });
+    });
+
     it('rejects enabling revoked factors', async () => {
       const factor = {
         id: PRIMARY_FACTOR_ID,
@@ -461,7 +771,145 @@ describe('SecurityService', () => {
       await expect(svc.enableMfaFactor('user-1', PRIMARY_FACTOR_ID)).rejects.toThrow('factor revoked');
       expect(prisma.userMfaFactor.update).not.toHaveBeenCalled();
     });
+
+    it('prevents disabling a factor while its rotation is pending', async () => {
+      const factor = {
+        id: PRIMARY_FACTOR_ID,
+        userId: 'user-1',
+        type: 'TOTP',
+        label: AUTH_APP_LABEL,
+        secret: OLD_SECRET,
+        enabled: true,
+        status: 'ACTIVE',
+        metadata: null,
+      };
+      const pendingUser = {
+        ...baseUser,
+        metadata: {
+          ...(baseUser.metadata || {}),
+          security: {
+            ...(baseUser.metadata?.security || {}),
+            pendingTotp: {
+              ticket: PENDING_TICKET,
+              factorId: PRIMARY_FACTOR_ID,
+              mode: 'rotate',
+              expiresAt: new Date(Date.now() + 90_000).toISOString(),
+              type: 'totp',
+              label: AUTH_APP_LABEL,
+            },
+          },
+        },
+      };
+      const prisma = buildPrisma({
+        userMfaFactor: {
+          findFirst: jest.fn().mockResolvedValue(factor),
+          update: jest.fn(),
+        },
+        user: {
+          findUnique: jest.fn().mockResolvedValue(pendingUser),
+          update: jest.fn(),
+        },
+      });
+      const svc = new SecurityService({ prisma });
+
+      await expect(svc.disableMfaFactor('user-1', PRIMARY_FACTOR_ID)).rejects.toMatchObject({
+        status: 409,
+        message: PENDING_CONFLICT_MESSAGE,
+      });
+      expect(prisma.userMfaFactor.update).not.toHaveBeenCalled();
+    });
+
+    it('prevents deleting a factor while its enrollment is pending', async () => {
+      const factor = {
+        id: PRIMARY_FACTOR_ID,
+        userId: 'user-1',
+        type: 'TOTP',
+        label: AUTH_APP_LABEL,
+        secret: OLD_SECRET,
+        enabled: true,
+        status: 'ACTIVE',
+        metadata: null,
+      };
+      const pendingUser = {
+        ...baseUser,
+        metadata: {
+          ...(baseUser.metadata || {}),
+          security: {
+            ...(baseUser.metadata?.security || {}),
+            pendingTotp: {
+              ticket: PENDING_TICKET,
+              factorId: PRIMARY_FACTOR_ID,
+              mode: 'create',
+              expiresAt: new Date(Date.now() + 45_000).toISOString(),
+              type: 'totp',
+              label: AUTH_APP_LABEL,
+            },
+          },
+        },
+      };
+      const deleteMock = jest.fn();
+      const prisma = buildPrisma({
+        userMfaFactor: {
+          findFirst: jest.fn().mockResolvedValue(factor),
+          delete: deleteMock,
+        },
+        user: {
+          findUnique: jest.fn().mockResolvedValue(pendingUser),
+          update: jest.fn(),
+        },
+      });
+      const svc = new SecurityService({ prisma });
+
+      await expect(svc.deleteMfaFactor('user-1', PRIMARY_FACTOR_ID)).rejects.toMatchObject({
+        status: 409,
+        message: PENDING_CONFLICT_MESSAGE,
+      });
+      expect(deleteMock).not.toHaveBeenCalled();
+    });
+
+    it('lists authenticator catalog entries from prisma when available', async () => {
+      const prisma = buildPrisma({
+        authenticatorCatalog: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'custom-app',
+              label: 'Custom App',
+              description: 'Custom authenticator',
+              helper: 'Use the custom mobile app',
+              docsUrl: 'https://example.com/app',
+              issuer: 'Custom Issuer',
+              tags: ['mobile'],
+              metadata: { region: 'us' },
+              factorType: 'TOTP',
+              sortOrder: 5,
+              isArchived: false,
+            },
+          ]),
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+      });
+      const svc = new SecurityService({ prisma });
+      const result = await svc.listAuthenticatorCatalog();
+      expect(prisma.authenticatorCatalog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { isArchived: false },
+      }));
+      expect(result).toEqual([
+        expect.objectContaining({ id: 'custom-app', label: 'Custom App', factorType: 'TOTP', sortOrder: 5 }),
+      ]);
+    });
+
+    it('falls back to default catalog seeds when no rows exist', async () => {
+      const prisma = buildPrisma({
+        authenticatorCatalog: {
+          findMany: jest.fn().mockResolvedValue([]),
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+      });
+      const svc = new SecurityService({ prisma });
+      const result = await svc.listAuthenticatorCatalog({ factorType: 'totp' });
+      expect(result.length).toBeGreaterThan(0);
+      expect(result.every(entry => entry.factorType === 'TOTP')).toBe(true);
+    });
   });
 });
 
-/* eslint-enable @typescript-eslint/unbound-method */
