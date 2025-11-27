@@ -728,9 +728,8 @@ components:
         fingerprint:
           type: ["string", "null"]
         subscription:
-          type: object
+          type: ["object", "null"]
           additionalProperties: true
-          nullable: true
         token:
           type: ["string", "null"]
         userAgent:
@@ -1267,6 +1266,38 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "429": { $ref: '#/components/responses/TooManyRequests' }
 
+    put:
+      tags: [Notifications]
+      summary: Update notification settings
+      description: |
+        Persist updated channels, topic preferences, digest cadence, quiet hours, escalation targets, or registered
+        devices for the signed-in user. Requires a valid session cookie plus CSRF header.
+      operationId: updateNotificationSettings
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationSettingsUpdateRequest'
+      responses:
+        "200":
+          description: Updated notification settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    $ref: '#/components/schemas/NotificationSettings'
+                required: [settings]
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
   /auth/notifications/devices/register:
     post:
       tags: [Notifications]
@@ -1325,37 +1356,6 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "429": { $ref: '#/components/responses/TooManyRequests' }
 
-    put:
-      tags: [Notifications]
-      summary: Update notification settings
-      description: |
-        Persist updated channels, topic preferences, digest cadence, quiet hours, escalation targets, or registered
-        devices for the signed-in user. Requires a valid session cookie plus CSRF header.
-      operationId: updateNotificationSettings
-      security:
-        - cookieAuth: []
-          csrfHeader: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NotificationSettingsUpdateRequest'
-      responses:
-        "200":
-          description: Updated notification settings
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  settings:
-                    $ref: '#/components/schemas/NotificationSettings'
-                required: [settings]
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "429": { $ref: '#/components/responses/TooManyRequests' }
 
   /auth/register:
     post:
