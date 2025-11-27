@@ -18,6 +18,7 @@
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:types": "tsc -p tsconfig.types.json",
     "build:bridge": "node ./scripts/build-bridge.cjs",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "files": [
