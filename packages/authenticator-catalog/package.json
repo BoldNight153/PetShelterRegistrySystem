@@ -26,6 +26,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "dependencies": {
+    "rimraf": "^5.0.0",
+    "typescript": "^5.0.0"
+  },
   "devDependencies": {
     "rimraf": "^5.0.0",
     "typescript": "^5.0.0"
